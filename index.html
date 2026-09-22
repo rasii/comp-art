@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>CompArt</title>
+
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CompArt">
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-color: #1e1e1e;
+            --accent-color: #ff9500;
+            --text-color: #ffffff;
+            --text-dim: #aaaaaa;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-user-select: none;
+            user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* App Branding Header */
+        header {
+            background-color: var(--panel-color);
+            padding: calc(12px + var(--safe-top)) 16px 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #2d2d2d;
+            z-index: 10;
+            position: relative;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--accent-color);
+            border-radius: 6px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background-color: #fff;
+            border-radius: 50%;
+            opacity: 0.5;
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.5px;
+        }
+
+        /* Viewport Canvas Space */
+        .workspace {
+            position: absolute;
+            top: calc(53px + var(--safe-top));
+            bottom: calc(140px + var(--safe-bottom));
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #0a0a0a;
+        }
+
+        /* Grayscale Filter Application Group */
+        .filter-group {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: filter 0.2s ease;
+        }
+
+        .filter-group.grayscale {
+            filter: grayscale(100%);
+        }
+
+        /* Mode: Overlay Container */
+        .view-overlay {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .img-layer {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            pointer-events: none;
+            position: absolute;
+        }
+
+        #refImage {
+            z-index: 1;
+            opacity: 1;
+        }
+
+        #paintWrapper {
+            position: absolute;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            touch-action: none;
+        }
+
+        #paintImage {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            transform-origin: center center;
+        }
+
+        /* Mode: Side by Side Container */
+        .view-side {
+            display: none;
+            width: 100%;
+            height: 100%;
+            flex-direction: row;
+            padding: 16px;
+            gap: 16px;
+        }
+
+        .side-box {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #151515;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .side-box span {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: var(--text-dim);
+            z-index: 3;
+        }
+
+        .side-img {
+            max-width: 95%;
+            max-height: 95%;
+            object-fit: contain;
+        }
+
+        /* Control Panel */
+        .controls {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background-color: var(--panel-color);
+            border-top: 1px solid #2d2d2d;
+            padding: 16px 16px calc(16px + var(--safe-bottom)) 16px;
+            z-index: 10;
+        }
+
+        .button-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .btn {
+            background-color: #2c2c2e;
+            color: var(--text-color);
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .btn.active {
+            background-color: var(--accent-color);
+            color: #000;
+            font-weight: 600;
+        }
+
+        .btn-danger {
+            background-color: #3a1c1c;
+            color: #ff453a;
+        }
+
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .slider-group label {
+            font-size: 13px;
+            color: var(--text-dim);
+            width: 60px;
+        }
+
+        .slider {
+            flex: 1;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 28px;
+            background: transparent;
+        }
+
+        .slider::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: #3a3a3c;
+            border-radius: 2px;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #ffffff;
+            margin-top: -10px;
+            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.4);
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .placeholder-text {
+            color: var(--text-dim);
+            font-size: 14px;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon"></div>
+            <h1>CompArt</h1>
+        </div>
+        <button class="btn btn-danger" onclick="resetImages()">Reset</button>
+    </header>
+
+    <div class="workspace">
+        <div id="filterGroup" class="filter-group">
+
+            <!-- Overlay Mode Area -->
+            <div id="viewOverlay" class="view-overlay">
+                <div id="refPlaceholder" class="placeholder-text">Upload Reference Photo to start</div>
+                <img id="refImage" class="img-layer" alt="Reference">
+
+                <div id="paintWrapper">
+                    <img id="paintImage" alt="Painting State" style="display:none;">
+                </div>
+            </div>
+
+            <!-- Side by Side Mode Area -->
+            <div id="viewSide" class="view-side">
+                <div class="side-box">
+                    <span>Reference</span>
+                    <img id="sideRefImg" class="side-img" alt="Ref Side">
+                </div>
+                <div class="side-box">
+                    <span>Your Painting</span>
+                    <img id="sidePaintImg" class="side-img" alt="Paint Side">
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="button-row">
+            <label class="btn active" id="btnUploadRef">
+                📸 Ref Photo
+                <input type="file" accept="image/*" onchange="loadImg(this, 'ref')">
+            </label>
+            <label class="btn" id="btnUploadPaint" style="display:none;">
+                🎨 Capture Canvas
+                <input type="file" accept="image/*" onchange="loadImg(this, 'paint')">
+            </label>
+            <button class="btn" id="btnToggleVisibility" onclick="toggleVisibility()" style="display:none;">Hide
+                Painting</button>
+            <button class="btn" id="btnLayout" onclick="toggleLayout()" style="display:none;">Side-by-Side</button>
+            <button class="btn" id="btnGrayscale" onclick="toggleGrayscale()">🌓 Grayscale</button>
+        </div>
+
+        <!-- Opacity Slider Panel -->
+        <div class="slider-group" id="opacityControl" style="display:none;">
+            <label id="opacityLabel">Opacity</label>
+            <input type="range" min="0" max="100" value="50" class="slider" id="opacitySlider"
+                oninput="adjustOpacity(this.value)">
+        </div>
+    </div>
+
+    <script>
+        let appMode = 'overlay';
+        let paintVisible = true; 
+        let isGrayscale = false; 
+        let hasRef = false; 
+        let hasPaint = false; 
+        let scale = 1; 
+        let translateX = 0; 
+        let translateY = 0; 
+        let isDragging = false; 
+        let startX = 0, startY = 0; 
+        let initialTranslateX = 0, initialTranslateY = 0; 
+        let initialPinchDist = 0; 
+        let initialScale = 1; 
+        const refImg = document.getElementById('refImage'); 
+        const paintImg = document.getElementById('paintImage'); 
+        const paintWrapper = document.getElementById('paintWrapper'); 
+        const sideRefImg = document.getElementById('sideRefImg'); 
+        const sidePaintImg = document.getElementById('sidePaintImg'); 
+        const filterGroup = document.getElementById('filterGroup'); 
+        
+        function loadImg(input, target) { if (input.files && input.files[0]) { 
+            const reader = new FileReader(); reader.onload = function (e) { if (target === 'ref') { refImg.src = e.target.result; sideRefImg.src = e.target.result; document.getElementById('refPlaceholder').style.display = 'none'; document.getElementById('btnUploadPaint').style.display = 'inline-flex'; hasRef = true; } else { paintImg.src = e.target.result; sidePaintImg.src = e.target.result; paintImg.style.display = 'block'; document.getElementById('btnToggleVisibility').style.display = 'inline-flex'; document.getElementById('btnLayout').style.display = 'inline-flex'; document.getElementById('opacityControl').style.display = 'flex'; hasPaint = true; resetTransformation(); } }; reader.readAsDataURL(input.files[0]); } } 
+            
+        function toggleVisibility() { paintVisible = !paintVisible; const btn = document.getElementById('btnToggleVisibility'); if (paintVisible) { paintImg.style.opacity = document.getElementById('opacitySlider').value / 100; btn.textContent = "Hide Painting"; btn.classList.remove('active'); } else { paintImg.style.opacity = 0; btn.textContent = "Show Painting"; btn.classList.add('active'); } } function toggleLayout() { const overlayDiv = document.getElementById('viewOverlay'); const sideDiv = document.getElementById('viewSide'); const layoutBtn = document.getElementById('btnLayout'); const opacityPanel = document.getElementById('opacityControl'); const visibilityBtn = document.getElementById('btnToggleVisibility'); if (appMode === 'overlay') { appMode = 'side'; overlayDiv.style.display = 'none'; sideDiv.style.display = 'flex'; layoutBtn.textContent = "Overlay Mode"; layoutBtn.classList.add('active'); opacityPanel.style.display = 'none'; visibilityBtn.style.display = 'none'; } else { appMode = 'overlay'; overlayDiv.style.display = 'flex'; sideDiv.style.display = 'none'; layoutBtn.textContent = "Side-by-Side"; layoutBtn.classList.remove('active'); opacityPanel.style.display = 'flex'; visibilityBtn.style.display = 'inline-flex'; if (!paintVisible) { paintImg.style.opacity = 0; } else { adjustOpacity(document.getElementById('opacitySlider').value); } } } 
+        function toggleGrayscale() { isGrayscale = !isGrayscale; const btn = document.getElementById('btnGrayscale'); if (isGrayscale) { filterGroup.classList.add('grayscale'); btn.classList.add('active'); } else { filterGroup.classList.remove('grayscale'); btn.classList.remove('active'); } } 
+        function adjustOpacity(val) { if (paintVisible) { paintImg.style.opacity = val / 100; } } 
+        function updateTransform() { paintImg.style.transform = translate(${ translateX }px, ${ translateY }px) scale(${ scale }); } 
+        function resetTransformation() { scale = 1; translateX = 0; translateY = 0; updateTransform(); } 
+        function resetImages() { location.reload(); } 
+        function getDistance(touches) { return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY); } paintWrapper.addEventListener('touchstart', function (e) { if (!hasPaint || appMode === 'side') return; if (e.touches.length === 1) { isDragging = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; initialTranslateX = translateX; initialTranslateY = translateY; } else if (e.touches.length === 2) { isDragging = false; initialPinchDist = getDistance(e.touches); initialScale = scale; } }, { passive: true }); paintWrapper.addEventListener('touchmove', function (e) { if (!hasPaint || appMode === 'side') return; if (isDragging && e.touches.length === 1) { const deltaX = e.touches[0].clientX - startX; const deltaY = e.touches[0].clientY - startY; translateX = initialTranslateX + deltaX; translateY = initialTranslateY + deltaY; updateTransform(); } else if (e.touches.length === 2) { const currentDist = getDistance(e.touches); if (initialPinchDist > 0) { const newScale = initialScale * (currentDist / initialPinchDist); scale = Math.max(0.2, Math.min(newScale, 5)); updateTransform(); } } }, { passive: true }); paintWrapper.addEventListener('touchend', function (e) { if (e.touches.length < 2) { initialPinchDist = 0; } if (e.touches.length === 0) { isDragging = false; } }, { passive: true });
