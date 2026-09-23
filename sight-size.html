@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Sight-Size</title>
+
+<!-- iOS home-screen behavior -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sight-Size">
+<meta name="theme-color" content="#181613">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='38' fill='%23221E19'/%3E%3Ccircle cx='90' cy='90' r='54' fill='none' stroke='%23C1712F' stroke-width='7'/%3E%3Ccircle cx='90' cy='58' r='11' fill='%23C1712F'/%3E%3Ccircle cx='120' cy='90' r='11' fill='%233F5D7D'/%3E%3Ccircle cx='90' cy='122' r='11' fill='%23A6693A'/%3E%3Ccircle cx='60' cy='90' r='11' fill='%23E7DCC8'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap">
+
+<style>
+  :root{
+    color-scheme: dark;
+    --ink:        #EDE6D9;
+    --ink-dim:    #A79C8B;
+    --bg:         #181613;
+    --panel:      #211E19;
+    --panel-2:    #292420;
+    --line:       #3A342C;
+    --sienna:     #C1712F;
+    --sienna-dim: #8C531F;
+    --ultra:      #4D6E92;
+    --ok:         #7C9473;
+    --danger:     #B15B4A;
+    --radius: 3px;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  *,*::before,*::after{ box-sizing: inherit; }
+  html{ scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body{
+    display:flex; flex-direction:column;
+    min-height: 100dvh;
+  }
+  img{ -webkit-user-drag:none; user-select:none; }
+
+  /* ---------- header ---------- */
+  header{
+    position: sticky; top: env(safe-area-inset-top, 0px);
+    z-index: 20;
+    display:flex; align-items:baseline; justify-content:space-between; gap: 12px;
+    padding: 14px 18px 12px;
+    background: linear-gradient(var(--bg) 78%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  header .brand{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+  h1{
+    font-family:"Fraunces", Georgia, serif;
+    font-weight:600; font-size: 21px; letter-spacing:0.2px;
+    margin:0; white-space:nowrap;
+  }
+  header p{
+    margin:0; font-size:12.5px; color: var(--ink-dim);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .icon-btn{
+    flex: 0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    width:34px; height:34px;
+    background:transparent; border:1px solid var(--line); border-radius: var(--radius);
+    color: var(--ink-dim);
+  }
+  .icon-btn:active{ background: var(--panel-2); }
+
+  /* ---------- layout ---------- */
+  main{
+    flex:1; display:flex; flex-direction:column;
+    max-width: 980px; width:100%; margin: 0 auto;
+    padding: 16px 16px calc(28px + env(safe-area-inset-bottom, 0px));
+    gap: 16px;
+  }
+
+  /* ---------- tabs ---------- */
+  nav.tabs{
+    display:flex; gap:2px;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 3px;
+  }
+  nav.tabs button{
+    flex:1; padding:9px 6px; font-size:13.5px; font-weight:500;
+    background:transparent; border:none; color: var(--ink-dim); border-radius: 2px;
+    font-family: inherit;
+  }
+  nav.tabs button.active{ background: var(--panel-2); color: var(--ink); }
+  nav.tabs button:disabled{ opacity:0.35; }
+
+  /* ---------- generic buttons ---------- */
+  button{ cursor:pointer; -webkit-appearance:none; appearance:none; touch-action: manipulation; }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding: 11px 16px; font-size: 14px; font-weight:500;
+    border-radius: var(--radius); border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink);
+    font-family: inherit;
+  }
+  .btn:active{ background: var(--panel-2); }
+  .btn.primary{ background: var(--sienna); border-color: var(--sienna); color:#1B1108; font-weight:600; }
+  .btn.primary:active{ background: var(--sienna-dim); }
+  .btn.ghost{ background:transparent; }
+  .btn.small{ padding:7px 11px; font-size:12.5px; }
+  .btn.full{ width:100%; }
+  .btn svg{ width:16px; height:16px; flex:0 0 auto; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .row.stretch > *{ flex:1; }
+
+  input[type=file]{ display:none; }
+
+  /* ---------- stage ---------- */
+  .stage{
+    position:relative;
+    width:100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    touch-action: none;
+  }
+  .stage canvas{ display:block; width:100%; height:auto; }
+
+  /* ---------- corner-pin ---------- */
+  .pin-stage{
+    position:relative; width:100%;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    overflow:hidden; touch-action:none;
+  }
+  .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
+  .pin-stage img{ display:block; width:100%; height:100%; object-fit:fill; }
+  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
+  .zoom-reset{
+    position:absolute; top:8px; right:8px; z-index:6;
+    background: rgba(24,22,19,0.72); backdrop-filter: blur(2px);
+  }
+  .handle{
+    position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+    border-radius:50%; background: var(--sienna); border:2px solid #1B1108;
+    box-shadow: 0 0 0 3px rgba(193,113,47,0.28);
+    touch-action:none; z-index:5;
+  }
+  .preview-row{ display:flex; align-items:center; gap:12px; padding: 2px 2px 0; }
+  .preview-box{
+    flex:0 0 auto; width:104px;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    overflow:hidden;
+  }
+  .preview-box canvas{ display:block; width:100%; height:auto; }
+  .preview-label{ margin:0; font-size:12px; color: var(--ink-dim); line-height:1.4; }
+
+  /* ---------- crop ---------- */
+  .crop-stage{
+    position:relative; width:100%;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    overflow:hidden; touch-action:none;
+  }
+  .crop-stage img{ display:block; width:100%; height:100%; object-fit:fill; }
+  .crop-stage .mask{ position:absolute; background: rgba(10,9,7,0.72); pointer-events:none; }
+  .crop-outline{
+    position:absolute; border:1.5px solid var(--sienna);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+    touch-action:none;
+  }
+  .crop-handle{ z-index:5; }
+
+  .empty{
+    padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
+    max-width: 320px;
+  }
+  .empty strong{ display:block; color: var(--ink); font-size:15px; margin-bottom:6px; font-weight:600; }
+
+  /* ---------- align hint ---------- */
+  .hint{
+    font-size:12.5px; color: var(--ink-dim); text-align:center; margin: 0; padding: 0 8px;
+  }
+
+  /* ---------- compare / side-by-side frame ---------- */
+  .frame{
+    position:relative; width:100%; border-radius: var(--radius); overflow:hidden;
+    background: var(--panel); border:1px solid var(--line);
+    aspect-ratio: var(--ar, 1);
+  }
+  .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+  .frame img.gray{ filter: grayscale(1) contrast(1.03); }
+  .split{ display:flex; gap:10px; flex-wrap:wrap; }
+  .split .pane{ flex:1 1 260px; min-width:0; }
+  .pane-label{ font-size:11.5px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
+
+  /* ---------- controls panel ---------- */
+  .panel{
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px 16px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .ctrl-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+  .ctrl-label{ font-size:13px; color: var(--ink); display:flex; align-items:center; gap:8px; }
+  .ctrl-label svg{ width:16px; height:16px; color: var(--ink-dim); flex:0 0 auto; }
+
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:28px; background:transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:3px; background: var(--line); border-radius:2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:19px; height:19px; margin-top:-8px; border-radius:50%;
+    background: var(--sienna); border:2px solid #1B1108;
+  }
+
+  .switch{
+    position:relative; width:42px; height:24px; flex:0 0 auto;
+    background: var(--line); border-radius: 12px; border:none; padding:0;
+  }
+  .switch::after{
+    content:""; position:absolute; top:2px; left:2px; width:20px; height:20px;
+    background: var(--ink-dim); border-radius:50%; transition: transform .15s ease, background .15s ease;
+  }
+  .switch.on{ background: var(--sienna-dim); }
+  .switch.on::after{ transform: translateX(18px); background:#1B1108; }
+
+  .divider{ height:1px; background: var(--line); margin: 0 -16px; }
+
+  .peek-btn{
+    width:100%; padding:13px; text-align:center;
+    background: var(--panel-2); border:1px solid var(--line); border-radius: var(--radius);
+    font-size:13.5px; color: var(--ink); font-family:inherit;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .peek-btn:active{ background: var(--sienna); color:#1B1108; border-color:var(--sienna); }
+
+  footer{
+    text-align:center; padding: 4px 16px 6px; color: var(--ink-dim); font-size:11.5px;
+  }
+  footer button{ background:none;border:none;color:inherit;text-decoration:underline;font-family:inherit;font-size:inherit;padding:0; }
+
+  .toast{
+    position: fixed; left:50%; bottom: calc(18px + env(safe-area-inset-bottom,0px));
+    transform: translateX(-50%);
+    background: #2A251F; border:1px solid var(--line); color: var(--ink);
+    padding: 11px 16px; border-radius: var(--radius); font-size:13px;
+    max-width: 88vw; text-align:center; z-index:50;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    opacity:0; pointer-events:none; transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
+
+  @media (min-width: 720px){
+    .stage{ min-height: 420px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Sight-Size</h1>
+    <p id="stepHint">reference → painting → compare</p>
+  </div>
+  <button class="icon-btn" id="restartBtn" title="Start a new painting" aria-label="Start a new painting">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+  </button>
+</header>
+
+<main>
+
+  <nav class="tabs" id="tabs">
+    <button data-mode="align" class="active">Align</button>
+    <button data-mode="compare" disabled>Compare</button>
+    <button data-mode="side" disabled>Side by side</button>
+  </nav>
+
+  <!-- ===================== ALIGN VIEW ===================== -->
+  <section id="view-align">
+
+    <!-- step 1: crop -->
+    <div id="cropStageWrap" style="display:none;">
+      <div class="crop-stage" id="cropStage">
+        <img id="cropImg" alt="Your painting photo" draggable="false">
+        <div class="mask" id="maskTop"></div>
+        <div class="mask" id="maskBottom"></div>
+        <div class="mask" id="maskLeft"></div>
+        <div class="mask" id="maskRight"></div>
+        <div class="crop-outline" id="cropOutline"></div>
+        <div class="handle crop-handle" id="crop0" data-idx="0"></div>
+        <div class="handle crop-handle" id="crop1" data-idx="1"></div>
+        <div class="handle crop-handle" id="crop2" data-idx="2"></div>
+        <div class="handle crop-handle" id="crop3" data-idx="3"></div>
+      </div>
+      <p class="hint">Drag the corners to trim to your canvas — drag inside the box to move it</p>
+    </div>
+
+    <div class="panel" id="cropPanel" style="display:none;">
+      <div class="row stretch">
+        <button class="btn small" id="resetCropBtn">Reset crop</button>
+        <button class="btn small" id="skipCropBtn">Use full photo</button>
+        <button class="btn small" id="retakeFromCropBtn">Retake photo</button>
+      </div>
+      <button class="btn primary full" id="confirmCropBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Crop &amp; continue
+      </button>
+    </div>
+
+    <!-- step 2: corner-pin alignment -->
+    <div id="alignStageWrap" style="display:none;">
+      <div class="pin-stage" id="pinStage">
+        <div class="pin-inner" id="pinInner">
+          <img id="pinImg" alt="Your painting photo" draggable="false">
+          <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+          <div class="handle" id="handle0" data-idx="0"></div>
+          <div class="handle" id="handle1" data-idx="1"></div>
+          <div class="handle" id="handle2" data-idx="2"></div>
+          <div class="handle" id="handle3" data-idx="3"></div>
+        </div>
+        <button class="icon-btn zoom-reset" id="zoomResetBtn" title="Reset zoom" aria-label="Reset zoom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+        </button>
+      </div>
+      <p class="hint">Pinch or scroll to zoom in for precision · drag the four points onto the corners of your canvas</p>
+
+      <div class="preview-row">
+        <div class="preview-box">
+          <canvas id="previewCanvas"></canvas>
+        </div>
+        <p class="preview-label">Preview of the aligned result</p>
+      </div>
+    </div>
+
+    <div class="panel" id="alignPanel" style="display:none;">
+      <div class="row stretch">
+        <button class="btn small" id="resetAlignBtn">Reset corners</button>
+        <button class="btn small" id="recropBtn">Adjust crop</button>
+        <button class="btn small" id="retakeBtn">Retake photo</button>
+      </div>
+      <button class="btn primary full" id="confirmAlignBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Align &amp; continue
+      </button>
+    </div>
+
+    <!-- empty / setup states -->
+    <div class="stage" id="emptyStage">
+      <div class="empty" id="emptyStageText">
+        <strong>Start with your reference</strong>
+        Load the photo you're painting from. You'll line your canvas photo up to it next.
+      </div>
+    </div>
+
+    <div class="panel" id="setupPanel">
+      <div class="row stretch" id="refRow">
+        <button class="btn primary full" id="addRefBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 16-5-5-4.5 4.5"/></svg>
+          Add reference photo
+        </button>
+      </div>
+      <div class="row stretch" id="curRow" style="display:none;">
+        <button class="btn primary full" id="addCurBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.3"/></svg>
+          Photograph your painting
+        </button>
+      </div>
+      <div class="row stretch" id="changeRefRow" style="display:none;">
+        <button class="btn ghost full small" id="changeRefBtn">Use a different reference photo</button>
+      </div>
+    </div>
+
+    <input type="file" id="refInput" accept="image/*">
+    <input type="file" id="curInput" accept="image/*" capture="environment">
+
+  </section>
+
+  <!-- ===================== COMPARE VIEW ===================== -->
+  <section id="view-compare" style="display:none;">
+    <div class="frame" id="compareFrame" style="--ar:1;">
+      <img id="compareRef" alt="Reference photo">
+      <img id="compareCur" alt="Your painting, aligned to the reference">
+    </div>
+
+    <div class="panel">
+      <button class="peek-btn" id="peekBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        Hold to see the reference
+      </button>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+          Painting opacity
+        </div>
+      </div>
+      <input type="range" id="opacitySlider" min="0" max="100" value="100">
+
+      <div class="divider"></div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          Check values (black &amp; white)
+        </div>
+        <button class="switch" id="graySwitch" aria-label="Toggle grayscale"></button>
+      </div>
+
+      <div class="divider"></div>
+
+      <button class="btn ghost full small" id="retakeFromCompareBtn">Retake painting photo</button>
+    </div>
+  </section>
+
+  <!-- ===================== SIDE BY SIDE VIEW ===================== -->
+  <section id="view-side" style="display:none;">
+    <div class="split">
+      <div class="pane">
+        <p class="pane-label">Reference</p>
+        <div class="frame" style="--ar:1;"><img id="sideRef" alt="Reference photo"></div>
+      </div>
+      <div class="pane">
+        <p class="pane-label">Your painting</p>
+        <div class="frame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          Check values (black &amp; white)
+        </div>
+        <button class="switch" id="graySwitch2" aria-label="Toggle grayscale"></button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Photos stay on this device. <button id="footerRestart">Start a new painting</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORE_KEY = "sightsize_v1";
+  var WORK_DIM = 1100;      // long-edge working resolution for reference + final aligned output
+  var CUR_SRC_MAX = 1800;   // working resolution kept for the raw painting photo (perspective source)
+  var PREVIEW_SRC_MAX = 420; // small copy used for the fast live preview warp
+
+  // ---------------- state ----------------
+  var state = {
+    refDataUrl: null, refW: 0, refH: 0,
+    alignedDataUrl: null,
+    origSourceCanvas: null, origW: 0, origH: 0, // full working-res photo, before crop
+    cropRect: null,             // {x0,y0,x1,y1} normalized against orig photo
+    curSourceCanvas: null, curW: 0, curH: 0,   // cropped working-res photo, corner-pin source
+    previewSourceCanvas: null, previewW: 0, previewH: 0, // small copy for live preview
+    corners: null,              // 4 {u,v} normalized points, order TL,TR,BR,BL
+    pinZoom: 1, pinPanX: 0, pinPanY: 0,
+    subStep: "crop",            // "crop" | "pin" — which half of the align flow is showing
+    mode: "align",
+    grayscale: false,
+    opacity: 100
+  };
+
+  var refImgObj = new Image();
+
+  // ---------------- element refs ----------------
+  var $ = function(id){ return document.getElementById(id); };
+  var tabs = $("tabs");
+  var stepHint = $("stepHint");
+
+  var emptyStage = $("emptyStage"), emptyStageText = $("emptyStageText");
+  var setupPanel = $("setupPanel");
+  var refRow = $("refRow"), curRow = $("curRow"), changeRefRow = $("changeRefRow");
+  var addRefBtn = $("addRefBtn"), addCurBtn = $("addCurBtn"), changeRefBtn = $("changeRefBtn");
+  var refInput = $("refInput"), curInput = $("curInput");
+
+  var cropStageWrap = $("cropStageWrap"), cropStage = $("cropStage"), cropImg = $("cropImg");
+  var maskTop = $("maskTop"), maskBottom = $("maskBottom"), maskLeft = $("maskLeft"), maskRight = $("maskRight");
+  var cropOutline = $("cropOutline");
+  var cropHandles = [$("crop0"), $("crop1"), $("crop2"), $("crop3")];
+  var cropPanel = $("cropPanel");
+  var resetCropBtn = $("resetCropBtn"), skipCropBtn = $("skipCropBtn"), retakeFromCropBtn = $("retakeFromCropBtn");
+  var confirmCropBtn = $("confirmCropBtn");
+
+  var alignStageWrap = $("alignStageWrap");
+  var pinStage = $("pinStage"), pinInner = $("pinInner"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
+  var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
+  var zoomResetBtn = $("zoomResetBtn");
+  var previewCanvas = $("previewCanvas");
+  var alignPanel = $("alignPanel");
+  var resetAlignBtn = $("resetAlignBtn"), recropBtn = $("recropBtn"), retakeBtn = $("retakeBtn");
+  var confirmAlignBtn = $("confirmAlignBtn");
+
+  var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
+  var compareRef = $("compareRef"), compareCur = $("compareCur"), compareFrame = $("compareFrame");
+  var opacitySlider = $("opacitySlider");
+  var peekBtn = $("peekBtn");
+  var graySwitch = $("graySwitch"), graySwitch2 = $("graySwitch2");
+  var retakeFromCompareBtn = $("retakeFromCompareBtn");
+
+  var sideRef = $("sideRef"), sideCur = $("sideCur");
+
+  var restartBtn = $("restartBtn"), footerRestart = $("footerRestart");
+  var toastEl = $("toast");
+
+  // ---------------- helpers ----------------
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ toastEl.classList.remove("show"); }, 2600);
+  }
+
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  function fileToResizedDataUrl(file, maxDim){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error("read failed")); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error("decode failed")); };
+        img.onload = function(){
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var scale = Math.min(1, maxDim / Math.max(w,h));
+          var outW = Math.round(w*scale), outH = Math.round(h*scale);
+          var c = document.createElement("canvas");
+          c.width = outW; c.height = outH;
+          var cctx = c.getContext("2d");
+          cctx.drawImage(img, 0, 0, outW, outH);
+          resolve({ dataUrl: c.toDataURL("image/jpeg", 0.9), width: outW, height: outH, img: img });
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function saveStore(){
+    try{
+      var payload = JSON.stringify({
+        ref: state.refDataUrl, refW: state.refW, refH: state.refH,
+        aligned: state.alignedDataUrl
+      });
+      localStorage.setItem(STORE_KEY, payload);
+    }catch(e){
+      toast("Your photos are too large to keep saved between visits, but this session works fine.");
+    }
+  }
+
+  function loadStore(){
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+
+  function clearStore(){
+    try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+  }
+
+  // ---------------- tab / mode switching ----------------
+  function setMode(m){
+    if(m === "compare" && !state.alignedDataUrl) return;
+    if(m === "side" && !state.alignedDataUrl) return;
+    state.mode = m;
+    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
+      b.classList.toggle("active", b.dataset.mode === m);
+    });
+    viewAlign.style.display = (m === "align") ? "" : "none";
+    viewCompare.style.display = (m === "compare") ? "" : "none";
+    viewSide.style.display = (m === "side") ? "" : "none";
+
+    if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
+    if(m === "compare") { stepHint.textContent = "hold the button to peek at the reference"; renderCompare(); }
+    if(m === "side") { stepHint.textContent = "reference and painting, side by side"; renderSide(); }
+  }
+
+  tabs.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-mode]");
+    if(!b || b.disabled) return;
+    setMode(b.dataset.mode);
+  });
+
+  function enableCompareTabs(on){
+    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
+      if(b.dataset.mode !== "align") b.disabled = !on;
+    });
+  }
+
+  // ---------------- reference loading ----------------
+  addRefBtn.addEventListener("click", function(){ refInput.click(); });
+  changeRefBtn.addEventListener("click", function(){ refInput.click(); });
+  refInput.addEventListener("change", function(){
+    var f = refInput.files && refInput.files[0];
+    refInput.value = "";
+    if(!f) return;
+    fileToResizedDataUrl(f, WORK_DIM).then(function(res){
+      state.refDataUrl = res.dataUrl;
+      state.refW = res.width; state.refH = res.height;
+      state.alignedDataUrl = null;
+      state.origSourceCanvas = null; state.origW = 0; state.origH = 0; state.cropRect = null;
+      state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
+      state.subStep = "crop";
+      refImgObj.src = res.dataUrl;
+      enableCompareTabs(false);
+      saveStore();
+      refreshSetupUI();
+      setMode("align");
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+
+  addCurBtn.addEventListener("click", function(){ curInput.click(); });
+  retakeBtn.addEventListener("click", function(){ curInput.click(); });
+  retakeFromCropBtn.addEventListener("click", function(){ curInput.click(); });
+  retakeFromCompareBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
+
+  curInput.addEventListener("change", function(){
+    var f = curInput.files && curInput.files[0];
+    curInput.value = "";
+    if(!f) return;
+    loadCurrentPhoto(f).then(function(){
+      state.alignedDataUrl = null;
+      state.subStep = "crop";
+      refreshSetupUI();
+      startCropping();
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+
+  function loadCurrentPhoto(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error("read failed")); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error("decode failed")); };
+        img.onload = function(){
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var srcScale = Math.min(1, CUR_SRC_MAX / Math.max(w,h));
+          var sW = Math.round(w*srcScale), sH = Math.round(h*srcScale);
+          var srcCanvas = document.createElement("canvas");
+          srcCanvas.width = sW; srcCanvas.height = sH;
+          srcCanvas.getContext("2d").drawImage(img, 0, 0, sW, sH);
+
+          state.origSourceCanvas = srcCanvas; state.origW = sW; state.origH = sH;
+          state.cropRect = defaultCropRect();
+          resolve();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function refreshSetupUI(){
+    var hasRef = !!state.refDataUrl;
+    var hasRaw = !!state.origSourceCanvas;
+    var onCrop = hasRef && hasRaw && state.subStep === "crop";
+    var onPin  = hasRef && hasRaw && state.subStep === "pin";
+
+    emptyStage.style.display = (hasRef) ? "none" : "flex";
+    setupPanel.style.display = (hasRef && hasRaw) ? "none" : "";
+    refRow.style.display = hasRef ? "none" : "";
+    curRow.style.display = hasRef ? "" : "none";
+    changeRefRow.style.display = hasRef ? "" : "none";
+
+    cropStageWrap.style.display = onCrop ? "" : "none";
+    cropPanel.style.display = onCrop ? "" : "none";
+    alignStageWrap.style.display = onPin ? "" : "none";
+    alignPanel.style.display = onPin ? "" : "none";
+
+    if(!hasRef){
+      stepHint.textContent = "reference → painting → compare";
+    } else if(!hasRaw){
+      stepHint.textContent = "now photograph your painting";
+    } else if(onCrop){
+      stepHint.textContent = "trim to your canvas";
+    } else {
+      stepHint.textContent = "drag the corners, then align";
+    }
+  }
+
+  // ================== crop step ==================
+  // An axis-aligned rectangle {x0,y0,x1,y1}, normalized 0..1 against the
+  // original photo, used to trim away background before fine alignment.
+
+  function defaultCropRect(){
+    var m = 0.04;
+    return { x0: m, y0: m, x1: 1-m, y1: 1-m };
+  }
+
+  function startCropping(){
+    cropImg.src = state.origSourceCanvas.toDataURL("image/jpeg", 0.88);
+    cropStage.style.aspectRatio = state.origW + " / " + state.origH;
+    layoutCrop();
+  }
+
+  function layoutCrop(){
+    var r = state.cropRect;
+    maskTop.style.cssText    = "left:0;top:0;width:100%;height:" + (r.y0*100) + "%;";
+    maskBottom.style.cssText = "left:0;top:" + (r.y1*100) + "%;width:100%;height:" + ((1-r.y1)*100) + "%;";
+    maskLeft.style.cssText   = "left:0;top:" + (r.y0*100) + "%;width:" + (r.x0*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
+    maskRight.style.cssText  = "left:" + (r.x1*100) + "%;top:" + (r.y0*100) + "%;width:" + ((1-r.x1)*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
+    cropOutline.style.cssText = "left:" + (r.x0*100) + "%;top:" + (r.y0*100) + "%;width:" + ((r.x1-r.x0)*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
+    var pts = [[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]];
+    cropHandles.forEach(function(h,i){ h.style.left = (pts[i][0]*100) + "%"; h.style.top = (pts[i][1]*100) + "%"; });
+  }
+
+  var CROP_MIN_GAP = 0.06;
+  var activeCropHandle = null;
+  cropHandles.forEach(function(h, i){
+    h.addEventListener("pointerdown", function(e){
+      e.preventDefault(); e.stopPropagation();
+      activeCropHandle = i;
+      h.setPointerCapture(e.pointerId);
+    });
+    h.addEventListener("pointermove", function(e){
+      if(activeCropHandle !== i) return;
+      var rect = cropStage.getBoundingClientRect();
+      var u = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      var v = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+      var r = state.cropRect;
+      if(i===0){ r.x0 = Math.min(u, r.x1-CROP_MIN_GAP); r.y0 = Math.min(v, r.y1-CROP_MIN_GAP); }
+      if(i===1){ r.x1 = Math.max(u, r.x0+CROP_MIN_GAP); r.y0 = Math.min(v, r.y1-CROP_MIN_GAP); }
+      if(i===2){ r.x1 = Math.max(u, r.x0+CROP_MIN_GAP); r.y1 = Math.max(v, r.y0+CROP_MIN_GAP); }
+      if(i===3){ r.x0 = Math.min(u, r.x1-CROP_MIN_GAP); r.y1 = Math.max(v, r.y0+CROP_MIN_GAP); }
+      layoutCrop();
+    });
+    function release(){ if(activeCropHandle === i) activeCropHandle = null; }
+    h.addEventListener("pointerup", release);
+    h.addEventListener("pointercancel", release);
+  });
+
+  var moveDrag = null;
+  cropOutline.addEventListener("pointerdown", function(e){
+    e.preventDefault();
+    cropOutline.setPointerCapture(e.pointerId);
+    var rect = cropStage.getBoundingClientRect();
+    var u = (e.clientX-rect.left)/rect.width, v = (e.clientY-rect.top)/rect.height;
+    moveDrag = { startU:u, startV:v, r0: { x0:state.cropRect.x0, y0:state.cropRect.y0, x1:state.cropRect.x1, y1:state.cropRect.y1 } };
+  });
+  cropOutline.addEventListener("pointermove", function(e){
+    if(!moveDrag) return;
+    var rect = cropStage.getBoundingClientRect();
+    var u = (e.clientX-rect.left)/rect.width, v = (e.clientY-rect.top)/rect.height;
+    var du = u-moveDrag.startU, dv = v-moveDrag.startV;
+    var w = moveDrag.r0.x1-moveDrag.r0.x0, hgt = moveDrag.r0.y1-moveDrag.r0.y0;
+    var nx0 = clamp(moveDrag.r0.x0+du, 0, 1-w), ny0 = clamp(moveDrag.r0.y0+dv, 0, 1-hgt);
+    state.cropRect = { x0:nx0, y0:ny0, x1:nx0+w, y1:ny0+hgt };
+    layoutCrop();
+  });
+  function endMove(){ moveDrag = null; }
+  cropOutline.addEventListener("pointerup", endMove);
+  cropOutline.addEventListener("pointercancel", endMove);
+
+  resetCropBtn.addEventListener("click", function(){
+    state.cropRect = defaultCropRect();
+    layoutCrop();
+  });
+  skipCropBtn.addEventListener("click", function(){
+    state.cropRect = { x0:0, y0:0, x1:1, y1:1 };
+    finishCrop();
+  });
+  confirmCropBtn.addEventListener("click", finishCrop);
+
+  function finishCrop(){
+    applyCrop();
+    state.subStep = "pin";
+    refreshSetupUI();
+    startPinning();
+  }
+
+  function applyCrop(){
+    var o = state.origSourceCanvas, r = state.cropRect;
+    var sx = Math.round(r.x0*state.origW), sy = Math.round(r.y0*state.origH);
+    var sw = Math.max(1, Math.round((r.x1-r.x0)*state.origW));
+    var sh = Math.max(1, Math.round((r.y1-r.y0)*state.origH));
+    var c = document.createElement("canvas");
+    c.width = sw; c.height = sh;
+    c.getContext("2d").drawImage(o, sx, sy, sw, sh, 0, 0, sw, sh);
+    state.curSourceCanvas = c; state.curW = sw; state.curH = sh;
+
+    var pvScale = Math.min(1, PREVIEW_SRC_MAX / Math.max(sw,sh));
+    var pW = Math.round(sw*pvScale), pH = Math.round(sh*pvScale);
+    var pv = document.createElement("canvas");
+    pv.width = pW; pv.height = pH;
+    pv.getContext("2d").drawImage(c, 0, 0, pW, pH);
+    state.previewSourceCanvas = pv; state.previewW = pW; state.previewH = pH;
+
+    state.corners = defaultCorners();
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+  }
+
+  recropBtn.addEventListener("click", function(){
+    state.subStep = "crop";
+    refreshSetupUI();
+    startCropping();
+  });
+
+  // ================== corner-pin perspective engine ==================
+  // Four normalized points (0..1), order TL, TR, BR, BL, describing where
+  // the edges of the canvas fall inside the (cropped) photo. Warping maps
+  // these onto the reference's rectangle, automatically resizing and
+  // correcting perspective in one step.
+
+  function defaultCorners(){
+    var m = 0.05; // inset margin — the crop step already trims most of the border
+    return [
+      { u: m,     v: m     },
+      { u: 1 - m, v: m     },
+      { u: 1 - m, v: 1 - m },
+      { u: m,     v: 1 - m }
+    ];
+  }
+
+  function startPinning(){
+    pinImg.src = state.curSourceCanvas.toDataURL("image/jpeg", 0.9);
+    pinStage.style.aspectRatio = state.curW + " / " + state.curH;
+    previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
+    pinInner.style.transform = "translate(0px,0px) scale(1)";
+    layoutHandles();
+    schedulePreview();
+  }
+
+  function layoutHandles(){
+    var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
+    pinPoly.setAttribute("points", pts);
+    var stageRect = pinStage.getBoundingClientRect();
+    var innerRect = pinInner.getBoundingClientRect();
+    handles.forEach(function(h, i){
+      var u = state.corners[i].u, v = state.corners[i].v;
+      var xPx = (innerRect.left - stageRect.left) + u*innerRect.width;
+      var yPx = (innerRect.top  - stageRect.top)  + v*innerRect.height;
+      h.style.left = xPx + "px";
+      h.style.top  = yPx + "px";
+    });
+  }
+
+  var activeHandle = null;
+  handles.forEach(function(h, i){
+    h.addEventListener("pointerdown", function(e){
+      e.preventDefault(); e.stopPropagation();
+      activeHandle = i;
+      h.setPointerCapture(e.pointerId);
+    });
+    h.addEventListener("pointermove", function(e){
+      if(activeHandle !== i) return;
+      var rect = pinInner.getBoundingClientRect();
+      var u = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      var v = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+      state.corners[i] = { u: u, v: v };
+      layoutHandles();
+      schedulePreview();
+    });
+    function release(){ if(activeHandle === i) activeHandle = null; }
+    h.addEventListener("pointerup", release);
+    h.addEventListener("pointercancel", release);
+  });
+
+  resetAlignBtn.addEventListener("click", function(){
+    if(!state.curSourceCanvas) return;
+    state.corners = defaultCorners();
+    layoutHandles();
+    schedulePreview();
+  });
+
+  // -------- pinch-zoom / pan on the pin stage, for placing corners precisely --------
+  var PIN_MAX_ZOOM = 5;
+  var bgPointers = {};
+  var bgGesture = null;
+
+  function clampPinTransform(){
+    var rect = pinStage.getBoundingClientRect();
+    state.pinZoom = clamp(state.pinZoom, 1, PIN_MAX_ZOOM);
+    var minX = (1-state.pinZoom)*rect.width, minY = (1-state.pinZoom)*rect.height;
+    state.pinPanX = clamp(state.pinPanX, minX, 0);
+    state.pinPanY = clamp(state.pinPanY, minY, 0);
+  }
+  function applyPinTransform(){
+    pinInner.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
+    layoutHandles();
+  }
+  function bgLocalMid(){
+    var ids = Object.keys(bgPointers);
+    if(!ids.length) return null;
+    var sx=0, sy=0;
+    ids.forEach(function(id){ sx += bgPointers[id].x; sy += bgPointers[id].y; });
+    var rect = pinStage.getBoundingClientRect();
+    return { x: (sx/ids.length) - rect.left, y: (sy/ids.length) - rect.top };
+  }
+  function bgDist(){
+    var ids = Object.keys(bgPointers);
+    if(ids.length < 2) return 0;
+    var a = bgPointers[ids[0]], b = bgPointers[ids[1]];
+    return Math.hypot(a.x-b.x, a.y-b.y);
+  }
+  function beginBgGesture(){
+    var mid = bgLocalMid();
+    bgGesture = mid ? { midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist() } : null;
+  }
+
+  pinStage.addEventListener("pointerdown", function(e){
+    if(e.target.closest(".handle") || e.target.closest(".zoom-reset")) return;
+    if(!state.curSourceCanvas) return;
+    pinStage.setPointerCapture(e.pointerId);
+    bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+    beginBgGesture();
+  });
+  pinStage.addEventListener("pointermove", function(e){
+    if(!bgPointers[e.pointerId] || !bgGesture) return;
+    bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+    var mid = bgLocalMid(); if(!mid) return;
+    var newDist = bgDist();
+    var newZoom = state.pinZoom;
+    if(newDist > 0 && bgGesture.dist0 > 0){
+      newZoom = clamp(bgGesture.zoom0 * (newDist/bgGesture.dist0), 1, PIN_MAX_ZOOM);
+    }
+    var contentX = (bgGesture.midLocal.x - bgGesture.pan0.x) / bgGesture.zoom0;
+    var contentY = (bgGesture.midLocal.y - bgGesture.pan0.y) / bgGesture.zoom0;
+    state.pinZoom = newZoom;
+    state.pinPanX = mid.x - contentX*newZoom;
+    state.pinPanY = mid.y - contentY*newZoom;
+    clampPinTransform();
+    applyPinTransform();
+  });
+  function endBgPointer(e){ delete bgPointers[e.pointerId]; beginBgGesture(); }
+  pinStage.addEventListener("pointerup", endBgPointer);
+  pinStage.addEventListener("pointercancel", endBgPointer);
+
+  pinStage.addEventListener("wheel", function(e){
+    if(!state.curSourceCanvas) return;
+    e.preventDefault();
+    var rect = pinStage.getBoundingClientRect();
+    var mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    var factor = 1 - clamp(e.deltaY,-80,80)*0.0025;
+    var newZoom = clamp(state.pinZoom*factor, 1, PIN_MAX_ZOOM);
+    var contentX = (mx-state.pinPanX)/state.pinZoom, contentY = (my-state.pinPanY)/state.pinZoom;
+    state.pinZoom = newZoom;
+    state.pinPanX = mx-contentX*newZoom;
+    state.pinPanY = my-contentY*newZoom;
+    clampPinTransform();
+    applyPinTransform();
+  }, { passive:false });
+
+  zoomResetBtn.addEventListener("click", function(){
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    applyPinTransform();
+  });
+
+  window.addEventListener("resize", function(){
+    if(state.mode === "align" && state.subStep === "pin") layoutHandles();
+  });
+
+  // -------- linear algebra: 4-point homography + inverse --------
+  function solveLinear8(A, b){
+    var n = 8;
+    for(var i=0;i<n;i++) A[i].push(b[i]);
+    for(var col=0; col<n; col++){
+      var maxRow = col;
+      for(var r=col+1;r<n;r++){ if(Math.abs(A[r][col]) > Math.abs(A[maxRow][col])) maxRow = r; }
+      var tmp = A[col]; A[col] = A[maxRow]; A[maxRow] = tmp;
+      var pivot = A[col][col]; if(Math.abs(pivot) < 1e-12) pivot = 1e-12;
+      for(var c=col;c<=n;c++) A[col][c] /= pivot;
+      for(var r2=0;r2<n;r2++){
+        if(r2 === col) continue;
+        var factor = A[r2][col];
+        for(var c2=col;c2<=n;c2++) A[r2][c2] -= factor*A[col][c2];
+      }
+    }
+    var x = [];
+    for(var i2=0;i2<n;i2++) x.push(A[i2][n]);
+    return x;
+  }
+
+  function computeHomography(src, dst){
+    var A = [], b = [];
+    for(var i=0;i<4;i++){
+      var sx=src[i].x, sy=src[i].y, dx=dst[i].x, dy=dst[i].y;
+      A.push([sx, sy, 1, 0,0,0, -sx*dx, -sy*dx]); b.push(dx);
+      A.push([0,0,0, sx, sy, 1, -sx*dy, -sy*dy]); b.push(dy);
+    }
+    var h = solveLinear8(A, b);
+    return [h[0],h[1],h[2], h[3],h[4],h[5], h[6],h[7],1];
+  }
+
+  function invert3x3(m){
+    var a=m[0],b=m[1],c=m[2], d=m[3],e=m[4],f=m[5], g=m[6],h=m[7],i=m[8];
+    var A = e*i-f*h, B = -(d*i-f*g), C = d*h-e*g;
+    var D = -(b*i-c*h), E = a*i-c*g, F = -(a*h-b*g);
+    var G = b*f-c*e, H = -(a*f-c*d), I = a*e-b*d;
+    var det = a*A + b*B + c*C; if(Math.abs(det) < 1e-12) det = 1e-12;
+    var k = 1/det;
+    return [A*k,D*k,G*k, B*k,E*k,H*k, C*k,F*k,I*k];
+  }
+
+  // Warps srcCanvas into a new dstW x dstH canvas so that the quadrilateral
+  // defined by srcCornersPx maps onto the full destination rectangle.
+  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH){
+    var dstCorners = [ {x:0,y:0}, {x:dstW,y:0}, {x:dstW,y:dstH}, {x:0,y:dstH} ];
+    var H = computeHomography(srcCornersPx, dstCorners);
+    var Hinv = invert3x3(H);
+
+    var sW = srcCanvas.width, sH = srcCanvas.height;
+    var sData = srcCanvas.getContext("2d").getImageData(0,0,sW,sH).data;
+
+    var out = document.createElement("canvas");
+    out.width = dstW; out.height = dstH;
+    var octx = out.getContext("2d");
+    var outImg = octx.createImageData(dstW, dstH);
+    var oData = outImg.data;
+
+    for(var j=0;j<dstH;j++){
+      var Y = j + 0.5;
+      for(var i=0;i<dstW;i++){
+        var X = i + 0.5;
+        var w = Hinv[6]*X + Hinv[7]*Y + Hinv[8];
+        var sx = (Hinv[0]*X + Hinv[1]*Y + Hinv[2]) / w;
+        var sy = (Hinv[3]*X + Hinv[4]*Y + Hinv[5]) / w;
+        var idx = (j*dstW + i) * 4;
+        if(sx >= 0 && sx < sW-1 && sy >= 0 && sy < sH-1){
+          var x0 = sx|0, y0 = sy|0, x1 = x0+1, y1 = y0+1;
+          var fx = sx-x0, fy = sy-y0;
+          var i00=(y0*sW+x0)*4, i10=(y0*sW+x1)*4, i01=(y1*sW+x0)*4, i11=(y1*sW+x1)*4;
+          for(var c=0;c<4;c++){
+            var top = sData[i00+c] + (sData[i10+c]-sData[i00+c])*fx;
+            var bot = sData[i01+c] + (sData[i11+c]-sData[i01+c])*fx;
+            oData[idx+c] = top + (bot-top)*fy;
+          }
+        } else {
+          oData[idx]=oData[idx+1]=oData[idx+2]=oData[idx+3]=0;
+        }
+      }
+    }
+    octx.putImageData(outImg, 0, 0);
+    return out;
+  }
+
+  function cornersToPx(corners, w, h){
+    return corners.map(function(p){ return { x: p.u*w, y: p.v*h }; });
+  }
+
+  // -------- live low-res preview --------
+  var previewPending = false;
+  function schedulePreview(){
+    if(previewPending) return;
+    previewPending = true;
+    requestAnimationFrame(function(){
+      previewPending = false;
+      renderPreview();
+    });
+  }
+  function renderPreview(){
+    if(!state.previewSourceCanvas || !state.refW) return;
+    var pw = 200, ph = Math.round(pw * state.refH / state.refW);
+    var srcPx = cornersToPx(state.corners, state.previewW, state.previewH);
+    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph);
+    previewCanvas.width = pw; previewCanvas.height = ph;
+    var pctx = previewCanvas.getContext("2d");
+    pctx.clearRect(0,0,pw,ph);
+    pctx.drawImage(warped, 0, 0);
+  }
+
+  // -------- confirm alignment (full-resolution bake) --------
+  confirmAlignBtn.addEventListener("click", function(){
+    if(!state.curSourceCanvas || !state.refW) return;
+    confirmAlignBtn.disabled = true;
+    confirmAlignBtn.textContent = "Aligning…";
+    setTimeout(function(){
+      var srcPx = cornersToPx(state.corners, state.curW, state.curH);
+      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH);
+      state.alignedDataUrl = baked.toDataURL("image/jpeg", 0.92);
+      saveStore();
+      enableCompareTabs(true);
+      confirmAlignBtn.disabled = false;
+      confirmAlignBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Align &amp; continue';
+      setMode("compare");
+    }, 30);
+  });
+
+  // ---------------- compare view ----------------
+  function renderCompare(){
+    if(!state.refDataUrl || !state.alignedDataUrl) return;
+    compareFrame.style.setProperty("--ar", state.refW + "/" + state.refH);
+    compareRef.src = state.refDataUrl;
+    compareCur.src = state.alignedDataUrl;
+    compareCur.style.opacity = String(state.opacity / 100);
+    applyGrayscale();
+  }
+
+  opacitySlider.addEventListener("input", function(){
+    state.opacity = Number(opacitySlider.value);
+    compareCur.style.opacity = String(state.opacity/100);
+  });
+
+  var peekPrevOpacity = 100;
+  function peekStart(){
+    peekPrevOpacity = state.opacity;
+    compareCur.style.opacity = "0";
+  }
+  function peekEnd(){
+    compareCur.style.opacity = String(peekPrevOpacity/100);
+  }
+  peekBtn.addEventListener("pointerdown", function(e){ e.preventDefault(); peekStart(); });
+  peekBtn.addEventListener("pointerup", peekEnd);
+  peekBtn.addEventListener("pointercancel", peekEnd);
+  peekBtn.addEventListener("pointerleave", function(){ if(peekPrevOpacity !== undefined) peekEnd(); });
+
+  function applyGrayscale(){
+    var on = state.grayscale;
+    graySwitch.classList.toggle("on", on);
+    graySwitch2.classList.toggle("on", on);
+    [compareRef, compareCur, sideRef, sideCur].forEach(function(img){
+      img.classList.toggle("gray", on);
+    });
+  }
+  function toggleGray(){ state.grayscale = !state.grayscale; applyGrayscale(); }
+  graySwitch.addEventListener("click", toggleGray);
+  graySwitch2.addEventListener("click", toggleGray);
+
+  // ---------------- side-by-side view ----------------
+  function renderSide(){
+    if(!state.refDataUrl || !state.alignedDataUrl) return;
+    var ar = state.refW + "/" + state.refH;
+    sideRef.closest(".frame").style.setProperty("--ar", ar);
+    sideCur.closest(".frame").style.setProperty("--ar", ar);
+    sideRef.src = state.refDataUrl;
+    sideCur.src = state.alignedDataUrl;
+    applyGrayscale();
+  }
+
+  // ---------------- restart ----------------
+  function restart(full){
+    state.refDataUrl = null; state.refW = 0; state.refH = 0;
+    state.alignedDataUrl = null;
+    state.origSourceCanvas = null; state.origW = 0; state.origH = 0; state.cropRect = null;
+    state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    state.subStep = "crop";
+    enableCompareTabs(false);
+    clearStore();
+    refreshSetupUI();
+    setMode("align");
+  }
+  restartBtn.addEventListener("click", function(){ if(confirm("Start a new painting? This clears your reference and painting photos.")) restart(); });
+  footerRestart.addEventListener("click", function(){ if(confirm("Start a new painting? This clears your reference and painting photos.")) restart(); });
+
+  // ---------------- boot ----------------
+  (function boot(){
+    var saved = loadStore();
+    if(saved && saved.ref){
+      state.refDataUrl = saved.ref;
+      state.refW = saved.refW; state.refH = saved.refH;
+      state.alignedDataUrl = saved.aligned || null;
+      refImgObj.src = saved.ref;
+      if(state.alignedDataUrl){
+        enableCompareTabs(true);
+        refreshSetupUI();
+        setMode("compare");
+        return;
+      }
+    }
+    refreshSetupUI();
+    setMode("align");
+  })();
+
+})();
+</script>
+</body>
+</html>
