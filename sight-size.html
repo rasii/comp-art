@@ -142,7 +142,12 @@
     overflow:hidden; touch-action:none;
   }
   .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
-  .pin-stage img{ display:block; width:100%; height:100%; object-fit:fill; }
+  .pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
+  #pinRefImg{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:contain; background: #000;
+    pointer-events:none; opacity:0;
+  }
   .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
   .zoom-reset{
@@ -198,6 +203,7 @@
   }
   .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
   .frame img.gray{ filter: grayscale(1) contrast(1.03); }
+  #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .split{ display:flex; gap:10px; flex-wrap:wrap; }
   .split .pane{ flex:1 1 260px; min-width:0; }
   .pane-label{ font-size:11.5px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
@@ -237,14 +243,6 @@
   .switch.on::after{ transform: translateX(18px); background:#1B1108; }
 
   .divider{ height:1px; background: var(--line); margin: 0 -16px; }
-
-  .peek-btn{
-    width:100%; padding:13px; text-align:center;
-    background: var(--panel-2); border:1px solid var(--line); border-radius: var(--radius);
-    font-size:13.5px; color: var(--ink); font-family:inherit;
-    display:flex; align-items:center; justify-content:center; gap:8px;
-  }
-  .peek-btn:active{ background: var(--sienna); color:#1B1108; border-color:var(--sienna); }
 
   footer{
     text-align:center; padding: 4px 16px 6px; color: var(--ink-dim); font-size:11.5px;
@@ -322,19 +320,28 @@
     <!-- step 2: corner-pin alignment -->
     <div id="alignStageWrap" style="display:none;">
       <div class="pin-stage" id="pinStage">
+        <img id="pinRefImg" alt="Reference photo" draggable="false">
         <div class="pin-inner" id="pinInner">
           <img id="pinImg" alt="Your painting photo" draggable="false">
           <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
-          <div class="handle" id="handle0" data-idx="0"></div>
-          <div class="handle" id="handle1" data-idx="1"></div>
-          <div class="handle" id="handle2" data-idx="2"></div>
-          <div class="handle" id="handle3" data-idx="3"></div>
         </div>
-        <button class="icon-btn zoom-reset" id="zoomResetBtn" title="Reset zoom" aria-label="Reset zoom">
+        <div class="handle" id="handle0" data-idx="0"></div>
+        <div class="handle" id="handle1" data-idx="1"></div>
+        <div class="handle" id="handle2" data-idx="2"></div>
+        <div class="handle" id="handle3" data-idx="3"></div>
+        <button class="icon-btn zoom-reset" id="zoomResetBtn" title="Reset zoom &amp; position" aria-label="Reset zoom and position">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
         </button>
       </div>
-      <p class="hint">Pinch or scroll to zoom in for precision · drag the four points onto the corners of your canvas</p>
+      <p class="hint">Drag the photo to move it, pinch or scroll to zoom · drag the four points onto the corners of your canvas</p>
+
+      <div class="ctrl-row" style="padding:0 2px;">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+          Photo opacity — fade to see the reference underneath
+        </div>
+      </div>
+      <input type="range" id="pinOpacitySlider" min="0" max="100" value="100">
 
       <div class="preview-row">
         <div class="preview-box">
@@ -393,13 +400,9 @@
       <img id="compareRef" alt="Reference photo">
       <img id="compareCur" alt="Your painting, aligned to the reference">
     </div>
+    <p class="hint">Touch and hold the painting to peek at the reference underneath</p>
 
     <div class="panel">
-      <button class="peek-btn" id="peekBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-        Hold to see the reference
-      </button>
-
       <div class="ctrl-row">
         <div class="ctrl-label">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
@@ -502,9 +505,10 @@
   var confirmCropBtn = $("confirmCropBtn");
 
   var alignStageWrap = $("alignStageWrap");
-  var pinStage = $("pinStage"), pinInner = $("pinInner"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
+  var pinStage = $("pinStage"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var zoomResetBtn = $("zoomResetBtn");
+  var pinOpacitySlider = $("pinOpacitySlider");
   var previewCanvas = $("previewCanvas");
   var alignPanel = $("alignPanel");
   var resetAlignBtn = $("resetAlignBtn"), recropBtn = $("recropBtn"), retakeBtn = $("retakeBtn");
@@ -513,7 +517,6 @@
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
   var compareRef = $("compareRef"), compareCur = $("compareCur"), compareFrame = $("compareFrame");
   var opacitySlider = $("opacitySlider");
-  var peekBtn = $("peekBtn");
   var graySwitch = $("graySwitch"), graySwitch2 = $("graySwitch2");
   var retakeFromCompareBtn = $("retakeFromCompareBtn");
 
@@ -835,13 +838,23 @@
 
   function startPinning(){
     pinImg.src = state.curSourceCanvas.toDataURL("image/jpeg", 0.9);
+    pinRefImg.src = state.refDataUrl;
+    pinRefImg.style.opacity = "1";
     pinStage.style.aspectRatio = state.curW + " / " + state.curH;
     previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
     pinInner.style.transform = "translate(0px,0px) scale(1)";
+    pinImg.style.opacity = "1";
+    pinOpacitySlider.value = 100;
     layoutHandles();
     schedulePreview();
   }
 
+  // Handles are siblings of pin-inner (not children of it) so their on-
+  // screen size stays constant regardless of zoom; their position is
+  // derived each time from pin-inner's current (post pan/zoom) rect.
+  // The reference photo is also a sibling of pin-inner — a fixed backdrop
+  // that does not pan or zoom with the photo, so it stays put while you
+  // reposition the photo on top of it.
   function layoutHandles(){
     var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
     pinPoly.setAttribute("points", pts);
@@ -884,6 +897,10 @@
     schedulePreview();
   });
 
+  pinOpacitySlider.addEventListener("input", function(){
+    pinImg.style.opacity = String(Number(pinOpacitySlider.value) / 100);
+  });
+
   // -------- pinch-zoom / pan on the pin stage, for placing corners precisely --------
   var PIN_MAX_ZOOM = 5;
   var bgPointers = {};
@@ -892,9 +909,12 @@
   function clampPinTransform(){
     var rect = pinStage.getBoundingClientRect();
     state.pinZoom = clamp(state.pinZoom, 1, PIN_MAX_ZOOM);
-    var minX = (1-state.pinZoom)*rect.width, minY = (1-state.pinZoom)*rect.height;
-    state.pinPanX = clamp(state.pinPanX, minX, 0);
-    state.pinPanY = clamp(state.pinPanY, minY, 0);
+    // Generous freedom beyond the "tight fit" bound, so the photo can be
+    // dragged into position even at 1x zoom, not just when zoomed in.
+    var freedomX = rect.width * 0.9, freedomY = rect.height * 0.9;
+    var tightMinX = (1-state.pinZoom)*rect.width, tightMinY = (1-state.pinZoom)*rect.height;
+    state.pinPanX = clamp(state.pinPanX, tightMinX - freedomX, freedomX);
+    state.pinPanY = clamp(state.pinPanY, tightMinY - freedomY, freedomY);
   }
   function applyPinTransform(){
     pinInner.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
@@ -1112,18 +1132,22 @@
     compareCur.style.opacity = String(state.opacity/100);
   });
 
-  var peekPrevOpacity = 100;
-  function peekStart(){
-    peekPrevOpacity = state.opacity;
+  var peeking = false;
+  function peekStart(e){
+    if(peeking || !state.alignedDataUrl) return;
+    peeking = true;
+    compareFrame.setPointerCapture(e.pointerId);
     compareCur.style.opacity = "0";
   }
   function peekEnd(){
-    compareCur.style.opacity = String(peekPrevOpacity/100);
+    if(!peeking) return;
+    peeking = false;
+    compareCur.style.opacity = String(state.opacity/100);
   }
-  peekBtn.addEventListener("pointerdown", function(e){ e.preventDefault(); peekStart(); });
-  peekBtn.addEventListener("pointerup", peekEnd);
-  peekBtn.addEventListener("pointercancel", peekEnd);
-  peekBtn.addEventListener("pointerleave", function(){ if(peekPrevOpacity !== undefined) peekEnd(); });
+  compareFrame.addEventListener("pointerdown", function(e){ e.preventDefault(); peekStart(e); });
+  compareFrame.addEventListener("pointerup", peekEnd);
+  compareFrame.addEventListener("pointercancel", peekEnd);
+  compareFrame.addEventListener("pointerleave", peekEnd);
 
   function applyGrayscale(){
     var on = state.grayscale;
