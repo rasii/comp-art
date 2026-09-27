@@ -241,25 +241,23 @@ input[type=file]{ display:none; }
 .pick-marker.touch.below .pm-stem{ top:3px; }
 
 /* ---------- colour readout card ---------- */
-.color-card{ gap:8px; padding: 12px 14px; }
+/* compact: swatches, one line of caption + notation under each, then the
+   difference. Same height whether empty or filled, so the images don't
+   change size when a reading appears. */
+.color-card{ gap:0; padding: 10px 14px; min-height: 104px; justify-content:center; }
 .cc-empty{ margin:0; font-size:12.5px; color: var(--ink-dim); text-align:center; }
-.cc-body{ display:flex; flex-direction:column; gap:6px; }
+.cc-body{ display:flex; flex-direction:column; gap:5px; }
 .cc-body[hidden]{ display:none; }
-.cc-row{
-  display:grid; grid-template-columns: 76px 1fr; align-items:baseline; gap:8px;
-  font-size:13px; font-variant-numeric: tabular-nums;
-}
-.cc-name{ color: var(--ink-dim); }
-.cc-mun{ font-weight:600; letter-spacing:0.2px; }
-.cc-note{ margin:0; font-size:11px; color: var(--ink-dim); }
 .cc-swatches{
-  display:flex; height:44px; margin-top:4px;
+  display:flex; height:36px;
   border:1px solid var(--line); border-radius: var(--radius); overflow:hidden;
 }
 .cc-swatches > div{ flex:1; }
-.cc-swlabels{ display:flex; font-size:11px; color: var(--ink-dim); margin-top:-2px; }
-.cc-swlabels span{ flex:1; text-align:center; }
-.cc-diff{ margin:2px 0 0; font-size:13px; line-height:1.4; }
+.cc-labels{ display:flex; font-size:12.5px; font-variant-numeric: tabular-nums; }
+.cc-labels > span{ flex:1; text-align:center; white-space:nowrap; }
+.cc-name{ color: var(--ink-dim); }
+.cc-mun{ font-weight:600; letter-spacing:0.2px; }
+.cc-diff{ margin:1px 0 0; font-size:13px; line-height:1.35; text-align:center; }
 /* side by side: stacked or in a row, whichever gives the bigger images
    (chosen in app.js from the space and the photo's shape) */
 .side-fit{ display:block; }

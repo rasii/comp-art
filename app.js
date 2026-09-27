@@ -63,7 +63,7 @@
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
   var ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
   var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun");
-  var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff"), ccNote = $("ccNote");
+  var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
 
   var toastEl = $("toast");
   var confirmModal = $("confirmModal"), confirmMsg = $("confirmMsg"), confirmOk = $("confirmOk"), confirmCancel = $("confirmCancel");
@@ -256,7 +256,7 @@
       ccDiff.textContent = "No painting at this spot.";
     }
     var side = 2*patchRadius(state.ref) + 1;
-    ccNote.textContent = "Hue and chroma are the nearest Munsell chip; value is measured. Each reading averages a " + side + "×" + side + " pixel patch.";
+    colorCard.title = "Hue and chroma are the nearest Munsell chip; value is measured. Each reading averages a " + side + "×" + side + " pixel patch.";
   }
 
   // Marker at image-normalized (u,v), positioned in the frame's pixels so it
