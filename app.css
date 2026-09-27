@@ -1,0 +1,326 @@
+:root{
+  color-scheme: dark;
+  --ink:        #EDE6D9;
+  --ink-dim:    #A79C8B;
+  --bg:         #181613;
+  --panel:      #211E19;
+  --panel-2:    #292420;
+  --line:       #3A342C;
+  --sienna:     #C1712F;
+  --sienna-dim: #8C531F;
+  --radius: 3px;
+  box-sizing: border-box;
+}
+*,*::before,*::after{ box-sizing: inherit; }
+html{ height:100%; }
+html,body{
+  margin:0; padding:0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  min-height: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;   /* no iOS long-press callout (save image, copy, etc.) */
+  -webkit-user-select: none; user-select: none;
+}
+/* The page is exactly one screen tall: header + main. Main
+   scrolls only if a very small screen can't fit the minimum layout. */
+body{
+  display:flex; flex-direction:column;
+  height: 100vh; height: 100dvh;
+  overflow: hidden;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+           env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+img{ -webkit-user-drag:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+
+/* ---------- header ---------- */
+header{
+  flex: 0 0 auto;
+  z-index: 20;
+  display:flex; align-items:baseline; justify-content:space-between; gap: 12px;
+  padding: 12px 18px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+header .brand{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+h1{
+  font-family:"Fraunces", Georgia, serif;
+  font-weight:600; font-size: 21px; letter-spacing:0.2px;
+  margin:0; white-space:nowrap;
+}
+header p{
+  margin:0; font-size:12.5px; color: var(--ink-dim);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.icon-btn{
+  flex: 0 0 auto;
+  display:flex; align-items:center; justify-content:center;
+  width:34px; height:34px; padding:0;
+  background:transparent; border:1px solid var(--line); border-radius: var(--radius);
+  color: var(--ink-dim);
+}
+/* explicit size: iOS Safari collapses a size-less SVG inside a flex button */
+.icon-btn svg{ display:block; width:18px; height:18px; flex:0 0 auto; }
+.icon-btn:active{ background: var(--panel-2); }
+.icon-btn[hidden]{ display:none; }
+.icon-btn.on{ color: var(--sienna); border-color: var(--sienna); }
+.header-btns{ display:flex; gap:8px; flex:0 0 auto; align-self:center; }
+.opacity-row input[type=range]{ flex:1; min-width:0; }
+.opacity-row .ctrl-label{ flex:0 0 auto; }
+
+/* ---------- layout ---------- */
+main{
+  flex:1 1 auto; min-height:0; overflow-y:auto;
+  display:flex; flex-direction:column;
+  max-width: 1400px; width:100%; margin: 0 auto;
+  padding: 12px 16px;
+  gap: 12px;
+}
+main > section{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+
+/* ---------- fit-to-screen layout ----------
+   .step  = one screen of work: an image area (.fit) plus its controls.
+   .fit   = takes all leftover space; its .fitted child is scaled to the
+            largest size that fits while keeping the photo's aspect ratio
+            (--ar, e.g. "1100 / 825"). */
+.step{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+.fit{
+  flex:1 1 0; min-height:220px; min-width:0;
+  container-type: size;
+  display:flex; align-items:center; justify-content:center;
+}
+.fit > .fitted{
+  flex:0 0 auto;
+  width: min(100cqw, calc(100cqh * var(--ar, 1)));
+  aspect-ratio: var(--ar, 1);
+}
+/* room for corner handles to hang over the edge of the align stage */
+.fit.fit-pad{ padding: 15px; }
+.controls{ flex:0 0 auto; display:flex; flex-direction:column; gap:12px; }
+
+/* Landscape tablets / wide screens: controls in a column beside the image. */
+@media (orientation: landscape) and (min-width: 700px){
+  .step{ flex-direction:row; min-height:0; }
+  .step .fit{ min-height:0; }
+  .step .controls{ width: 320px; min-height:0; overflow-y:auto; }
+}
+
+/* ---------- tabs ---------- */
+nav.tabs{
+  display:flex; gap:2px;
+  background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+  padding: 3px;
+}
+nav.tabs button{
+  flex:1; padding:9px 6px; font-size:13.5px; font-weight:500;
+  background:transparent; border:none; color: var(--ink-dim); border-radius: 2px;
+  font-family: inherit;
+}
+nav.tabs button.active{ background: var(--panel-2); color: var(--ink); }
+nav.tabs button:disabled{ opacity:0.35; }
+
+/* ---------- generic buttons ---------- */
+button{ cursor:pointer; -webkit-appearance:none; appearance:none; touch-action: manipulation; }
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  padding: 11px 16px; font-size: 14px; font-weight:500;
+  border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink);
+  font-family: inherit;
+}
+.btn:active{ background: var(--panel-2); }
+.btn.primary{ background: var(--sienna); border-color: var(--sienna); color:#1B1108; font-weight:600; }
+.btn.primary:active{ background: var(--sienna-dim); }
+.btn.ghost{ background:transparent; }
+.btn.small{ padding:7px 11px; font-size:12.5px; }
+.btn.full{ width:100%; }
+.btn svg{ width:16px; height:16px; flex:0 0 auto; }
+.row{ display:flex; gap:10px; flex-wrap:wrap; }
+.row.stretch > *{ flex:1; }
+
+input[type=file]{ display:none; }
+
+/* ---------- stage ---------- */
+.stage{
+  position:relative;
+  width:100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  touch-action: none;
+}
+
+/* ---------- corner-pin ---------- */
+/* The stage itself doesn't clip, so the corner handles stay fully visible
+   and touchable even in the extreme corners; .pin-clip clips the zoomed view. */
+.pin-stage{
+  position:relative; width:100%;
+  background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+  touch-action:none;
+}
+.pin-clip{ position:absolute; inset:0; overflow:hidden; border-radius: var(--radius); }
+.pin-view{ position:absolute; inset:0; transform-origin: 0 0; }
+.pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
+.pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
+/* the reference, perspective-warped (CSS matrix3d) into the four-point
+   quad beneath the photo, so fading the photo shows how well they match */
+.pin-inner #pinRefImg{
+  width:auto; height:auto; max-width:none;
+  transform-origin: 0 0;
+  pointer-events:none;
+}
+.pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
+.handle{
+  position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+  border-radius:50%; background: var(--sienna); border:2px solid #1B1108;
+  box-shadow: 0 0 0 3px rgba(193,113,47,0.28);
+  touch-action:none; z-index:5;
+}
+.empty{
+  padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
+  max-width: 320px;
+}
+.empty strong{ display:block; color: var(--ink); font-size:15px; margin-bottom:6px; font-weight:600; }
+
+/* ---------- compare / side-by-side frame ---------- */
+.frame{
+  position:relative; width:100%; border-radius: var(--radius); overflow:hidden;
+  background: var(--panel); border:1px solid var(--line);
+  aspect-ratio: var(--ar, 1);
+}
+.frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+.frame img.gray{ filter: grayscale(1) contrast(1.03); }
+#compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
+#compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
+.side-frame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
+#compareCardSlot, #sideCardSlot{ display: contents; }
+
+/* colour-reading marker: a ring on the sampled spot (mouse/pen), or for
+   touch a ring lifted above the fingertip with a stem down to the spot */
+.pick-marker{ position:absolute; width:0; height:0; z-index:3; pointer-events:none; }
+.pick-marker[hidden]{ display:none; }
+.pick-marker span{ position:absolute; display:block; }
+.pm-ring{
+  left:-14px; top:-14px; width:28px; height:28px; border-radius:50%;
+  border:2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.6);
+  background-clip: padding-box;
+}
+.pm-dot, .pm-stem{ display:none !important; }
+.pick-marker.touch .pm-ring{ top:-76px; }
+.pick-marker.touch .pm-stem{
+  display:block !important; left:-1px; top:-48px; width:2px; height:45px;
+  background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
+}
+.pick-marker.touch .pm-dot{
+  display:block !important; left:-3px; top:-3px; width:6px; height:6px; border-radius:50%;
+  background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6);
+}
+/* near the top edge there's no room above the finger: flip the ring below */
+.pick-marker.touch.below .pm-ring{ top:48px; }
+.pick-marker.touch.below .pm-stem{ top:3px; }
+
+/* ---------- colour readout card ---------- */
+.color-card{ gap:8px; padding: 12px 14px; }
+.cc-empty{ margin:0; font-size:12.5px; color: var(--ink-dim); text-align:center; }
+.cc-body{ display:flex; flex-direction:column; gap:6px; }
+.cc-body[hidden]{ display:none; }
+.cc-row{
+  display:grid; grid-template-columns: 76px 1fr; align-items:baseline; gap:8px;
+  font-size:13px; font-variant-numeric: tabular-nums;
+}
+.cc-name{ color: var(--ink-dim); }
+.cc-mun{ font-weight:600; letter-spacing:0.2px; }
+.cc-note{ margin:0; font-size:11px; color: var(--ink-dim); }
+.cc-swatches{
+  display:flex; height:44px; margin-top:4px;
+  border:1px solid var(--line); border-radius: var(--radius); overflow:hidden;
+}
+.cc-swatches > div{ flex:1; }
+.cc-swlabels{ display:flex; font-size:11px; color: var(--ink-dim); margin-top:-2px; }
+.cc-swlabels span{ flex:1; text-align:center; }
+.cc-diff{ margin:2px 0 0; font-size:13px; line-height:1.4; }
+/* side by side: stacked when the space is tall, in a row when it's wide */
+.side-fit{ display:block; }
+.split{
+  height:100%; display:flex; flex-direction:column; gap:10px;
+  align-items:center; justify-content:center;
+}
+.split .pane{ flex:0 0 auto; }
+.split .frame{ width: min(100cqw, calc((50cqh - 5px - 22px) * var(--ar, 1))); }
+@container (min-aspect-ratio: 1/1){
+  .split{ flex-direction:row; }
+  .split .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
+}
+.pane-label{ font-size:11.5px; line-height:16px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
+
+/* ---------- controls panel ---------- */
+.panel{
+  background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+  padding: 14px 16px 16px;
+  display:flex; flex-direction:column; gap:14px;
+}
+.ctrl-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+.ctrl-label{ font-size:13px; color: var(--ink); display:flex; align-items:center; gap:8px; }
+.ctrl-label svg{ width:16px; height:16px; color: var(--ink-dim); flex:0 0 auto; }
+
+input[type=range]{
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:28px; background:transparent;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  height:3px; background: var(--line); border-radius:2px;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none;
+  width:19px; height:19px; margin-top:-8px; border-radius:50%;
+  background: var(--sienna); border:2px solid #1B1108;
+}
+
+.switch{
+  position:relative; width:42px; height:24px; flex:0 0 auto;
+  background: var(--line); border-radius: 12px; border:none; padding:0;
+}
+.switch::after{
+  content:""; position:absolute; top:2px; left:2px; width:20px; height:20px;
+  background: var(--ink-dim); border-radius:50%; transition: transform .15s ease, background .15s ease;
+}
+.switch.on{ background: var(--sienna-dim); }
+.switch.on::after{ transform: translateX(18px); background:#1B1108; }
+
+.divider{ height:1px; background: var(--line); margin: 0 -16px; }
+
+
+.toast{
+  position: fixed; left:50%; bottom: calc(18px + env(safe-area-inset-bottom,0px));
+  transform: translateX(-50%);
+  background: #2A251F; border:1px solid var(--line); color: var(--ink);
+  padding: 11px 16px; border-radius: var(--radius); font-size:13px;
+  max-width: 88vw; text-align:center; z-index:50;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35);
+  opacity:0; pointer-events:none; transition: opacity .2s ease, transform .2s ease;
+}
+.toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
+
+/* in-page confirm dialog (native confirm() is silently blocked in some
+   embedded browsers and home-screen web apps) */
+.modal{
+  position:fixed; inset:0; z-index:60;
+  display:none; align-items:center; justify-content:center;
+  padding: 24px; background: rgba(10,9,7,0.6);
+}
+.modal.show{ display:flex; }
+.modal-box{
+  width: min(360px, 100%);
+  background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+  padding: 18px 18px 16px; display:flex; flex-direction:column; gap:16px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.45);
+}
+.modal-box p{ margin:0; font-size:14.5px; line-height:1.5; }
+
+@media (min-width: 720px){
+  .stage{ min-height: 420px; }
+}
