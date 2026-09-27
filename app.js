@@ -41,10 +41,11 @@
   var refInput = $("refInput"), curInput = $("curInput");
 
   var alignStageWrap = $("alignStageWrap");
-  var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
+  var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg");
+  var pinPoly = $("pinPoly"), pinPolyHalo = $("pinPolyHalo"), loupe = $("loupe");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var pinOpacitySlider = $("pinOpacitySlider");
-  var resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
+  var zoomFitBtn = $("zoomFitBtn"), resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
   var confirmAlignBtn = $("confirmAlignBtn"), confirmAlignHTML = confirmAlignBtn.innerHTML;
 
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
@@ -166,7 +167,7 @@
     if(m === "align"){
       hint = !hasRef ? "reference → painting → compare"
            : !hasPhoto ? "now photograph your painting"
-           : "drag the points to the canvas corners · pinch to zoom";
+           : "drag the points to the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
     } else {
@@ -191,6 +192,8 @@
       pinStage.style.setProperty("--ar", state.photo.w + " / " + state.photo.h);
       pinImg.style.opacity = String(state.pinOpacity/100);
       if(pinOpacitySlider.value != state.pinOpacity) pinOpacitySlider.value = state.pinOpacity;
+      zoomFitBtn.textContent = pinZoom.z > 1 ? "Show whole photo" : "Zoom to painting";
+      pinZoom.apply();
       if(m === "align") layoutHandles();
     }
 
@@ -330,8 +333,9 @@
       ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
       if(count() === 1){
         var now = Date.now();
-        if(now - lastTap < 350 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 30 && zoom.z > 1){
-          lastTap = 0; zoom.reset(); onChange(); return;
+        if(now - lastTap < 350 && Math.hypot(e.clientX - lastX, e.clientY - lastY) < 30){
+          if(single.doubleTap){ lastTap = 0; delete ptrs[e.pointerId]; single.doubleTap(); return; }
+          if(zoom.z > 1){ lastTap = 0; zoom.reset(); onChange(); return; }
         }
         lastTap = now; lastX = e.clientX; lastY = e.clientY;
         if(zoom.z > 1 && single.panOnly){ begin(); return; }
@@ -419,10 +423,12 @@
     curInput.value = "";
     if(!f) return;
     decodeToCanvas(f, SRC_MAX).then(function(im){
-      setPhoto(im, null);
+      var reused = setPhoto(im, null);
       state.aligned = null; state.reading = null;
       state.mode = "align";
       render();
+      // reused corners are already close: zoom in so they're easy to fine-tune
+      if(reused) requestAnimationFrame(zoomToPainting);
       persistBlob("photo", f);
       Store.remove("aligned").catch(function(){});
       persistMeta();
@@ -439,6 +445,7 @@
     state.corners = corners ? corners.map(copyPt) : sameShape ? last.pts.map(copyPt) : defaultCorners();
     state.pinOpacity = 100;
     pinZoom.reset();
+    return !corners && sameShape; // corners were reused from the last alignment
   }
   function copyPt(p){ return { u: p.u, v: p.v }; }
   function defaultCorners(){
@@ -457,19 +464,96 @@
   function cornersToPx(corners, w, h){
     return corners.map(function(p){ return { x: p.u*w, y: p.v*h }; });
   }
+  // Stage-relative px of corner i (absolute children are placed from the
+  // padding edge, inside the border).
+  function cornerStagePos(i){
+    var stageRect = pinStage.getBoundingClientRect(), innerRect = pinInner.getBoundingClientRect();
+    var p = state.corners[i];
+    return {
+      x: innerRect.left - (stageRect.left + pinStage.clientLeft) + p.u*innerRect.width,
+      y: innerRect.top  - (stageRect.top  + pinStage.clientTop)  + p.v*innerRect.height
+    };
+  }
   function layoutHandles(){
     if(!state.corners) return;
-    pinPoly.setAttribute("points", state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" "));
+    var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
+    pinPoly.setAttribute("points", pts);
+    pinPolyHalo.setAttribute("points", pts);
     layoutRefOverlay();
-    // absolute children are placed from the padding edge, inside the border
-    var stageRect = pinStage.getBoundingClientRect(), innerRect = pinInner.getBoundingClientRect();
-    var ox = stageRect.left + pinStage.clientLeft, oy = stageRect.top + pinStage.clientTop;
     handles.forEach(function(h, i){
-      var p = state.corners[i];
-      h.style.left = (innerRect.left - ox + p.u*innerRect.width) + "px";
-      h.style.top  = (innerRect.top  - oy + p.v*innerRect.height) + "px";
+      var pos = cornerStagePos(i);
+      h.style.left = pos.x + "px";
+      h.style.top  = pos.y + "px";
     });
+    if(activeHandle != null) drawLoupe(activeHandle);
   }
+
+  // Zooms the align view so the four points fill the stage (with a margin),
+  // or back out to the whole photo if already zoomed.
+  function zoomToPainting(){
+    if(!state.corners) return;
+    var us = state.corners.map(function(p){ return p.u; }), vs = state.corners.map(function(p){ return p.v; });
+    var u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us);
+    var v0 = Math.min.apply(null, vs), v1 = Math.max.apply(null, vs);
+    var bw = Math.max(0.02, u1 - u0), bh = Math.max(0.02, v1 - v0);
+    var z = clamp(Math.min(0.84/bw, 0.84/bh), 1, PIN_MAX_ZOOM);
+    if(z <= 1.02){ pinZoom.reset(); }
+    else {
+      pinZoom.z = z;
+      pinZoom.pu = 0.5 - (u0 + u1)/2 * z;
+      pinZoom.pv = 0.5 - (v0 + v1)/2 * z;
+      pinZoom.clampPan();
+    }
+    render();
+  }
+  function toggleZoomToPainting(){
+    if(pinZoom.z > 1){ pinZoom.reset(); render(); } else zoomToPainting();
+  }
+
+  // Magnifier: the photo around the held corner at 3x what's on screen,
+  // with the outline to the neighbouring corners and a crosshair at the
+  // exact point. Sits above the fingertip, or below it near the top.
+  var LOUPE_D = 140, LOUPE_MAG = 3;
+  function drawLoupe(i){
+    if(!state.photo) return;
+    var dpr = window.devicePixelRatio || 1;
+    if(loupe.width !== LOUPE_D*dpr){ loupe.width = LOUPE_D*dpr; loupe.height = LOUPE_D*dpr; }
+    var ctx = loupe.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var innerRect = pinInner.getBoundingClientRect();
+    var scale = innerRect.width / state.photo.w * LOUPE_MAG; // loupe px per photo px
+    var p = state.corners[i], cx = p.u*state.photo.w, cy = p.v*state.photo.h, R = LOUPE_D/2, srcR = R/scale;
+
+    ctx.clearRect(0, 0, LOUPE_D, LOUPE_D);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(R, R, R, 0, Math.PI*2); ctx.clip();
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, LOUPE_D, LOUPE_D);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(state.photo.canvas, cx - srcR, cy - srcR, 2*srcR, 2*srcR, 0, 0, LOUPE_D, LOUPE_D);
+
+    // outline to the neighbouring corners
+    ctx.lineWidth = 2; ctx.strokeStyle = "#C1712F"; ctx.lineCap = "round";
+    [(i+3)%4, (i+1)%4].forEach(function(j){
+      var q = state.corners[j];
+      ctx.beginPath(); ctx.moveTo(R, R);
+      ctx.lineTo(R + (q.u*state.photo.w - cx)*scale, R + (q.v*state.photo.h - cy)*scale);
+      ctx.stroke();
+    });
+    // crosshair
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(255,255,255,.9)";
+    ctx.beginPath(); ctx.moveTo(R-14, R); ctx.lineTo(R-4, R); ctx.moveTo(R+4, R); ctx.lineTo(R+14, R);
+    ctx.moveTo(R, R-14); ctx.lineTo(R, R-4); ctx.moveTo(R, R+4); ctx.lineTo(R, R+14); ctx.stroke();
+    ctx.beginPath(); ctx.arc(R, R, 2, 0, Math.PI*2); ctx.fillStyle = "#fff"; ctx.fill();
+    ctx.restore();
+
+    var pos = cornerStagePos(i), lift = 110;
+    var y = pos.y - lift;
+    if(y - R < -10) y = pos.y + lift; // no room above: show below
+    loupe.style.left = pos.x + "px";
+    loupe.style.top = y + "px";
+    loupe.hidden = false;
+  }
+  function hideLoupe(){ loupe.hidden = true; }
   // Maps the reference image (w x h box) onto the corner quad with a CSS
   // matrix3d built from the same homography used for the final warp.
   function layoutRefOverlay(){
@@ -494,6 +578,7 @@
       e.preventDefault(); e.stopPropagation();
       activeHandle = i;
       capturePointer(h, e);
+      drawLoupe(i);
     });
     h.addEventListener("pointermove", function(e){
       if(activeHandle !== i) return;
@@ -504,16 +589,18 @@
       };
       layoutHandles();
     });
-    function release(){ if(activeHandle === i){ activeHandle = null; persistMeta(); } }
+    function release(){ if(activeHandle === i){ activeHandle = null; hideLoupe(); persistMeta(); } }
     h.addEventListener("pointerup", release);
     h.addEventListener("pointercancel", release);
   });
 
   attachGestures(pinStage, pinZoom, {
     ignore: function(e){ return !!e.target.closest(".handle") || !state.photo; },
-    panOnly: true
-  }, function(){ pinZoom.apply(); layoutHandles(); });
+    panOnly: true,
+    doubleTap: toggleZoomToPainting
+  }, function(){ pinZoom.apply(); layoutHandles(); render(); });
 
+  zoomFitBtn.addEventListener("click", toggleZoomToPainting);
   pinOpacitySlider.addEventListener("input", function(){ state.pinOpacity = Number(pinOpacitySlider.value); render(); });
   resetAlignBtn.addEventListener("click", function(){
     if(!state.photo) return;

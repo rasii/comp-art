@@ -56,7 +56,7 @@
               <div class="pin-inner" id="pinInner">
                 <img id="pinRefImg" alt="Reference photo" draggable="false">
                 <img id="pinImg" alt="Your painting photo" draggable="false">
-                <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+                <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPolyHalo" class="halo" points=""></polygon><polygon id="pinPoly" points=""></polygon></svg>
               </div>
             </div>
           </div>
@@ -64,6 +64,7 @@
           <div class="handle" id="handle1" data-idx="1"></div>
           <div class="handle" id="handle2" data-idx="2"></div>
           <div class="handle" id="handle3" data-idx="3"></div>
+          <canvas class="loupe" id="loupe" hidden></canvas>
         </div>
       </div>
       <div class="controls">
@@ -77,6 +78,7 @@
           </div>
 
           <div class="row stretch">
+            <button class="btn small" id="zoomFitBtn">Zoom to painting</button>
             <button class="btn small" id="resetAlignBtn">Reset</button>
             <button class="btn small" id="retakeBtn">Retake photo</button>
           </div>
