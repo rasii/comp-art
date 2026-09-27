@@ -65,7 +65,8 @@ header p{
 .icon-btn:active{ background: var(--panel-2); }
 .icon-btn[hidden]{ display:none; }
 .icon-btn.on{ color: var(--sienna); border-color: var(--sienna); }
-.header-btns{ display:flex; gap:8px; flex:0 0 auto; align-self:center; }
+.header-btns{ display:flex; gap:8px; flex:0 0 auto; align-self:center; align-items:center; }
+.version{ font-size:11px; color: var(--ink-dim); margin-right:4px; white-space:nowrap; }
 .opacity-row input[type=range]{ flex:1; min-width:0; }
 .opacity-row .ctrl-label{ flex:0 0 auto; }
 

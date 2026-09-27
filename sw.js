@@ -2,10 +2,11 @@
 // studio without wifi). Same-origin requests go network-first so updates
 // arrive as soon as there's a connection, falling back to the cache.
 // Fonts are cached on first use.
-var CACHE = "compart-v2";
+importScripts("version.js");
+var CACHE = "compart-" + self.APP_VERSION;
 var SHELL = [
   "./", "index.html", "app.css", "app.js", "store.js", "warp.js", "warp-worker.js",
-  "munsell.js", "munsell-data.js", "apple-touch-icon.png"
+  "munsell.js", "munsell-data.js", "version.js", "apple-touch-icon.png"
 ];
 
 self.addEventListener("install", function(e){

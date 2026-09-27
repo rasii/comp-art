@@ -68,6 +68,8 @@
   var toastEl = $("toast");
   var confirmModal = $("confirmModal"), confirmMsg = $("confirmMsg"), confirmOk = $("confirmOk"), confirmCancel = $("confirmCancel");
 
+  $("versionLabel").textContent = "v" + (window.APP_VERSION || "?");
+
   // Suppress long-press / right-click context menus and text selection
   // everywhere, so holding on an image never pops up browser actions.
   document.addEventListener("contextmenu", function(e){ e.preventDefault(); });

@@ -20,6 +20,7 @@ saved to the home screen, but works on any modern browser.
 | `munsell-data.js` | Munsell renotation chip data (RIT MCSL `real.dat`) |
 | `store.js` | IndexedDB key/value store for the photos, corners and offsets |
 | `sw.js` | Service worker so the app opens offline |
+| `version.js` | Version string shown in the header; bump it on every release (it also names the offline cache) |
 | `apple-touch-icon.png` | Home-screen icon |
 
 ## Developing
