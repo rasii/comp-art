@@ -176,12 +176,13 @@
   .pin-view{ position:absolute; inset:0; transform-origin: 0 0; }
   .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
   .pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
-  #pinRefImg{
-    position:absolute; inset:0; width:100%; height:100%;
-    object-fit:contain; background: #000;
-    pointer-events:none; opacity:0;
-  }
-  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  /* the reference, perspective-warped (CSS matrix3d) into the four-point
+     quad beneath the photo, so fading the photo shows how well they match */
+  .pin-inner #pinRefImg{
+    width:auto; height:auto; max-width:none;
+    transform-origin: 0 0;
+    pointer-events:none;
+  }  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
   .handle{
     position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
@@ -218,6 +219,7 @@
   .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
   .frame img.gray{ filter: grayscale(1) contrast(1.03); }
   #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
+  #compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
   /* side by side: stacked when the space is tall, in a row when it's wide */
   .side-fit{ display:block; }
   .split{
@@ -334,8 +336,8 @@
       <div class="fit">
         <div class="pin-stage fitted" id="pinStage">
           <div class="pin-view" id="pinView">
-            <img id="pinRefImg" alt="Reference photo" draggable="false">
             <div class="pin-inner" id="pinInner">
+              <img id="pinRefImg" alt="Reference photo" draggable="false">
               <img id="pinImg" alt="Your painting photo" draggable="false">
               <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
             </div>
@@ -347,7 +349,7 @@
         </div>
       </div>
       <div class="controls">
-        <p class="hint">Drag the four points onto the corners of your canvas · drag the photo to nudge it against the reference · pinch or scroll to zoom in</p>
+        <p class="hint">Drag the four points onto the corners of your canvas · fade the photo to check it against the reference · pinch or scroll to zoom in</p>
 
         <div class="panel" id="alignPanel">
           <div class="ctrl-row">
@@ -418,7 +420,7 @@
       </div>
     </div>
     <div class="controls">
-    <p class="hint">Touch and hold the painting to peek at the reference underneath</p>
+    <p class="hint" id="compareHint">Touch and hold the painting to peek at the reference underneath</p>
 
     <div class="panel">
       <div class="ctrl-row">
@@ -428,6 +430,17 @@
         </div>
       </div>
       <input type="range" id="opacitySlider" min="0" max="100" value="100">
+
+      <div class="divider"></div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+          Adjust position — drag the painting
+        </div>
+        <button class="switch" id="adjustSwitch" aria-label="Toggle position adjustment"></button>
+      </div>
+      <button class="btn ghost full small" id="resetPosBtn" style="display:none;">Reset position</button>
 
       <div class="divider"></div>
 
@@ -506,8 +519,9 @@
     curSourceCanvas: null, curW: 0, curH: 0,   // working-res painting photo, corner-pin source
     previewSourceCanvas: null, previewW: 0, previewH: 0, // small copy for live preview
     corners: null,              // 4 {u,v} normalized points, order TL,TR,BR,BL
-    pinZoom: 1, pinPanX: 0, pinPanY: 0, // view-only zoom/pan (reference + photo together)
-    nudgeU: 0, nudgeV: 0,       // photo shifted against the reference, as a fraction of the stage size
+    pinZoom: 1, pinPanX: 0, pinPanY: 0, // view-only zoom/pan on the align stage
+    offU: 0, offV: 0,           // aligned painting shifted against the reference (compare), fraction of its size
+    adjusting: false,           // compare view: drag moves the painting instead of peeking
     mode: "align",
     grayscale: false,
     opacity: 100
@@ -540,6 +554,7 @@
   var opacitySlider = $("opacitySlider");
   var graySwitch = $("graySwitch"), graySwitch2 = $("graySwitch2");
   var retakeFromCompareBtn = $("retakeFromCompareBtn");
+  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), compareHint = $("compareHint");
 
   var sideRef = $("sideRef"), sideCur = $("sideCur");
 
@@ -588,11 +603,13 @@
     try{
       var payload = JSON.stringify({
         ref: state.refDataUrl, refW: state.refW, refH: state.refH,
-        aligned: state.alignedDataUrl
+        aligned: state.alignedDataUrl,
+        offU: state.offU, offV: state.offV
       });
       localStorage.setItem(STORE_KEY, payload);
     }catch(e){
-      toast("Your photos are too large to keep saved between visits, but this session works fine.");
+      if(!saveStore.warned) toast("Your photos are too large to keep saved between visits, but this session works fine.");
+      saveStore.warned = true;
     }
   }
 
@@ -733,7 +750,6 @@
 
     state.corners = defaultCorners();
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
-    state.nudgeU = 0; state.nudgeV = 0;
   }
 
   // ================== corner-pin perspective engine ==================
@@ -764,16 +780,16 @@
     schedulePreview();
   }
 
-  // Layers: pin-view holds the reference and pin-inner (the photo). Zooming
-  // and panning transform pin-view, so the reference and photo magnify
-  // together — purely a viewing aid. Dragging the photo translates pin-inner
-  // inside pin-view (the "nudge"), shifting the photo against the reference;
-  // that shift is carried into the aligned result.
-  // Handles are siblings of pin-view so their on-screen size stays constant
-  // regardless of zoom; their position is derived from pin-inner's rect.
+  // Layers: pin-view is zoomed/panned as a whole (a viewing aid only). Inside
+  // it, pin-inner holds the photo and, beneath it, the reference warped into
+  // the four-point quad — so fading the photo shows the reference at the
+  // painting's size and perspective. Handles are siblings of pin-view so
+  // their on-screen size stays constant regardless of zoom; their position
+  // is derived from pin-inner's rect.
   function layoutHandles(){
     var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
     pinPoly.setAttribute("points", pts);
+    layoutRefOverlay();
     var stageRect = pinStage.getBoundingClientRect();
     var innerRect = pinInner.getBoundingClientRect();
     handles.forEach(function(h, i){
@@ -806,11 +822,29 @@
     h.addEventListener("pointercancel", release);
   });
 
+  // Maps the reference image (refW x refH box) onto the corner quad with a
+  // CSS matrix3d built from the same homography used for the final warp.
+  function layoutRefOverlay(){
+    if(!state.refW || !state.corners) return;
+    var w = pinInner.offsetWidth, h = pinInner.offsetHeight;
+    if(!w || !h) return;
+    var src = [ {x:0,y:0}, {x:state.refW,y:0}, {x:state.refW,y:state.refH}, {x:0,y:state.refH} ];
+    var dst = cornersToPx(state.corners, w, h);
+    var m = computeHomography(src, dst);
+    pinRefImg.style.width = state.refW + "px";
+    pinRefImg.style.height = state.refH + "px";
+    pinRefImg.style.transform = "matrix3d(" + [
+      m[0], m[3], 0, m[6],
+      m[1], m[4], 0, m[7],
+      0,    0,    1, 0,
+      m[2], m[5], 0, m[8]
+    ].join(",") + ")";
+  }
+
   resetAlignBtn.addEventListener("click", function(){
     if(!state.curSourceCanvas) return;
     state.corners = defaultCorners();
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
-    state.nudgeU = 0; state.nudgeV = 0;
     applyPinTransform();
     schedulePreview();
   });
@@ -819,11 +853,8 @@
     pinImg.style.opacity = String(Number(pinOpacitySlider.value) / 100);
   });
 
-  // -------- gestures on the pin stage --------
-  // one finger / mouse drag  → nudge the photo against the reference
-  // two-finger pinch or pan, or scroll wheel → zoom/pan the view (both layers)
+  // -------- pinch-zoom / pan of the align view, for placing corners precisely --------
   var PIN_MAX_ZOOM = 5;
-  var NUDGE_MAX = 0.5; // photo can be shifted up to half the stage size
   var bgPointers = {};
   var bgGesture = null;
 
@@ -833,28 +864,10 @@
     // the zoomed view always covers the stage
     state.pinPanX = clamp(state.pinPanX, (1-state.pinZoom)*rect.width, 0);
     state.pinPanY = clamp(state.pinPanY, (1-state.pinZoom)*rect.height, 0);
-    state.nudgeU = clamp(state.nudgeU, -NUDGE_MAX, NUDGE_MAX);
-    state.nudgeV = clamp(state.nudgeV, -NUDGE_MAX, NUDGE_MAX);
   }
   function applyPinTransform(){
-    var rect = pinStage.getBoundingClientRect();
     pinView.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
-    pinInner.style.transform = "translate(" + (state.nudgeU*rect.width) + "px," + (state.nudgeV*rect.height) + "px)";
     layoutHandles();
-  }
-
-  // The nudge converted to reference-image pixels. The reference is shown
-  // "contain"-fitted inside the stage (which has the photo's aspect ratio),
-  // so a shift of the photo against it scales by refW / displayed ref width.
-  function nudgeInRefPx(){
-    if(!state.nudgeU && !state.nudgeV) return { x:0, y:0 };
-    var stageW = 1, stageH = state.curH / state.curW;
-    var refAR = state.refW / state.refH;
-    var dispW = Math.min(stageW, stageH*refAR), dispH = dispW / refAR;
-    return {
-      x: state.nudgeU*stageW / dispW * state.refW,
-      y: state.nudgeV*stageH / dispH * state.refH
-    };
   }
   function bgLocalMid(){
     var ids = Object.keys(bgPointers);
@@ -872,11 +885,7 @@
   }
   function beginBgGesture(){
     var mid = bgLocalMid();
-    bgGesture = mid ? {
-      count: Object.keys(bgPointers).length,
-      midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist(),
-      nudge0: {u:state.nudgeU, v:state.nudgeV}
-    } : null;
+    bgGesture = mid ? { midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist() } : null;
   }
 
   pinStage.addEventListener("pointerdown", function(e){
@@ -890,18 +899,6 @@
     if(!bgPointers[e.pointerId] || !bgGesture) return;
     bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
     var mid = bgLocalMid(); if(!mid) return;
-
-    if(bgGesture.count === 1){
-      // nudge: screen movement ÷ view zoom = movement in stage units
-      var rect = pinStage.getBoundingClientRect();
-      state.nudgeU = bgGesture.nudge0.u + (mid.x - bgGesture.midLocal.x) / (state.pinZoom*rect.width);
-      state.nudgeV = bgGesture.nudge0.v + (mid.y - bgGesture.midLocal.y) / (state.pinZoom*rect.height);
-      clampPinTransform();
-      applyPinTransform();
-      schedulePreview();
-      return;
-    }
-
     var newDist = bgDist();
     var newZoom = state.pinZoom;
     if(newDist > 0 && bgGesture.dist0 > 0){
@@ -987,11 +984,9 @@
   }
 
   // Warps srcCanvas into a new dstW x dstH canvas so that the quadrilateral
-  // defined by srcCornersPx maps onto the full destination rectangle,
-  // shifted by the optional offset {x,y} (in destination pixels).
-  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH, offset){
-    var ox = offset ? offset.x : 0, oy = offset ? offset.y : 0;
-    var dstCorners = [ {x:ox,y:oy}, {x:dstW+ox,y:oy}, {x:dstW+ox,y:dstH+oy}, {x:ox,y:dstH+oy} ];
+  // defined by srcCornersPx maps onto the full destination rectangle.
+  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH){
+    var dstCorners = [ {x:0,y:0}, {x:dstW,y:0}, {x:dstW,y:dstH}, {x:0,y:dstH} ];
     var H = computeHomography(srcCornersPx, dstCorners);
     var Hinv = invert3x3(H);
 
@@ -1048,8 +1043,7 @@
     if(!state.previewSourceCanvas || !state.refW) return;
     var pw = 200, ph = Math.round(pw * state.refH / state.refW);
     var srcPx = cornersToPx(state.corners, state.previewW, state.previewH);
-    var n = nudgeInRefPx(), k = pw / state.refW;
-    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph, { x: n.x*k, y: n.y*k });
+    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph);
     previewCanvas.width = pw; previewCanvas.height = ph;
     var pctx = previewCanvas.getContext("2d");
     pctx.clearRect(0,0,pw,ph);
@@ -1063,7 +1057,8 @@
     confirmAlignBtn.textContent = "Aligning…";
     setTimeout(function(){
       var srcPx = cornersToPx(state.corners, state.curW, state.curH);
-      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH, nudgeInRefPx());
+      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH);
+      state.offU = 0; state.offV = 0;
       state.alignedDataUrl = baked.toDataURL("image/jpeg", 0.92);
       saveStore();
       enableCompareTabs(true);
@@ -1081,14 +1076,49 @@
     compareCur.src = state.alignedDataUrl;
     compareCur.style.opacity = String(state.opacity / 100);
     applyGrayscale();
+    applyOffset();
+    applyAdjusting();
   }
 
-  opacitySlider.addEventListener("input", function(){
-    state.opacity = Number(opacitySlider.value);
-    compareCur.style.opacity = String(state.opacity/100);
+  function setOpacity(v){
+    state.opacity = v;
+    opacitySlider.value = v;
+    compareCur.style.opacity = String(v/100);
+  }
+  opacitySlider.addEventListener("input", function(){ setOpacity(Number(opacitySlider.value)); });
+
+  // -------- position adjustment: shift the aligned painting over the reference --------
+  // The offset is a fraction of the frame, applied as a CSS translate to the
+  // painting in both compare and side-by-side views (the aligned image and
+  // the reference share the same aspect ratio, so % of the image = % of frame).
+  var OFF_MAX = 0.5;
+  function applyOffset(){
+    var t = (state.offU || state.offV) ? "translate(" + (state.offU*100) + "%," + (state.offV*100) + "%)" : "";
+    compareCur.style.transform = t;
+    sideCur.style.transform = t;
+    resetPosBtn.style.display = (state.adjusting || state.offU || state.offV) ? "" : "none";
+  }
+  function applyAdjusting(){
+    adjustSwitch.classList.toggle("on", state.adjusting);
+    compareFrame.classList.toggle("adjusting", state.adjusting);
+    compareHint.textContent = state.adjusting
+      ? "Drag the painting to line it up with the reference"
+      : "Touch and hold the painting to peek at the reference underneath";
+    applyOffset();
+  }
+  adjustSwitch.addEventListener("click", function(){
+    state.adjusting = !state.adjusting;
+    // the reference has to show through to line things up
+    if(state.adjusting && state.opacity > 70) setOpacity(50);
+    applyAdjusting();
+  });
+  resetPosBtn.addEventListener("click", function(){
+    state.offU = 0; state.offV = 0;
+    applyOffset();
+    saveStore();
   });
 
-  var peeking = false;
+  var peeking = false, posDrag = null;
   function peekStart(e){
     if(peeking || !state.alignedDataUrl) return;
     peeking = true;
@@ -1100,10 +1130,27 @@
     peeking = false;
     compareCur.style.opacity = String(state.opacity/100);
   }
-  compareFrame.addEventListener("pointerdown", function(e){ e.preventDefault(); peekStart(e); });
-  compareFrame.addEventListener("pointerup", peekEnd);
-  compareFrame.addEventListener("pointercancel", peekEnd);
-  compareFrame.addEventListener("pointerleave", peekEnd);
+  compareFrame.addEventListener("pointerdown", function(e){
+    e.preventDefault();
+    if(!state.adjusting){ peekStart(e); return; }
+    if(posDrag || !state.alignedDataUrl) return;
+    compareFrame.setPointerCapture(e.pointerId);
+    posDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, u0: state.offU, v0: state.offV };
+  });
+  compareFrame.addEventListener("pointermove", function(e){
+    if(!posDrag || e.pointerId !== posDrag.id) return;
+    var rect = compareFrame.getBoundingClientRect();
+    state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / rect.width, -OFF_MAX, OFF_MAX);
+    state.offV = clamp(posDrag.v0 + (e.clientY - posDrag.y) / rect.height, -OFF_MAX, OFF_MAX);
+    applyOffset();
+  });
+  function endPointer(e){
+    if(posDrag && e.pointerId === posDrag.id){ posDrag = null; saveStore(); }
+    peekEnd();
+  }
+  compareFrame.addEventListener("pointerup", endPointer);
+  compareFrame.addEventListener("pointercancel", endPointer);
+  compareFrame.addEventListener("pointerleave", function(){ peekEnd(); });
 
   function applyGrayscale(){
     var on = state.grayscale;
@@ -1126,6 +1173,7 @@
     sideRef.src = state.refDataUrl;
     sideCur.src = state.alignedDataUrl;
     applyGrayscale();
+    applyOffset();
   }
 
   // ---------------- restart ----------------
@@ -1137,7 +1185,7 @@
     state.alignedDataUrl = null;
     state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
-    state.nudgeU = 0; state.nudgeV = 0;
+    state.offU = 0; state.offV = 0;
     enableCompareTabs(false);
     refreshSetupUI();
     setMode("align");
@@ -1173,6 +1221,7 @@
       state.refDataUrl = saved.ref;
       state.refW = saved.refW; state.refH = saved.refH;
       state.alignedDataUrl = saved.aligned || null;
+      state.offU = Number(saved.offU) || 0; state.offV = Number(saved.offV) || 0;
       refImgObj.src = saved.ref;
       if(state.alignedDataUrl){
         enableCompareTabs(true);
