@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>Sight-Size</title>
+<title>Comp-Art</title>
 
 <!-- iOS home-screen behavior -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Sight-Size">
+<meta name="apple-mobile-web-app-title" content="Comp-Art">
 <meta name="theme-color" content="#181613">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='38' fill='%23221E19'/%3E%3Ccircle cx='90' cy='90' r='54' fill='none' stroke='%23C1712F' stroke-width='7'/%3E%3Ccircle cx='90' cy='58' r='11' fill='%23C1712F'/%3E%3Ccircle cx='120' cy='90' r='11' fill='%233F5D7D'/%3E%3Ccircle cx='90' cy='122' r='11' fill='%23A6693A'/%3E%3Ccircle cx='60' cy='90' r='11' fill='%23E7DCC8'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="apple-touch-icon.png">
 
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap">
@@ -45,7 +46,7 @@
     -webkit-touch-callout: none;   /* no iOS long-press callout (save image, copy, etc.) */
     -webkit-user-select: none; user-select: none;
   }
-  /* The page is exactly one screen tall: header + main + footer. Main
+  /* The page is exactly one screen tall: header + main. Main
      scrolls only if a very small screen can't fit the minimum layout. */
   body{
     display:flex; flex-direction:column;
@@ -78,11 +79,18 @@
   .icon-btn{
     flex: 0 0 auto;
     display:flex; align-items:center; justify-content:center;
-    width:34px; height:34px;
+    width:34px; height:34px; padding:0;
     background:transparent; border:1px solid var(--line); border-radius: var(--radius);
     color: var(--ink-dim);
   }
+  /* explicit size: iOS Safari collapses a size-less SVG inside a flex button */
+  .icon-btn svg{ display:block; width:18px; height:18px; flex:0 0 auto; }
   .icon-btn:active{ background: var(--panel-2); }
+  .icon-btn[hidden]{ display:none; }
+  .icon-btn.on{ color: var(--sienna); border-color: var(--sienna); }
+  .header-btns{ display:flex; gap:8px; flex:0 0 auto; align-self:center; }
+  .opacity-row input[type=range]{ flex:1; min-width:0; }
+  .opacity-row .ctrl-label{ flex:0 0 auto; }
 
   /* ---------- layout ---------- */
   main{
@@ -314,11 +322,6 @@
 
   .divider{ height:1px; background: var(--line); margin: 0 -16px; }
 
-  footer{
-    flex: 0 0 auto;
-    text-align:center; padding: 2px 16px 8px; color: var(--ink-dim); font-size:11.5px;
-  }
-  footer button{ background:none;border:none;color:inherit;text-decoration:underline;font-family:inherit;font-size:inherit;padding:0; }
 
   .toast{
     position: fixed; left:50%; bottom: calc(18px + env(safe-area-inset-bottom,0px));
@@ -356,12 +359,17 @@
 
 <header>
   <div class="brand">
-    <h1>Sight-Size</h1>
+    <h1>Comp-Art</h1>
     <p id="stepHint">reference → painting → compare</p>
   </div>
+  <div class="header-btns">
+  <button class="icon-btn" id="grayBtn" title="Check values (black &amp; white)" aria-label="Check values in black and white" aria-pressed="false" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
+  </button>
   <button class="icon-btn" id="restartBtn" title="Start a new painting" aria-label="Start a new painting">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
   </button>
+  </div>
 </header>
 
 <main>
@@ -465,8 +473,6 @@
       </div>
     </div>
     <div class="controls">
-    <p class="hint" id="compareHint">Touch and hold the painting to peek at the reference and read colours</p>
-
     <div id="compareCardSlot"></div>
     <div class="panel color-card" id="colorCard">
       <p class="cc-empty" id="ccEmpty">Touch and hold the painting to read colours</p>
@@ -480,13 +486,13 @@
     </div>
 
     <div class="panel">
-      <div class="ctrl-row">
+      <div class="ctrl-row opacity-row">
         <div class="ctrl-label">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
           Painting opacity
         </div>
+        <input type="range" id="opacitySlider" min="0" max="100" value="100" aria-label="Painting opacity">
       </div>
-      <input type="range" id="opacitySlider" min="0" max="100" value="100">
 
       <div class="divider"></div>
 
@@ -498,16 +504,6 @@
         <button class="switch" id="adjustSwitch" aria-label="Toggle position adjustment"></button>
       </div>
       <button class="btn ghost full small" id="resetPosBtn" style="display:none;">Reset position</button>
-
-      <div class="divider"></div>
-
-      <div class="ctrl-row">
-        <div class="ctrl-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
-          Check values (black &amp; white)
-        </div>
-        <button class="switch" id="graySwitch" aria-label="Toggle grayscale"></button>
-      </div>
 
       <div class="divider"></div>
 
@@ -532,22 +528,9 @@
       </div>
     </div>
     <div id="sideCardSlot"></div>
-    <div class="panel">
-      <div class="ctrl-row">
-        <div class="ctrl-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
-          Check values (black &amp; white)
-        </div>
-        <button class="switch" id="graySwitch2" aria-label="Toggle grayscale"></button>
-      </div>
-    </div>
   </section>
 
 </main>
-
-<footer>
-  Photos stay on this device. <button id="footerRestart">Start a new painting</button>
-</footer>
 
 <div class="toast" id="toast"></div>
 
@@ -747,9 +730,9 @@ window.Munsell = (function(){
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
   var compareRef = $("compareRef"), compareCur = $("compareCur"), compareFrame = $("compareFrame");
   var opacitySlider = $("opacitySlider");
-  var graySwitch = $("graySwitch"), graySwitch2 = $("graySwitch2");
+  var grayBtn = $("grayBtn");
   var retakeFromCompareBtn = $("retakeFromCompareBtn");
-  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), compareHint = $("compareHint");
+  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn");
   var pickMarker = $("pickMarker"), ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
   var sideRefFrame = $("sideRefFrame"), sideCurFrame = $("sideCurFrame");
@@ -759,7 +742,7 @@ window.Munsell = (function(){
 
   var sideRef = $("sideRef"), sideCur = $("sideCur");
 
-  var restartBtn = $("restartBtn"), footerRestart = $("footerRestart");
+  var restartBtn = $("restartBtn");
   var toastEl = $("toast");
 
   // Suppress long-press / right-click context menus and text selection
@@ -837,6 +820,7 @@ window.Munsell = (function(){
     viewAlign.style.display = (m === "align") ? "" : "none";
     viewCompare.style.display = (m === "compare") ? "" : "none";
     viewSide.style.display = (m === "side") ? "" : "none";
+    grayBtn.hidden = (m === "align"); // black & white applies to the compare / side views
 
     if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
     if(m === "compare") { stepHint.textContent = "hold the painting to peek and read colours"; renderCompare(); }
@@ -1303,9 +1287,11 @@ window.Munsell = (function(){
   function applyAdjusting(){
     adjustSwitch.classList.toggle("on", state.adjusting);
     compareFrame.classList.toggle("adjusting", state.adjusting);
-    compareHint.textContent = state.adjusting
-      ? "Drag the painting to line it up with the reference"
-      : "Touch and hold the painting to peek at the reference and read colours";
+    if(state.mode === "compare"){
+      stepHint.textContent = state.adjusting
+        ? "drag the painting to line it up"
+        : "hold the painting to peek and read colours";
+    }
     applyOffset();
     if(state.adjusting) clearReading(); // moving the painting makes the reading stale
   }
@@ -1478,15 +1464,14 @@ window.Munsell = (function(){
 
   function applyGrayscale(){
     var on = state.grayscale;
-    graySwitch.classList.toggle("on", on);
-    graySwitch2.classList.toggle("on", on);
+    grayBtn.classList.toggle("on", on);
+    grayBtn.setAttribute("aria-pressed", on ? "true" : "false");
     [compareRef, compareCur, sideRef, sideCur].forEach(function(img){
       img.classList.toggle("gray", on);
     });
   }
   function toggleGray(){ state.grayscale = !state.grayscale; applyGrayscale(); }
-  graySwitch.addEventListener("click", toggleGray);
-  graySwitch2.addEventListener("click", toggleGray);
+  grayBtn.addEventListener("click", toggleGray);
 
   // ---------------- side-by-side view ----------------
   function renderSide(){
@@ -1537,7 +1522,6 @@ window.Munsell = (function(){
     askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", restart);
   }
   restartBtn.addEventListener("click", askRestart);
-  footerRestart.addEventListener("click", askRestart);
 
   // ---------------- boot ----------------
   (function boot(){
