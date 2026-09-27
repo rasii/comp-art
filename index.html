@@ -28,9 +28,6 @@
     --line:       #3A342C;
     --sienna:     #C1712F;
     --sienna-dim: #8C531F;
-    --ultra:      #4D6E92;
-    --ok:         #7C9473;
-    --danger:     #B15B4A;
     --radius: 3px;
     box-sizing: border-box;
   }
@@ -118,6 +115,8 @@
     width: min(100cqw, calc(100cqh * var(--ar, 1)));
     aspect-ratio: var(--ar, 1);
   }
+  /* room for corner handles to hang over the edge of the align stage */
+  .fit.fit-pad{ padding: 15px; }
   .controls{ flex:0 0 auto; display:flex; flex-direction:column; gap:12px; }
 
   /* Landscape tablets / wide screens: controls in a column beside the image. */
@@ -173,14 +172,16 @@
     display:flex; align-items:center; justify-content:center;
     touch-action: none;
   }
-  .stage canvas{ display:block; width:100%; height:auto; }
 
   /* ---------- corner-pin ---------- */
+  /* The stage itself doesn't clip, so the corner handles stay fully visible
+     and touchable even in the extreme corners; .pin-clip clips the zoomed view. */
   .pin-stage{
     position:relative; width:100%;
     background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
-    overflow:hidden; touch-action:none;
+    touch-action:none;
   }
+  .pin-clip{ position:absolute; inset:0; overflow:hidden; border-radius: var(--radius); }
   .pin-view{ position:absolute; inset:0; transform-origin: 0 0; }
   .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
   .pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
@@ -190,7 +191,8 @@
     width:auto; height:auto; max-width:none;
     transform-origin: 0 0;
     pointer-events:none;
-  }  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  }
+  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
   .handle{
     position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
@@ -198,25 +200,11 @@
     box-shadow: 0 0 0 3px rgba(193,113,47,0.28);
     touch-action:none; z-index:5;
   }
-  .preview-row{ display:flex; align-items:center; gap:12px; padding: 2px 2px 0; }
-  .preview-box{
-    flex:0 0 auto; width:104px;
-    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
-    overflow:hidden;
-  }
-  .preview-box canvas{ display:block; width:100%; height:auto; }
-  .preview-label{ margin:0; font-size:12px; color: var(--ink-dim); line-height:1.4; }
-
   .empty{
     padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
     max-width: 320px;
   }
   .empty strong{ display:block; color: var(--ink); font-size:15px; margin-bottom:6px; font-weight:600; }
-
-  /* ---------- align hint ---------- */
-  .hint{
-    font-size:12.5px; color: var(--ink-dim); text-align:center; margin: 0; padding: 0 8px;
-  }
 
   /* ---------- compare / side-by-side frame ---------- */
   .frame{
@@ -251,6 +239,9 @@
     display:block !important; left:-3px; top:-3px; width:6px; height:6px; border-radius:50%;
     background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6);
   }
+  /* near the top edge there's no room above the finger: flip the ring below */
+  .pick-marker.touch.below .pm-ring{ top:48px; }
+  .pick-marker.touch.below .pm-stem{ top:3px; }
 
   /* ---------- colour readout card ---------- */
   .color-card{ gap:8px; padding: 12px 14px; }
@@ -258,12 +249,12 @@
   .cc-body{ display:flex; flex-direction:column; gap:6px; }
   .cc-body[hidden]{ display:none; }
   .cc-row{
-    display:grid; grid-template-columns: 76px 1fr auto; align-items:baseline; gap:8px;
+    display:grid; grid-template-columns: 76px 1fr; align-items:baseline; gap:8px;
     font-size:13px; font-variant-numeric: tabular-nums;
   }
   .cc-name{ color: var(--ink-dim); }
   .cc-mun{ font-weight:600; letter-spacing:0.2px; }
-  .cc-val{ color: var(--ink-dim); font-size:12px; }
+  .cc-note{ margin:0; font-size:11px; color: var(--ink-dim); }
   .cc-swatches{
     display:flex; height:44px; margin-top:4px;
     border:1px solid var(--line); border-radius: var(--radius); overflow:hidden;
@@ -385,13 +376,15 @@
 
     <!-- step 2: corner-pin alignment -->
     <div class="step" id="alignStageWrap" style="display:none;">
-      <div class="fit">
+      <div class="fit fit-pad">
         <div class="pin-stage fitted" id="pinStage">
-          <div class="pin-view" id="pinView">
-            <div class="pin-inner" id="pinInner">
-              <img id="pinRefImg" alt="Reference photo" draggable="false">
-              <img id="pinImg" alt="Your painting photo" draggable="false">
-              <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+          <div class="pin-clip">
+            <div class="pin-view" id="pinView">
+              <div class="pin-inner" id="pinInner">
+                <img id="pinRefImg" alt="Reference photo" draggable="false">
+                <img id="pinImg" alt="Your painting photo" draggable="false">
+                <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+              </div>
             </div>
           </div>
           <div class="handle" id="handle0" data-idx="0"></div>
@@ -401,22 +394,13 @@
         </div>
       </div>
       <div class="controls">
-        <p class="hint">Drag the four points onto the corners of your canvas · fade the photo to check it against the reference · pinch or scroll to zoom in</p>
-
-        <div class="panel" id="alignPanel">
-          <div class="ctrl-row">
+        <div class="panel">
+          <div class="ctrl-row opacity-row">
             <div class="ctrl-label">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
-              Photo opacity — fade to see the reference underneath
+              Photo opacity
             </div>
-          </div>
-          <input type="range" id="pinOpacitySlider" min="0" max="100" value="100">
-
-          <div class="preview-row">
-            <div class="preview-box">
-              <canvas id="previewCanvas"></canvas>
-            </div>
-            <p class="preview-label">Preview of the aligned result</p>
+            <input type="range" id="pinOpacitySlider" min="0" max="100" value="100" aria-label="Photo opacity">
           </div>
 
           <div class="row stretch">
@@ -458,7 +442,7 @@
     </div>
 
     <input type="file" id="refInput" accept="image/*">
-    <input type="file" id="curInput" accept="image/*" capture="environment">
+    <input type="file" id="curInput" accept="image/*">
 
   </section>
 
@@ -477,11 +461,12 @@
     <div class="panel color-card" id="colorCard">
       <p class="cc-empty" id="ccEmpty">Touch and hold the painting to read colours</p>
       <div class="cc-body" id="ccBody" hidden>
-        <div class="cc-row"><span class="cc-name">Reference</span><span class="cc-mun" id="ccRefMun"></span><span class="cc-val" id="ccRefVal"></span></div>
-        <div class="cc-row"><span class="cc-name">Painting</span><span class="cc-mun" id="ccPaintMun"></span><span class="cc-val" id="ccPaintVal"></span></div>
+        <div class="cc-row"><span class="cc-name">Reference</span><span class="cc-mun" id="ccRefMun"></span></div>
+        <div class="cc-row"><span class="cc-name">Painting</span><span class="cc-mun" id="ccPaintMun"></span></div>
         <div class="cc-swatches"><div id="ccRefSw"></div><div id="ccPaintSw"></div></div>
         <div class="cc-swlabels"><span>Reference</span><span>Painting</span></div>
         <p class="cc-diff" id="ccDiff"></p>
+        <p class="cc-note" id="ccNote"></p>
       </div>
     </div>
 
@@ -515,6 +500,7 @@
 
   <!-- ===================== SIDE BY SIDE VIEW ===================== -->
   <section id="view-side" style="display:none;">
+   <div class="step">
     <div class="fit side-fit">
       <div class="split">
         <div class="pane">
@@ -527,7 +513,10 @@
         </div>
       </div>
     </div>
-    <div id="sideCardSlot"></div>
+    <div class="controls">
+      <div id="sideCardSlot"></div>
+    </div>
+   </div>
   </section>
 
 </main>
@@ -636,7 +625,10 @@ window.Munsell = (function(){
       var c = CHIPS[i], d = (c.L-lab.L)*(c.L-lab.L) + (c.a-lab.a)*(c.a-lab.a) + (c.b-lab.b)*(c.b-lab.b);
       if(d < bestD){ bestD = d; best = c; }
     }
-    return { value: valueFromY(xyz[1]), chip: best.name, L:lab.L, C:lab.C, h:lab.h };
+    var value = valueFromY(xyz[1]);
+    // notation: nearest chip's hue and chroma with the measured value, e.g. "7.5YR 5.8/8"
+    var notation = best.name.replace(/ \d\//, " " + value.toFixed(1) + "/");
+    return { value: value, chip: best.name, notation: notation, L:lab.L, C:lab.C, h:lab.h };
   }
 
   // ---- plain-words comparison: how `p` (painting) differs from `r` (reference) ----
@@ -660,6 +652,10 @@ window.Munsell = (function(){
     var s = (whole ? String(whole) : "") + (half ? "½" : "");
     return s + (halves <= 2 ? " value" : " values");
   }
+  // Painter's temperature: warmest around orange (Lab hue ~60°), coolest
+  // opposite it around blue. A cosine gives a smooth warmth score −1..1.
+  function warmth(h){ return Math.cos((h - 60) * Math.PI/180); }
+
   function describe(r, p){
     var parts = [];
     var dv = p.value - r.value;
@@ -670,7 +666,11 @@ window.Munsell = (function(){
       var dh = ((p.h - r.h + 540) % 360) - 180;
       if(Math.abs(dh) >= 5){
         var w = hueWord(r.h, dh);
-        if(w) parts.push((Math.abs(dh) < 12 ? "slightly " : "") + w);
+        var dT = warmth(p.h) - warmth(r.h);
+        var temp = Math.abs(dT) >= 0.12 ? (dT > 0 ? "warmer" : "cooler") : null;
+        var slight = Math.abs(dh) < 12 ? "slightly " : "";
+        if(temp && w) parts.push(slight + temp + " (" + w + ")");
+        else if(temp || w) parts.push(slight + (temp || w));
       }
     }
     if(!parts.length) return "Close match.";
@@ -688,31 +688,29 @@ window.Munsell = (function(){
   var STORE_KEY = "sightsize_v1";
   var WORK_DIM = 1100;      // long-edge working resolution for reference + final aligned output
   var CUR_SRC_MAX = 1800;   // working resolution kept for the raw painting photo (perspective source)
-  var PREVIEW_SRC_MAX = 420; // small copy used for the fast live preview warp
 
   // ---------------- state ----------------
   var state = {
     refDataUrl: null, refW: 0, refH: 0,
     alignedDataUrl: null,
     curSourceCanvas: null, curW: 0, curH: 0,   // working-res painting photo, corner-pin source
-    previewSourceCanvas: null, previewW: 0, previewH: 0, // small copy for live preview
     corners: null,              // 4 {u,v} normalized points, order TL,TR,BR,BL
+    lastCorners: null,          // corners from the last alignment, reused for the next photo of the same shape
     pinZoom: 1, pinPanX: 0, pinPanY: 0, // view-only zoom/pan on the align stage
     offU: 0, offV: 0,           // aligned painting shifted against the reference (compare), fraction of its size
     adjusting: false,           // compare view: drag moves the painting instead of peeking
+    opacityBeforeAdjust: null,  // opacity to restore when adjust mode is switched off
     mode: "align",
     grayscale: false,
     opacity: 100
   };
-
-  var refImgObj = new Image();
 
   // ---------------- element refs ----------------
   var $ = function(id){ return document.getElementById(id); };
   var tabs = $("tabs");
   var stepHint = $("stepHint");
 
-  var emptyStage = $("emptyStage"), emptyStageText = $("emptyStageText");
+  var emptyStage = $("emptyStage");
   var setupPanel = $("setupPanel");
   var refRow = $("refRow"), curRow = $("curRow"), changeRefRow = $("changeRefRow");
   var addRefBtn = $("addRefBtn"), addCurBtn = $("addCurBtn"), changeRefBtn = $("changeRefBtn");
@@ -722,10 +720,9 @@ window.Munsell = (function(){
   var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var pinOpacitySlider = $("pinOpacitySlider");
-  var previewCanvas = $("previewCanvas");
-  var alignPanel = $("alignPanel");
   var resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
   var confirmAlignBtn = $("confirmAlignBtn");
+  var confirmAlignHTML = confirmAlignBtn.innerHTML;
 
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
   var compareRef = $("compareRef"), compareCur = $("compareCur"), compareFrame = $("compareFrame");
@@ -737,8 +734,8 @@ window.Munsell = (function(){
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
   var sideRefFrame = $("sideRefFrame"), sideCurFrame = $("sideCurFrame");
   var sideRefMarker = $("sideRefMarker"), sideCurMarker = $("sideCurMarker");
-  var ccRefMun = $("ccRefMun"), ccRefVal = $("ccRefVal"), ccPaintMun = $("ccPaintMun"), ccPaintVal = $("ccPaintVal");
-  var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
+  var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun");
+  var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff"), ccNote = $("ccNote");
 
   var sideRef = $("sideRef"), sideCur = $("sideCur");
 
@@ -759,6 +756,10 @@ window.Munsell = (function(){
   }
 
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  // setPointerCapture throws if the pointer has already gone (e.g. a touch
+  // cancelled by the system mid-gesture); capture is a nicety, not required.
+  function capturePointer(el, e){ try{ el.setPointerCapture(e.pointerId); }catch(err){} }
 
   function fileToResizedDataUrl(file, maxDim){
     return new Promise(function(resolve, reject){
@@ -788,7 +789,8 @@ window.Munsell = (function(){
       var payload = JSON.stringify({
         ref: state.refDataUrl, refW: state.refW, refH: state.refH,
         aligned: state.alignedDataUrl,
-        offU: state.offU, offV: state.offV
+        offU: state.offU, offV: state.offV,
+        lastCorners: state.lastCorners
       });
       localStorage.setItem(STORE_KEY, payload);
     }catch(e){
@@ -822,8 +824,8 @@ window.Munsell = (function(){
     viewSide.style.display = (m === "side") ? "" : "none";
     grayBtn.hidden = (m === "align"); // black & white applies to the compare / side views
 
-    if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
-    if(m === "compare") { stepHint.textContent = "hold the painting to peek and read colours"; renderCompare(); }
+    if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the points to the canvas corners · pinch to zoom" : "photograph your painting") : "reference → painting → compare";
+    if(m === "compare") { stepHint.textContent = "hold the painting to peek and read colour"; renderCompare(); }
     if(m === "side") { stepHint.textContent = "touch either image to read colours"; renderSide(); }
   }
 
@@ -850,8 +852,7 @@ window.Munsell = (function(){
       state.refDataUrl = res.dataUrl;
       state.refW = res.width; state.refH = res.height;
       state.alignedDataUrl = null;
-      state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
-      refImgObj.src = res.dataUrl;
+      state.curSourceCanvas = null; state.corners = null;
       enableCompareTabs(false);
       saveStore();
       refreshSetupUI();
@@ -870,6 +871,7 @@ window.Munsell = (function(){
     loadCurrentPhoto(f).then(function(){
       state.alignedDataUrl = null;
       enableCompareTabs(false);
+      setMode("align");
       refreshSetupUI();
       startPinning();
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
@@ -917,23 +919,19 @@ window.Munsell = (function(){
     } else if(!hasRaw){
       stepHint.textContent = "now photograph your painting";
     } else {
-      stepHint.textContent = "drag the corners, then align";
+      stepHint.textContent = "drag the points to the canvas corners · pinch to zoom";
     }
   }
 
-  // Prepares the painting photo as the corner-pin source (plus a small
-  // copy for the live preview) and resets the corners and pan/zoom.
+  // Prepares the painting photo as the corner-pin source and resets the
+  // pan/zoom. The corners start where the last alignment left them when the
+  // new photo has the same shape (same camera, same setup), else in the
+  // extreme corners.
   function setupSource(c){
     state.curSourceCanvas = c; state.curW = c.width; state.curH = c.height;
-
-    var pvScale = Math.min(1, PREVIEW_SRC_MAX / Math.max(c.width, c.height));
-    var pW = Math.round(c.width*pvScale), pH = Math.round(c.height*pvScale);
-    var pv = document.createElement("canvas");
-    pv.width = pW; pv.height = pH;
-    pv.getContext("2d").drawImage(c, 0, 0, pW, pH);
-    state.previewSourceCanvas = pv; state.previewW = pW; state.previewH = pH;
-
-    state.corners = defaultCorners();
+    var last = state.lastCorners;
+    var sameShape = last && last.ar && Math.abs(last.ar - c.width/c.height) < 0.01;
+    state.corners = sameShape ? last.pts.map(function(p){ return { u:p.u, v:p.v }; }) : defaultCorners();
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
   }
 
@@ -958,11 +956,9 @@ window.Munsell = (function(){
     pinRefImg.src = state.refDataUrl;
     pinRefImg.style.opacity = "1";
     pinStage.style.setProperty("--ar", state.curW + " / " + state.curH);
-    previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
     pinImg.style.opacity = "1";
     pinOpacitySlider.value = 100;
     applyPinTransform();
-    schedulePreview();
   }
 
   // Layers: pin-view is zoomed/panned as a whole (a viewing aid only). Inside
@@ -991,7 +987,7 @@ window.Munsell = (function(){
     h.addEventListener("pointerdown", function(e){
       e.preventDefault(); e.stopPropagation();
       activeHandle = i;
-      h.setPointerCapture(e.pointerId);
+      capturePointer(h, e);
     });
     h.addEventListener("pointermove", function(e){
       if(activeHandle !== i) return;
@@ -1000,7 +996,6 @@ window.Munsell = (function(){
       var v = clamp((e.clientY - rect.top) / rect.height, 0, 1);
       state.corners[i] = { u: u, v: v };
       layoutHandles();
-      schedulePreview();
     });
     function release(){ if(activeHandle === i) activeHandle = null; }
     h.addEventListener("pointerup", release);
@@ -1031,7 +1026,6 @@ window.Munsell = (function(){
     state.corners = defaultCorners();
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
     applyPinTransform();
-    schedulePreview();
   });
 
   pinOpacitySlider.addEventListener("input", function(){
@@ -1076,7 +1070,7 @@ window.Munsell = (function(){
   pinStage.addEventListener("pointerdown", function(e){
     if(e.target.closest(".handle")) return;
     if(!state.curSourceCanvas) return;
-    pinStage.setPointerCapture(e.pointerId);
+    capturePointer(pinStage, e);
     bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
     beginBgGesture();
   });
@@ -1214,27 +1208,6 @@ window.Munsell = (function(){
     return corners.map(function(p){ return { x: p.u*w, y: p.v*h }; });
   }
 
-  // -------- live low-res preview --------
-  var previewPending = false;
-  function schedulePreview(){
-    if(previewPending) return;
-    previewPending = true;
-    requestAnimationFrame(function(){
-      previewPending = false;
-      renderPreview();
-    });
-  }
-  function renderPreview(){
-    if(!state.previewSourceCanvas || !state.refW) return;
-    var pw = 200, ph = Math.round(pw * state.refH / state.refW);
-    var srcPx = cornersToPx(state.corners, state.previewW, state.previewH);
-    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph);
-    previewCanvas.width = pw; previewCanvas.height = ph;
-    var pctx = previewCanvas.getContext("2d");
-    pctx.clearRect(0,0,pw,ph);
-    pctx.drawImage(warped, 0, 0);
-  }
-
   // -------- confirm alignment (full-resolution bake) --------
   confirmAlignBtn.addEventListener("click", function(){
     if(!state.curSourceCanvas || !state.refW) return;
@@ -1244,11 +1217,13 @@ window.Munsell = (function(){
       var srcPx = cornersToPx(state.corners, state.curW, state.curH);
       var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH);
       state.offU = 0; state.offV = 0;
+      state.adjusting = false; state.opacityBeforeAdjust = null;
+      state.lastCorners = { ar: state.curW/state.curH, pts: state.corners.map(function(p){ return { u:p.u, v:p.v }; }) };
       state.alignedDataUrl = baked.toDataURL("image/jpeg", 0.92);
       saveStore();
       enableCompareTabs(true);
       confirmAlignBtn.disabled = false;
-      confirmAlignBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Align &amp; continue';
+      confirmAlignBtn.innerHTML = confirmAlignHTML;
       setMode("compare");
     }, 30);
   });
@@ -1290,15 +1265,20 @@ window.Munsell = (function(){
     if(state.mode === "compare"){
       stepHint.textContent = state.adjusting
         ? "drag the painting to line it up"
-        : "hold the painting to peek and read colours";
+        : "hold the painting to peek and read colour";
     }
     applyOffset();
     if(state.adjusting) clearReading(); // moving the painting makes the reading stale
   }
   adjustSwitch.addEventListener("click", function(){
     state.adjusting = !state.adjusting;
-    // the reference has to show through to line things up
-    if(state.adjusting && state.opacity > 70) setOpacity(50);
+    if(state.adjusting){
+      // the reference has to show through to line things up
+      if(state.opacity > 70){ state.opacityBeforeAdjust = state.opacity; setOpacity(50); }
+    } else if(state.opacityBeforeAdjust !== null){
+      if(state.opacity === 50) setOpacity(state.opacityBeforeAdjust);
+      state.opacityBeforeAdjust = null;
+    }
     applyAdjusting();
   });
   resetPosBtn.addEventListener("click", function(){
@@ -1311,7 +1291,7 @@ window.Munsell = (function(){
   function peekStart(e){
     if(peeking || !state.alignedDataUrl) return;
     peeking = true;
-    compareFrame.setPointerCapture(e.pointerId);
+    capturePointer(compareFrame, e);
     compareCur.style.opacity = "0";
   }
   function peekEnd(){
@@ -1337,10 +1317,11 @@ window.Munsell = (function(){
   function toSrgb(l){ var c = l <= 0.0031308 ? 12.92*l : 1.055*Math.pow(l, 1/2.4) - 0.055; return Math.round(clamp(c, 0, 1)*255); }
 
   // Average a small patch (in linear light) centred on normalized (u,v).
+  function patchRadius(px){ return Math.max(1, Math.round(Math.max(px.w, px.h) / 300)); }
   function samplePatch(px, u, v){
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return null;
     var cx = Math.floor(u*px.w), cy = Math.floor(v*px.h);
-    var r = Math.max(1, Math.round(Math.max(px.w, px.h) / 300));
+    var r = patchRadius(px);
     var sr=0, sg=0, sb=0, n=0;
     for(var y=Math.max(0,cy-r); y<=Math.min(px.h-1,cy+r); y++){
       for(var x=Math.max(0,cx-r); x<=Math.min(px.w-1,cx+r); x++){
@@ -1369,9 +1350,10 @@ window.Munsell = (function(){
     ccBody.hidden = true;
     ccEmpty.hidden = false;
   }
-  function placeMarker(mk, u, v, pointerType){
+  function placeMarker(mk, u, v, pointerType, frameH){
     mk.hidden = false;
     mk.classList.toggle("touch", pointerType === "touch");
+    mk.classList.toggle("below", pointerType === "touch" && v*frameH < 96);
     mk.style.left = (u*100) + "%";
     mk.style.top = (v*100) + "%";
   }
@@ -1396,7 +1378,7 @@ window.Munsell = (function(){
 
     var pCss = p ? p.css : "transparent";
     markers.forEach(function(mk){
-      placeMarker(mk.el, u, v, e.pointerType);
+      placeMarker(mk.el, u, v, e.pointerType, rect.height);
       mk.el.querySelector(".pm-ring").style.background =
         mk.fill === "ref" ? r.css :
         mk.fill === "cur" ? pCss :
@@ -1404,20 +1386,19 @@ window.Munsell = (function(){
     });
 
     ccEmpty.hidden = true; ccBody.hidden = false;
-    ccRefMun.textContent = r.chip;
-    ccRefVal.textContent = "value " + r.value.toFixed(1);
+    ccRefMun.textContent = r.notation;
     ccRefSw.style.background = r.css;
     if(p){
-      ccPaintMun.textContent = p.chip;
-      ccPaintVal.textContent = "value " + p.value.toFixed(1);
+      ccPaintMun.textContent = p.notation;
       ccPaintSw.style.background = p.css;
       ccDiff.textContent = Munsell.describe(r, p);
     } else {
       ccPaintMun.textContent = "—";
-      ccPaintVal.textContent = "";
       ccPaintSw.style.background = "transparent";
       ccDiff.textContent = "No painting at this spot.";
     }
+    var side = 2*patchRadius(refPx) + 1;
+    ccNote.textContent = "Hue and chroma are the nearest Munsell chip; value is measured. Each reading averages a " + side + "×" + side + " pixel patch.";
   }
 
   function pickCompare(e){ pickAt(e, compareFrame, compareRef, compareCur, [{el: pickMarker, fill: "split"}]); }
@@ -1429,7 +1410,7 @@ window.Munsell = (function(){
     frame.addEventListener("pointerdown", function(e){
       e.preventDefault();
       if(!state.alignedDataUrl) return;
-      frame.setPointerCapture(e.pointerId);
+      capturePointer(frame, e);
       sidePick = e.pointerId;
       pick(e);
     });
@@ -1443,7 +1424,7 @@ window.Munsell = (function(){
     e.preventDefault();
     if(!state.adjusting){ peekStart(e); pickCompare(e); return; }
     if(posDrag || !state.alignedDataUrl) return;
-    compareFrame.setPointerCapture(e.pointerId);
+    capturePointer(compareFrame, e);
     posDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, u0: state.offU, v0: state.offV };
   });
   compareFrame.addEventListener("pointermove", function(e){
@@ -1493,7 +1474,7 @@ window.Munsell = (function(){
     clearStore();
     state.refDataUrl = null; state.refW = 0; state.refH = 0;
     state.alignedDataUrl = null;
-    state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
+    state.curSourceCanvas = null; state.corners = null; state.lastCorners = null;
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
     state.offU = 0; state.offV = 0;
     enableCompareTabs(false);
@@ -1531,7 +1512,7 @@ window.Munsell = (function(){
       state.refW = saved.refW; state.refH = saved.refH;
       state.alignedDataUrl = saved.aligned || null;
       state.offU = Number(saved.offU) || 0; state.offV = Number(saved.offV) || 0;
-      refImgObj.src = saved.ref;
+      state.lastCorners = (saved.lastCorners && saved.lastCorners.pts && saved.lastCorners.pts.length === 4) ? saved.lastCorners : null;
       if(state.alignedDataUrl){
         enableCompareTabs(true);
         refreshSetupUI();
