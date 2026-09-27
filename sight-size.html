@@ -173,6 +173,7 @@
     background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
     overflow:hidden; touch-action:none;
   }
+  .pin-view{ position:absolute; inset:0; transform-origin: 0 0; }
   .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
   .pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
   #pinRefImg{
@@ -196,21 +197,6 @@
   }
   .preview-box canvas{ display:block; width:100%; height:auto; }
   .preview-label{ margin:0; font-size:12px; color: var(--ink-dim); line-height:1.4; }
-
-  /* ---------- crop ---------- */
-  .crop-stage{
-    position:relative; width:100%;
-    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
-    overflow:hidden; touch-action:none;
-  }
-  .crop-stage img{ display:block; width:100%; height:100%; object-fit:fill; }
-  .crop-stage .mask{ position:absolute; background: rgba(10,9,7,0.72); pointer-events:none; }
-  .crop-outline{
-    position:absolute; border:1.5px solid var(--sienna);
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
-    touch-action:none;
-  }
-  .crop-handle{ z-index:5; }
 
   .empty{
     padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
@@ -299,6 +285,22 @@
   }
   .toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
 
+  /* in-page confirm dialog (native confirm() is silently blocked in some
+     embedded browsers and home-screen web apps) */
+  .modal{
+    position:fixed; inset:0; z-index:60;
+    display:none; align-items:center; justify-content:center;
+    padding: 24px; background: rgba(10,9,7,0.6);
+  }
+  .modal.show{ display:flex; }
+  .modal-box{
+    width: min(360px, 100%);
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 18px 16px; display:flex; flex-direction:column; gap:16px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  }
+  .modal-box p{ margin:0; font-size:14.5px; line-height:1.5; }
+
   @media (min-width: 720px){
     .stage{ min-height: 420px; }
   }
@@ -327,46 +329,16 @@
   <!-- ===================== ALIGN VIEW ===================== -->
   <section id="view-align">
 
-    <!-- step 1: crop -->
-    <div class="step" id="cropStageWrap" style="display:none;">
-      <div class="fit">
-        <div class="crop-stage fitted" id="cropStage">
-          <img id="cropImg" alt="Your painting photo" draggable="false">
-          <div class="mask" id="maskTop"></div>
-          <div class="mask" id="maskBottom"></div>
-          <div class="mask" id="maskLeft"></div>
-          <div class="mask" id="maskRight"></div>
-          <div class="crop-outline" id="cropOutline"></div>
-          <div class="handle crop-handle" id="crop0" data-idx="0"></div>
-          <div class="handle crop-handle" id="crop1" data-idx="1"></div>
-          <div class="handle crop-handle" id="crop2" data-idx="2"></div>
-          <div class="handle crop-handle" id="crop3" data-idx="3"></div>
-        </div>
-      </div>
-      <div class="controls">
-        <p class="hint">Drag the corners to trim to your canvas — drag inside the box to move it</p>
-        <div class="panel" id="cropPanel">
-          <div class="row stretch">
-            <button class="btn small" id="resetCropBtn">Reset crop</button>
-            <button class="btn small" id="skipCropBtn">Use full photo</button>
-            <button class="btn small" id="retakeFromCropBtn">Retake photo</button>
-          </div>
-          <button class="btn primary full" id="confirmCropBtn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-            Crop &amp; continue
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- step 2: corner-pin alignment -->
     <div class="step" id="alignStageWrap" style="display:none;">
       <div class="fit">
         <div class="pin-stage fitted" id="pinStage">
-          <img id="pinRefImg" alt="Reference photo" draggable="false">
-          <div class="pin-inner" id="pinInner">
-            <img id="pinImg" alt="Your painting photo" draggable="false">
-            <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+          <div class="pin-view" id="pinView">
+            <img id="pinRefImg" alt="Reference photo" draggable="false">
+            <div class="pin-inner" id="pinInner">
+              <img id="pinImg" alt="Your painting photo" draggable="false">
+              <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+            </div>
           </div>
           <div class="handle" id="handle0" data-idx="0"></div>
           <div class="handle" id="handle1" data-idx="1"></div>
@@ -375,7 +347,7 @@
         </div>
       </div>
       <div class="controls">
-        <p class="hint">Drag the photo to move it, pinch or scroll to zoom · drag the four points onto the corners of your canvas</p>
+        <p class="hint">Drag the four points onto the corners of your canvas · drag the photo to nudge it against the reference · pinch or scroll to zoom in</p>
 
         <div class="panel" id="alignPanel">
           <div class="ctrl-row">
@@ -394,8 +366,7 @@
           </div>
 
           <div class="row stretch">
-            <button class="btn small" id="resetAlignBtn">Reset corners</button>
-            <button class="btn small" id="recropBtn">Adjust crop</button>
+            <button class="btn small" id="resetAlignBtn">Reset</button>
             <button class="btn small" id="retakeBtn">Retake photo</button>
           </div>
           <button class="btn primary full" id="confirmAlignBtn">
@@ -509,6 +480,16 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmMsg">
+  <div class="modal-box">
+    <p id="confirmMsg"></p>
+    <div class="row stretch">
+      <button class="btn" id="confirmCancel">Cancel</button>
+      <button class="btn primary" id="confirmOk">OK</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -522,13 +503,11 @@
   var state = {
     refDataUrl: null, refW: 0, refH: 0,
     alignedDataUrl: null,
-    origSourceCanvas: null, origW: 0, origH: 0, // full working-res photo, before crop
-    cropRect: null,             // {x0,y0,x1,y1} normalized against orig photo
-    curSourceCanvas: null, curW: 0, curH: 0,   // cropped working-res photo, corner-pin source
+    curSourceCanvas: null, curW: 0, curH: 0,   // working-res painting photo, corner-pin source
     previewSourceCanvas: null, previewW: 0, previewH: 0, // small copy for live preview
     corners: null,              // 4 {u,v} normalized points, order TL,TR,BR,BL
-    pinZoom: 1, pinPanX: 0, pinPanY: 0,
-    subStep: "crop",            // "crop" | "pin" — which half of the align flow is showing
+    pinZoom: 1, pinPanX: 0, pinPanY: 0, // view-only zoom/pan (reference + photo together)
+    nudgeU: 0, nudgeV: 0,       // photo shifted against the reference, as a fraction of the stage size
     mode: "align",
     grayscale: false,
     opacity: 100
@@ -547,21 +526,13 @@
   var addRefBtn = $("addRefBtn"), addCurBtn = $("addCurBtn"), changeRefBtn = $("changeRefBtn");
   var refInput = $("refInput"), curInput = $("curInput");
 
-  var cropStageWrap = $("cropStageWrap"), cropStage = $("cropStage"), cropImg = $("cropImg");
-  var maskTop = $("maskTop"), maskBottom = $("maskBottom"), maskLeft = $("maskLeft"), maskRight = $("maskRight");
-  var cropOutline = $("cropOutline");
-  var cropHandles = [$("crop0"), $("crop1"), $("crop2"), $("crop3")];
-  var cropPanel = $("cropPanel");
-  var resetCropBtn = $("resetCropBtn"), skipCropBtn = $("skipCropBtn"), retakeFromCropBtn = $("retakeFromCropBtn");
-  var confirmCropBtn = $("confirmCropBtn");
-
   var alignStageWrap = $("alignStageWrap");
-  var pinStage = $("pinStage"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
+  var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var pinOpacitySlider = $("pinOpacitySlider");
   var previewCanvas = $("previewCanvas");
   var alignPanel = $("alignPanel");
-  var resetAlignBtn = $("resetAlignBtn"), recropBtn = $("recropBtn"), retakeBtn = $("retakeBtn");
+  var resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
   var confirmAlignBtn = $("confirmAlignBtn");
 
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
@@ -677,9 +648,7 @@
       state.refDataUrl = res.dataUrl;
       state.refW = res.width; state.refH = res.height;
       state.alignedDataUrl = null;
-      state.origSourceCanvas = null; state.origW = 0; state.origH = 0; state.cropRect = null;
       state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
-      state.subStep = "crop";
       refImgObj.src = res.dataUrl;
       enableCompareTabs(false);
       saveStore();
@@ -690,7 +659,6 @@
 
   addCurBtn.addEventListener("click", function(){ curInput.click(); });
   retakeBtn.addEventListener("click", function(){ curInput.click(); });
-  retakeFromCropBtn.addEventListener("click", function(){ curInput.click(); });
   retakeFromCompareBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
 
   curInput.addEventListener("change", function(){
@@ -699,9 +667,9 @@
     if(!f) return;
     loadCurrentPhoto(f).then(function(){
       state.alignedDataUrl = null;
-      state.subStep = "crop";
+      enableCompareTabs(false);
       refreshSetupUI();
-      startCropping();
+      startPinning();
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
 
@@ -720,8 +688,7 @@
           srcCanvas.width = sW; srcCanvas.height = sH;
           srcCanvas.getContext("2d").drawImage(img, 0, 0, sW, sH);
 
-          state.origSourceCanvas = srcCanvas; state.origW = sW; state.origH = sH;
-          state.cropRect = defaultCropRect();
+          setupSource(srcCanvas);
           resolve();
         };
         img.src = reader.result;
@@ -732,9 +699,8 @@
 
   function refreshSetupUI(){
     var hasRef = !!state.refDataUrl;
-    var hasRaw = !!state.origSourceCanvas;
-    var onCrop = hasRef && hasRaw && state.subStep === "crop";
-    var onPin  = hasRef && hasRaw && state.subStep === "pin";
+    var hasRaw = !!state.curSourceCanvas;
+    var onPin  = hasRef && hasRaw;
 
     emptyStage.style.display = (hasRef) ? "none" : "flex";
     setupPanel.style.display = (hasRef && hasRaw) ? "none" : "";
@@ -742,124 +708,24 @@
     curRow.style.display = hasRef ? "" : "none";
     changeRefRow.style.display = hasRef ? "" : "none";
 
-    cropStageWrap.style.display = onCrop ? "" : "none";
-    cropPanel.style.display = onCrop ? "" : "none";
     alignStageWrap.style.display = onPin ? "" : "none";
-    alignPanel.style.display = onPin ? "" : "none";
 
     if(!hasRef){
       stepHint.textContent = "reference → painting → compare";
     } else if(!hasRaw){
       stepHint.textContent = "now photograph your painting";
-    } else if(onCrop){
-      stepHint.textContent = "trim to your canvas";
     } else {
       stepHint.textContent = "drag the corners, then align";
     }
   }
 
-  // ================== crop step ==================
-  // An axis-aligned rectangle {x0,y0,x1,y1}, normalized 0..1 against the
-  // original photo, used to trim away background before fine alignment.
+  // Prepares the painting photo as the corner-pin source (plus a small
+  // copy for the live preview) and resets the corners and pan/zoom.
+  function setupSource(c){
+    state.curSourceCanvas = c; state.curW = c.width; state.curH = c.height;
 
-  function defaultCropRect(){
-    var m = 0.04;
-    return { x0: m, y0: m, x1: 1-m, y1: 1-m };
-  }
-
-  function startCropping(){
-    cropImg.src = state.origSourceCanvas.toDataURL("image/jpeg", 0.88);
-    cropStage.style.setProperty("--ar", state.origW + " / " + state.origH);
-    layoutCrop();
-  }
-
-  function layoutCrop(){
-    var r = state.cropRect;
-    maskTop.style.cssText    = "left:0;top:0;width:100%;height:" + (r.y0*100) + "%;";
-    maskBottom.style.cssText = "left:0;top:" + (r.y1*100) + "%;width:100%;height:" + ((1-r.y1)*100) + "%;";
-    maskLeft.style.cssText   = "left:0;top:" + (r.y0*100) + "%;width:" + (r.x0*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
-    maskRight.style.cssText  = "left:" + (r.x1*100) + "%;top:" + (r.y0*100) + "%;width:" + ((1-r.x1)*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
-    cropOutline.style.cssText = "left:" + (r.x0*100) + "%;top:" + (r.y0*100) + "%;width:" + ((r.x1-r.x0)*100) + "%;height:" + ((r.y1-r.y0)*100) + "%;";
-    var pts = [[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]];
-    cropHandles.forEach(function(h,i){ h.style.left = (pts[i][0]*100) + "%"; h.style.top = (pts[i][1]*100) + "%"; });
-  }
-
-  var CROP_MIN_GAP = 0.06;
-  var activeCropHandle = null;
-  cropHandles.forEach(function(h, i){
-    h.addEventListener("pointerdown", function(e){
-      e.preventDefault(); e.stopPropagation();
-      activeCropHandle = i;
-      h.setPointerCapture(e.pointerId);
-    });
-    h.addEventListener("pointermove", function(e){
-      if(activeCropHandle !== i) return;
-      var rect = cropStage.getBoundingClientRect();
-      var u = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-      var v = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-      var r = state.cropRect;
-      if(i===0){ r.x0 = Math.min(u, r.x1-CROP_MIN_GAP); r.y0 = Math.min(v, r.y1-CROP_MIN_GAP); }
-      if(i===1){ r.x1 = Math.max(u, r.x0+CROP_MIN_GAP); r.y0 = Math.min(v, r.y1-CROP_MIN_GAP); }
-      if(i===2){ r.x1 = Math.max(u, r.x0+CROP_MIN_GAP); r.y1 = Math.max(v, r.y0+CROP_MIN_GAP); }
-      if(i===3){ r.x0 = Math.min(u, r.x1-CROP_MIN_GAP); r.y1 = Math.max(v, r.y0+CROP_MIN_GAP); }
-      layoutCrop();
-    });
-    function release(){ if(activeCropHandle === i) activeCropHandle = null; }
-    h.addEventListener("pointerup", release);
-    h.addEventListener("pointercancel", release);
-  });
-
-  var moveDrag = null;
-  cropOutline.addEventListener("pointerdown", function(e){
-    e.preventDefault();
-    cropOutline.setPointerCapture(e.pointerId);
-    var rect = cropStage.getBoundingClientRect();
-    var u = (e.clientX-rect.left)/rect.width, v = (e.clientY-rect.top)/rect.height;
-    moveDrag = { startU:u, startV:v, r0: { x0:state.cropRect.x0, y0:state.cropRect.y0, x1:state.cropRect.x1, y1:state.cropRect.y1 } };
-  });
-  cropOutline.addEventListener("pointermove", function(e){
-    if(!moveDrag) return;
-    var rect = cropStage.getBoundingClientRect();
-    var u = (e.clientX-rect.left)/rect.width, v = (e.clientY-rect.top)/rect.height;
-    var du = u-moveDrag.startU, dv = v-moveDrag.startV;
-    var w = moveDrag.r0.x1-moveDrag.r0.x0, hgt = moveDrag.r0.y1-moveDrag.r0.y0;
-    var nx0 = clamp(moveDrag.r0.x0+du, 0, 1-w), ny0 = clamp(moveDrag.r0.y0+dv, 0, 1-hgt);
-    state.cropRect = { x0:nx0, y0:ny0, x1:nx0+w, y1:ny0+hgt };
-    layoutCrop();
-  });
-  function endMove(){ moveDrag = null; }
-  cropOutline.addEventListener("pointerup", endMove);
-  cropOutline.addEventListener("pointercancel", endMove);
-
-  resetCropBtn.addEventListener("click", function(){
-    state.cropRect = defaultCropRect();
-    layoutCrop();
-  });
-  skipCropBtn.addEventListener("click", function(){
-    state.cropRect = { x0:0, y0:0, x1:1, y1:1 };
-    finishCrop();
-  });
-  confirmCropBtn.addEventListener("click", finishCrop);
-
-  function finishCrop(){
-    applyCrop();
-    state.subStep = "pin";
-    refreshSetupUI();
-    startPinning();
-  }
-
-  function applyCrop(){
-    var o = state.origSourceCanvas, r = state.cropRect;
-    var sx = Math.round(r.x0*state.origW), sy = Math.round(r.y0*state.origH);
-    var sw = Math.max(1, Math.round((r.x1-r.x0)*state.origW));
-    var sh = Math.max(1, Math.round((r.y1-r.y0)*state.origH));
-    var c = document.createElement("canvas");
-    c.width = sw; c.height = sh;
-    c.getContext("2d").drawImage(o, sx, sy, sw, sh, 0, 0, sw, sh);
-    state.curSourceCanvas = c; state.curW = sw; state.curH = sh;
-
-    var pvScale = Math.min(1, PREVIEW_SRC_MAX / Math.max(sw,sh));
-    var pW = Math.round(sw*pvScale), pH = Math.round(sh*pvScale);
+    var pvScale = Math.min(1, PREVIEW_SRC_MAX / Math.max(c.width, c.height));
+    var pW = Math.round(c.width*pvScale), pH = Math.round(c.height*pvScale);
     var pv = document.createElement("canvas");
     pv.width = pW; pv.height = pH;
     pv.getContext("2d").drawImage(c, 0, 0, pW, pH);
@@ -867,22 +733,17 @@
 
     state.corners = defaultCorners();
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    state.nudgeU = 0; state.nudgeV = 0;
   }
-
-  recropBtn.addEventListener("click", function(){
-    state.subStep = "crop";
-    refreshSetupUI();
-    startCropping();
-  });
 
   // ================== corner-pin perspective engine ==================
   // Four normalized points (0..1), order TL, TR, BR, BL, describing where
-  // the edges of the canvas fall inside the (cropped) photo. Warping maps
+  // the edges of the canvas fall inside the photo. Warping maps
   // these onto the reference's rectangle, automatically resizing and
   // correcting perspective in one step.
 
   function defaultCorners(){
-    var m = 0; // start in the extreme corners — the crop step already trims the border
+    var m = 0.1; // start a little inside the edges — the photo usually has background around the canvas
     return [
       { u: m,     v: m     },
       { u: 1 - m, v: m     },
@@ -897,19 +758,19 @@
     pinRefImg.style.opacity = "1";
     pinStage.style.setProperty("--ar", state.curW + " / " + state.curH);
     previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
-    pinInner.style.transform = "translate(0px,0px) scale(1)";
     pinImg.style.opacity = "1";
     pinOpacitySlider.value = 100;
-    layoutHandles();
+    applyPinTransform();
     schedulePreview();
   }
 
-  // Handles are siblings of pin-inner (not children of it) so their on-
-  // screen size stays constant regardless of zoom; their position is
-  // derived each time from pin-inner's current (post pan/zoom) rect.
-  // The reference photo is also a sibling of pin-inner — a fixed backdrop
-  // that does not pan or zoom with the photo, so it stays put while you
-  // reposition the photo on top of it.
+  // Layers: pin-view holds the reference and pin-inner (the photo). Zooming
+  // and panning transform pin-view, so the reference and photo magnify
+  // together — purely a viewing aid. Dragging the photo translates pin-inner
+  // inside pin-view (the "nudge"), shifting the photo against the reference;
+  // that shift is carried into the aligned result.
+  // Handles are siblings of pin-view so their on-screen size stays constant
+  // regardless of zoom; their position is derived from pin-inner's rect.
   function layoutHandles(){
     var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
     pinPoly.setAttribute("points", pts);
@@ -948,7 +809,9 @@
   resetAlignBtn.addEventListener("click", function(){
     if(!state.curSourceCanvas) return;
     state.corners = defaultCorners();
-    layoutHandles();
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    state.nudgeU = 0; state.nudgeV = 0;
+    applyPinTransform();
     schedulePreview();
   });
 
@@ -956,24 +819,42 @@
     pinImg.style.opacity = String(Number(pinOpacitySlider.value) / 100);
   });
 
-  // -------- pinch-zoom / pan on the pin stage, for placing corners precisely --------
+  // -------- gestures on the pin stage --------
+  // one finger / mouse drag  → nudge the photo against the reference
+  // two-finger pinch or pan, or scroll wheel → zoom/pan the view (both layers)
   var PIN_MAX_ZOOM = 5;
+  var NUDGE_MAX = 0.5; // photo can be shifted up to half the stage size
   var bgPointers = {};
   var bgGesture = null;
 
   function clampPinTransform(){
     var rect = pinStage.getBoundingClientRect();
     state.pinZoom = clamp(state.pinZoom, 1, PIN_MAX_ZOOM);
-    // Generous freedom beyond the "tight fit" bound, so the photo can be
-    // dragged into position even at 1x zoom, not just when zoomed in.
-    var freedomX = rect.width * 0.9, freedomY = rect.height * 0.9;
-    var tightMinX = (1-state.pinZoom)*rect.width, tightMinY = (1-state.pinZoom)*rect.height;
-    state.pinPanX = clamp(state.pinPanX, tightMinX - freedomX, freedomX);
-    state.pinPanY = clamp(state.pinPanY, tightMinY - freedomY, freedomY);
+    // the zoomed view always covers the stage
+    state.pinPanX = clamp(state.pinPanX, (1-state.pinZoom)*rect.width, 0);
+    state.pinPanY = clamp(state.pinPanY, (1-state.pinZoom)*rect.height, 0);
+    state.nudgeU = clamp(state.nudgeU, -NUDGE_MAX, NUDGE_MAX);
+    state.nudgeV = clamp(state.nudgeV, -NUDGE_MAX, NUDGE_MAX);
   }
   function applyPinTransform(){
-    pinInner.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
+    var rect = pinStage.getBoundingClientRect();
+    pinView.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
+    pinInner.style.transform = "translate(" + (state.nudgeU*rect.width) + "px," + (state.nudgeV*rect.height) + "px)";
     layoutHandles();
+  }
+
+  // The nudge converted to reference-image pixels. The reference is shown
+  // "contain"-fitted inside the stage (which has the photo's aspect ratio),
+  // so a shift of the photo against it scales by refW / displayed ref width.
+  function nudgeInRefPx(){
+    if(!state.nudgeU && !state.nudgeV) return { x:0, y:0 };
+    var stageW = 1, stageH = state.curH / state.curW;
+    var refAR = state.refW / state.refH;
+    var dispW = Math.min(stageW, stageH*refAR), dispH = dispW / refAR;
+    return {
+      x: state.nudgeU*stageW / dispW * state.refW,
+      y: state.nudgeV*stageH / dispH * state.refH
+    };
   }
   function bgLocalMid(){
     var ids = Object.keys(bgPointers);
@@ -991,7 +872,11 @@
   }
   function beginBgGesture(){
     var mid = bgLocalMid();
-    bgGesture = mid ? { midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist() } : null;
+    bgGesture = mid ? {
+      count: Object.keys(bgPointers).length,
+      midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist(),
+      nudge0: {u:state.nudgeU, v:state.nudgeV}
+    } : null;
   }
 
   pinStage.addEventListener("pointerdown", function(e){
@@ -1005,6 +890,18 @@
     if(!bgPointers[e.pointerId] || !bgGesture) return;
     bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
     var mid = bgLocalMid(); if(!mid) return;
+
+    if(bgGesture.count === 1){
+      // nudge: screen movement ÷ view zoom = movement in stage units
+      var rect = pinStage.getBoundingClientRect();
+      state.nudgeU = bgGesture.nudge0.u + (mid.x - bgGesture.midLocal.x) / (state.pinZoom*rect.width);
+      state.nudgeV = bgGesture.nudge0.v + (mid.y - bgGesture.midLocal.y) / (state.pinZoom*rect.height);
+      clampPinTransform();
+      applyPinTransform();
+      schedulePreview();
+      return;
+    }
+
     var newDist = bgDist();
     var newZoom = state.pinZoom;
     if(newDist > 0 && bgGesture.dist0 > 0){
@@ -1040,7 +937,7 @@
   // The stage resizes with the window / rotation (it's fitted to the screen),
   // so keep the pan in bounds and the handles on their corners.
   function relayoutPin(){
-    if(state.mode !== "align" || state.subStep !== "pin" || !state.corners) return;
+    if(state.mode !== "align" || !state.corners) return;
     clampPinTransform();
     applyPinTransform();
   }
@@ -1090,9 +987,11 @@
   }
 
   // Warps srcCanvas into a new dstW x dstH canvas so that the quadrilateral
-  // defined by srcCornersPx maps onto the full destination rectangle.
-  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH){
-    var dstCorners = [ {x:0,y:0}, {x:dstW,y:0}, {x:dstW,y:dstH}, {x:0,y:dstH} ];
+  // defined by srcCornersPx maps onto the full destination rectangle,
+  // shifted by the optional offset {x,y} (in destination pixels).
+  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH, offset){
+    var ox = offset ? offset.x : 0, oy = offset ? offset.y : 0;
+    var dstCorners = [ {x:ox,y:oy}, {x:dstW+ox,y:oy}, {x:dstW+ox,y:dstH+oy}, {x:ox,y:dstH+oy} ];
     var H = computeHomography(srcCornersPx, dstCorners);
     var Hinv = invert3x3(H);
 
@@ -1149,7 +1048,8 @@
     if(!state.previewSourceCanvas || !state.refW) return;
     var pw = 200, ph = Math.round(pw * state.refH / state.refW);
     var srcPx = cornersToPx(state.corners, state.previewW, state.previewH);
-    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph);
+    var n = nudgeInRefPx(), k = pw / state.refW;
+    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph, { x: n.x*k, y: n.y*k });
     previewCanvas.width = pw; previewCanvas.height = ph;
     var pctx = previewCanvas.getContext("2d");
     pctx.clearRect(0,0,pw,ph);
@@ -1163,7 +1063,7 @@
     confirmAlignBtn.textContent = "Aligning…";
     setTimeout(function(){
       var srcPx = cornersToPx(state.corners, state.curW, state.curH);
-      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH);
+      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH, nudgeInRefPx());
       state.alignedDataUrl = baked.toDataURL("image/jpeg", 0.92);
       saveStore();
       enableCompareTabs(true);
@@ -1229,20 +1129,42 @@
   }
 
   // ---------------- restart ----------------
-  function restart(full){
+  // Clears the saved photos, resets the screen immediately, then reloads the
+  // page so every bit of state (inputs, pan/zoom, sliders) starts fresh.
+  function restart(){
+    clearStore();
     state.refDataUrl = null; state.refW = 0; state.refH = 0;
     state.alignedDataUrl = null;
-    state.origSourceCanvas = null; state.origW = 0; state.origH = 0; state.cropRect = null;
     state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
     state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
-    state.subStep = "crop";
+    state.nudgeU = 0; state.nudgeV = 0;
     enableCompareTabs(false);
-    clearStore();
     refreshSetupUI();
     setMode("align");
+    try{ location.reload(); }catch(e){}
   }
-  restartBtn.addEventListener("click", function(){ if(confirm("Start a new painting? This clears your reference and painting photos.")) restart(); });
-  footerRestart.addEventListener("click", function(){ if(confirm("Start a new painting? This clears your reference and painting photos.")) restart(); });
+  // In-page replacement for confirm(), which some embedded browsers and
+  // home-screen web apps silently block (it returns false without showing).
+  var confirmModal = $("confirmModal"), confirmMsg = $("confirmMsg");
+  var confirmOk = $("confirmOk"), confirmCancel = $("confirmCancel");
+  var confirmAction = null;
+  function askConfirm(msg, okLabel, action){
+    confirmMsg.textContent = msg;
+    confirmOk.textContent = okLabel;
+    confirmAction = action;
+    confirmModal.classList.add("show");
+  }
+  function closeConfirm(){ confirmModal.classList.remove("show"); confirmAction = null; }
+  confirmOk.addEventListener("click", function(){ var a = confirmAction; closeConfirm(); if(a) a(); });
+  confirmCancel.addEventListener("click", closeConfirm);
+  confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && confirmModal.classList.contains("show")) closeConfirm(); });
+
+  function askRestart(){
+    askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", restart);
+  }
+  restartBtn.addEventListener("click", askRestart);
+  footerRestart.addEventListener("click", askRestart);
 
   // ---------------- boot ----------------
   (function boot(){
