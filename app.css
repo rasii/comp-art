@@ -245,7 +245,8 @@ input[type=file]{ display:none; }
 .cc-swlabels{ display:flex; font-size:11px; color: var(--ink-dim); margin-top:-2px; }
 .cc-swlabels span{ flex:1; text-align:center; }
 .cc-diff{ margin:2px 0 0; font-size:13px; line-height:1.4; }
-/* side by side: stacked when the space is tall, in a row when it's wide */
+/* side by side: stacked or in a row, whichever gives the bigger images
+   (chosen in app.js from the space and the photo's shape) */
 .side-fit{ display:block; }
 .split{
   height:100%; display:flex; flex-direction:column; gap:10px;
@@ -253,10 +254,8 @@ input[type=file]{ display:none; }
 }
 .split .pane{ flex:0 0 auto; }
 .split .frame{ width: min(100cqw, calc((50cqh - 5px - 22px) * var(--ar, 1))); }
-@container (min-aspect-ratio: 1/1){
-  .split{ flex-direction:row; }
-  .split .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
-}
+.split.row{ flex-direction:row; }
+.split.row .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
 .pane-label{ font-size:11.5px; line-height:16px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
 
 /* ---------- controls panel ---------- */

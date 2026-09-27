@@ -53,6 +53,7 @@
   var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), retakeFromCompareBtn = $("retakeFromCompareBtn");
   var pickMarker = $("pickMarker");
 
+  var sideFit = $("sideFit"), sideSplit = $("sideSplit");
   var sideRefFrame = $("sideRefFrame"), sideCurFrame = $("sideCurFrame");
   var sideRefView = $("sideRefView"), sideCurView = $("sideCurView");
   var sideRef = $("sideRef"), sideCur = $("sideCur");
@@ -201,6 +202,7 @@
       sideCurFrame.style.setProperty("--ar", ar);
       setSrc(compareRef, state.ref); setSrc(compareCur, state.aligned);
       setSrc(sideRef, state.ref);    setSrc(sideCur, state.aligned);
+      if(m === "side") layoutSide();
     }
     if(opacitySlider.value != state.opacity) opacitySlider.value = state.opacity;
     compareCur.style.opacity = state.peeking ? "0" : String(state.opacity/100);
@@ -680,6 +682,18 @@
       if(state.peeking){ state.peeking = false; render(); }
     }
   }, render);
+
+  // Side by side: the two frames go in a row or stacked, whichever lets
+  // them be bigger in the space available for the photo's shape.
+  function layoutSide(){
+    if(!state.ref) return;
+    var W = sideFit.clientWidth, H = sideFit.clientHeight, ar = state.ref.w / state.ref.h;
+    if(!W || !H) return;
+    var rowW = Math.min(W/2 - 5, (H - 22) * ar);
+    var colW = Math.min(W, (H/2 - 5 - 22) * ar);
+    sideSplit.classList.toggle("row", rowW >= colW);
+  }
+  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "side") render(); }).observe(sideFit);
 
   // side by side: touching either image reads the same spot in both
   [ [sideRefFrame, sideRefView], [sideCurFrame, sideCurView] ].forEach(function(pair){
