@@ -836,6 +836,9 @@
 
   function boot(){
     render();
+    // Ask for durable storage so the browser doesn't clear the saved photos
+    // after a spell of non-use.
+    if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }
     migrateLegacy().then(function(){
       return Promise.all([Store.get("meta"), Store.get("ref"), Store.get("photo"), Store.get("aligned")]);
     }).then(function(res){
