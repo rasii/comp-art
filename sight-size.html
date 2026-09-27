@@ -32,11 +32,9 @@
     --danger:     #B15B4A;
     --radius: 3px;
     box-sizing: border-box;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   *,*::before,*::after{ box-sizing: inherit; }
-  html{ scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html{ height:100%; }
   html,body{
     margin:0; padding:0;
     background: var(--bg);
@@ -47,19 +45,24 @@
     -webkit-touch-callout: none;   /* no iOS long-press callout (save image, copy, etc.) */
     -webkit-user-select: none; user-select: none;
   }
+  /* The page is exactly one screen tall: header + main + footer. Main
+     scrolls only if a very small screen can't fit the minimum layout. */
   body{
     display:flex; flex-direction:column;
-    min-height: 100dvh;
+    height: 100vh; height: 100dvh;
+    overflow: hidden;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+             env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
   img{ -webkit-user-drag:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 
   /* ---------- header ---------- */
   header{
-    position: sticky; top: env(safe-area-inset-top, 0px);
+    flex: 0 0 auto;
     z-index: 20;
     display:flex; align-items:baseline; justify-content:space-between; gap: 12px;
-    padding: 14px 18px 12px;
-    background: linear-gradient(var(--bg) 78%, transparent);
+    padding: 12px 18px 10px;
+    background: var(--bg);
     border-bottom: 1px solid var(--line);
   }
   header .brand{ display:flex; align-items:baseline; gap:10px; min-width:0; }
@@ -83,10 +86,37 @@
 
   /* ---------- layout ---------- */
   main{
-    flex:1; display:flex; flex-direction:column;
-    max-width: 980px; width:100%; margin: 0 auto;
-    padding: 16px 16px calc(28px + env(safe-area-inset-bottom, 0px));
-    gap: 16px;
+    flex:1 1 auto; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column;
+    max-width: 1400px; width:100%; margin: 0 auto;
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  main > section{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+
+  /* ---------- fit-to-screen layout ----------
+     .step  = one screen of work: an image area (.fit) plus its controls.
+     .fit   = takes all leftover space; its .fitted child is scaled to the
+              largest size that fits while keeping the photo's aspect ratio
+              (--ar, e.g. "1100 / 825"). */
+  .step{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+  .fit{
+    flex:1 1 0; min-height:220px; min-width:0;
+    container-type: size;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .fit > .fitted{
+    flex:0 0 auto;
+    width: min(100cqw, calc(100cqh * var(--ar, 1)));
+    aspect-ratio: var(--ar, 1);
+  }
+  .controls{ flex:0 0 auto; display:flex; flex-direction:column; gap:12px; }
+
+  /* Landscape tablets / wide screens: controls in a column beside the image. */
+  @media (orientation: landscape) and (min-width: 700px){
+    .step{ flex-direction:row; min-height:0; }
+    .step .fit{ min-height:0; }
+    .step .controls{ width: 320px; min-height:0; overflow-y:auto; }
   }
 
   /* ---------- tabs ---------- */
@@ -152,10 +182,6 @@
   }
   .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
-  .zoom-reset{
-    position:absolute; top:8px; right:8px; z-index:6;
-    background: rgba(24,22,19,0.72); backdrop-filter: blur(2px);
-  }
   .handle{
     position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
     border-radius:50%; background: var(--sienna); border:2px solid #1B1108;
@@ -206,9 +232,19 @@
   .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
   .frame img.gray{ filter: grayscale(1) contrast(1.03); }
   #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
-  .split{ display:flex; gap:10px; flex-wrap:wrap; }
-  .split .pane{ flex:1 1 260px; min-width:0; }
-  .pane-label{ font-size:11.5px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
+  /* side by side: stacked when the space is tall, in a row when it's wide */
+  .side-fit{ display:block; }
+  .split{
+    height:100%; display:flex; flex-direction:column; gap:10px;
+    align-items:center; justify-content:center;
+  }
+  .split .pane{ flex:0 0 auto; }
+  .split .frame{ width: min(100cqw, calc((50cqh - 5px - 22px) * var(--ar, 1))); }
+  @container (min-aspect-ratio: 1/1){
+    .split{ flex-direction:row; }
+    .split .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
+  }
+  .pane-label{ font-size:11.5px; line-height:16px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
 
   /* ---------- controls panel ---------- */
   .panel{
@@ -247,7 +283,8 @@
   .divider{ height:1px; background: var(--line); margin: 0 -16px; }
 
   footer{
-    text-align:center; padding: 4px 16px 6px; color: var(--ink-dim); font-size:11.5px;
+    flex: 0 0 auto;
+    text-align:center; padding: 2px 16px 8px; color: var(--ink-dim); font-size:11.5px;
   }
   footer button{ background:none;border:none;color:inherit;text-decoration:underline;font-family:inherit;font-size:inherit;padding:0; }
 
@@ -291,78 +328,82 @@
   <section id="view-align">
 
     <!-- step 1: crop -->
-    <div id="cropStageWrap" style="display:none;">
-      <div class="crop-stage" id="cropStage">
-        <img id="cropImg" alt="Your painting photo" draggable="false">
-        <div class="mask" id="maskTop"></div>
-        <div class="mask" id="maskBottom"></div>
-        <div class="mask" id="maskLeft"></div>
-        <div class="mask" id="maskRight"></div>
-        <div class="crop-outline" id="cropOutline"></div>
-        <div class="handle crop-handle" id="crop0" data-idx="0"></div>
-        <div class="handle crop-handle" id="crop1" data-idx="1"></div>
-        <div class="handle crop-handle" id="crop2" data-idx="2"></div>
-        <div class="handle crop-handle" id="crop3" data-idx="3"></div>
+    <div class="step" id="cropStageWrap" style="display:none;">
+      <div class="fit">
+        <div class="crop-stage fitted" id="cropStage">
+          <img id="cropImg" alt="Your painting photo" draggable="false">
+          <div class="mask" id="maskTop"></div>
+          <div class="mask" id="maskBottom"></div>
+          <div class="mask" id="maskLeft"></div>
+          <div class="mask" id="maskRight"></div>
+          <div class="crop-outline" id="cropOutline"></div>
+          <div class="handle crop-handle" id="crop0" data-idx="0"></div>
+          <div class="handle crop-handle" id="crop1" data-idx="1"></div>
+          <div class="handle crop-handle" id="crop2" data-idx="2"></div>
+          <div class="handle crop-handle" id="crop3" data-idx="3"></div>
+        </div>
       </div>
-      <p class="hint">Drag the corners to trim to your canvas — drag inside the box to move it</p>
-    </div>
-
-    <div class="panel" id="cropPanel" style="display:none;">
-      <div class="row stretch">
-        <button class="btn small" id="resetCropBtn">Reset crop</button>
-        <button class="btn small" id="skipCropBtn">Use full photo</button>
-        <button class="btn small" id="retakeFromCropBtn">Retake photo</button>
+      <div class="controls">
+        <p class="hint">Drag the corners to trim to your canvas — drag inside the box to move it</p>
+        <div class="panel" id="cropPanel">
+          <div class="row stretch">
+            <button class="btn small" id="resetCropBtn">Reset crop</button>
+            <button class="btn small" id="skipCropBtn">Use full photo</button>
+            <button class="btn small" id="retakeFromCropBtn">Retake photo</button>
+          </div>
+          <button class="btn primary full" id="confirmCropBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Crop &amp; continue
+          </button>
+        </div>
       </div>
-      <button class="btn primary full" id="confirmCropBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        Crop &amp; continue
-      </button>
     </div>
 
     <!-- step 2: corner-pin alignment -->
-    <div id="alignStageWrap" style="display:none;">
-      <div class="pin-stage" id="pinStage">
-        <img id="pinRefImg" alt="Reference photo" draggable="false">
-        <div class="pin-inner" id="pinInner">
-          <img id="pinImg" alt="Your painting photo" draggable="false">
-          <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
-        </div>
-        <div class="handle" id="handle0" data-idx="0"></div>
-        <div class="handle" id="handle1" data-idx="1"></div>
-        <div class="handle" id="handle2" data-idx="2"></div>
-        <div class="handle" id="handle3" data-idx="3"></div>
-        <button class="icon-btn zoom-reset" id="zoomResetBtn" title="Reset zoom &amp; position" aria-label="Reset zoom and position">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-        </button>
-      </div>
-      <p class="hint">Drag the photo to move it, pinch or scroll to zoom · drag the four points onto the corners of your canvas</p>
-
-      <div class="ctrl-row" style="padding:0 2px;">
-        <div class="ctrl-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
-          Photo opacity — fade to see the reference underneath
+    <div class="step" id="alignStageWrap" style="display:none;">
+      <div class="fit">
+        <div class="pin-stage fitted" id="pinStage">
+          <img id="pinRefImg" alt="Reference photo" draggable="false">
+          <div class="pin-inner" id="pinInner">
+            <img id="pinImg" alt="Your painting photo" draggable="false">
+            <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
+          </div>
+          <div class="handle" id="handle0" data-idx="0"></div>
+          <div class="handle" id="handle1" data-idx="1"></div>
+          <div class="handle" id="handle2" data-idx="2"></div>
+          <div class="handle" id="handle3" data-idx="3"></div>
         </div>
       </div>
-      <input type="range" id="pinOpacitySlider" min="0" max="100" value="100">
+      <div class="controls">
+        <p class="hint">Drag the photo to move it, pinch or scroll to zoom · drag the four points onto the corners of your canvas</p>
 
-      <div class="preview-row">
-        <div class="preview-box">
-          <canvas id="previewCanvas"></canvas>
+        <div class="panel" id="alignPanel">
+          <div class="ctrl-row">
+            <div class="ctrl-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+              Photo opacity — fade to see the reference underneath
+            </div>
+          </div>
+          <input type="range" id="pinOpacitySlider" min="0" max="100" value="100">
+
+          <div class="preview-row">
+            <div class="preview-box">
+              <canvas id="previewCanvas"></canvas>
+            </div>
+            <p class="preview-label">Preview of the aligned result</p>
+          </div>
+
+          <div class="row stretch">
+            <button class="btn small" id="resetAlignBtn">Reset corners</button>
+            <button class="btn small" id="recropBtn">Adjust crop</button>
+            <button class="btn small" id="retakeBtn">Retake photo</button>
+          </div>
+          <button class="btn primary full" id="confirmAlignBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Align &amp; continue
+          </button>
         </div>
-        <p class="preview-label">Preview of the aligned result</p>
       </div>
-    </div>
-
-    <div class="panel" id="alignPanel" style="display:none;">
-      <div class="row stretch">
-        <button class="btn small" id="resetAlignBtn">Reset corners</button>
-        <button class="btn small" id="recropBtn">Adjust crop</button>
-        <button class="btn small" id="retakeBtn">Retake photo</button>
-      </div>
-      <button class="btn primary full" id="confirmAlignBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-        Align &amp; continue
-      </button>
     </div>
 
     <!-- empty / setup states -->
@@ -398,10 +439,14 @@
 
   <!-- ===================== COMPARE VIEW ===================== -->
   <section id="view-compare" style="display:none;">
-    <div class="frame" id="compareFrame" style="--ar:1;">
-      <img id="compareRef" alt="Reference photo">
-      <img id="compareCur" alt="Your painting, aligned to the reference">
+   <div class="step">
+    <div class="fit">
+      <div class="frame fitted" id="compareFrame" style="--ar:1;">
+        <img id="compareRef" alt="Reference photo">
+        <img id="compareCur" alt="Your painting, aligned to the reference">
+      </div>
     </div>
+    <div class="controls">
     <p class="hint">Touch and hold the painting to peek at the reference underneath</p>
 
     <div class="panel">
@@ -427,18 +472,22 @@
 
       <button class="btn ghost full small" id="retakeFromCompareBtn">Retake painting photo</button>
     </div>
+    </div>
+   </div>
   </section>
 
   <!-- ===================== SIDE BY SIDE VIEW ===================== -->
   <section id="view-side" style="display:none;">
-    <div class="split">
-      <div class="pane">
-        <p class="pane-label">Reference</p>
-        <div class="frame" style="--ar:1;"><img id="sideRef" alt="Reference photo"></div>
-      </div>
-      <div class="pane">
-        <p class="pane-label">Your painting</p>
-        <div class="frame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"></div>
+    <div class="fit side-fit">
+      <div class="split">
+        <div class="pane">
+          <p class="pane-label">Reference</p>
+          <div class="frame" style="--ar:1;"><img id="sideRef" alt="Reference photo"></div>
+        </div>
+        <div class="pane">
+          <p class="pane-label">Your painting</p>
+          <div class="frame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"></div>
+        </div>
       </div>
     </div>
     <div class="panel">
@@ -509,7 +558,6 @@
   var alignStageWrap = $("alignStageWrap");
   var pinStage = $("pinStage"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
-  var zoomResetBtn = $("zoomResetBtn");
   var pinOpacitySlider = $("pinOpacitySlider");
   var previewCanvas = $("previewCanvas");
   var alignPanel = $("alignPanel");
@@ -602,7 +650,7 @@
     viewSide.style.display = (m === "side") ? "" : "none";
 
     if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
-    if(m === "compare") { stepHint.textContent = "hold the button to peek at the reference"; renderCompare(); }
+    if(m === "compare") { stepHint.textContent = "hold the painting to peek at the reference"; renderCompare(); }
     if(m === "side") { stepHint.textContent = "reference and painting, side by side"; renderSide(); }
   }
 
@@ -721,7 +769,7 @@
 
   function startCropping(){
     cropImg.src = state.origSourceCanvas.toDataURL("image/jpeg", 0.88);
-    cropStage.style.aspectRatio = state.origW + " / " + state.origH;
+    cropStage.style.setProperty("--ar", state.origW + " / " + state.origH);
     layoutCrop();
   }
 
@@ -834,7 +882,7 @@
   // correcting perspective in one step.
 
   function defaultCorners(){
-    var m = 0.05; // inset margin — the crop step already trims most of the border
+    var m = 0; // start in the extreme corners — the crop step already trims the border
     return [
       { u: m,     v: m     },
       { u: 1 - m, v: m     },
@@ -847,7 +895,7 @@
     pinImg.src = state.curSourceCanvas.toDataURL("image/jpeg", 0.9);
     pinRefImg.src = state.refDataUrl;
     pinRefImg.style.opacity = "1";
-    pinStage.style.aspectRatio = state.curW + " / " + state.curH;
+    pinStage.style.setProperty("--ar", state.curW + " / " + state.curH);
     previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
     pinInner.style.transform = "translate(0px,0px) scale(1)";
     pinImg.style.opacity = "1";
@@ -947,7 +995,7 @@
   }
 
   pinStage.addEventListener("pointerdown", function(e){
-    if(e.target.closest(".handle") || e.target.closest(".zoom-reset")) return;
+    if(e.target.closest(".handle")) return;
     if(!state.curSourceCanvas) return;
     pinStage.setPointerCapture(e.pointerId);
     bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
@@ -989,14 +1037,15 @@
     applyPinTransform();
   }, { passive:false });
 
-  zoomResetBtn.addEventListener("click", function(){
-    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+  // The stage resizes with the window / rotation (it's fitted to the screen),
+  // so keep the pan in bounds and the handles on their corners.
+  function relayoutPin(){
+    if(state.mode !== "align" || state.subStep !== "pin" || !state.corners) return;
+    clampPinTransform();
     applyPinTransform();
-  });
-
-  window.addEventListener("resize", function(){
-    if(state.mode === "align" && state.subStep === "pin") layoutHandles();
-  });
+  }
+  if(window.ResizeObserver) new ResizeObserver(relayoutPin).observe(pinStage);
+  window.addEventListener("resize", relayoutPin);
 
   // -------- linear algebra: 4-point homography + inverse --------
   function solveLinear8(A, b){
