@@ -124,8 +124,10 @@
    <div class="step">
     <div class="fit">
       <div class="frame fitted" id="compareFrame" style="--ar:1;">
-        <img id="compareRef" alt="Reference photo">
-        <img id="compareCur" alt="Your painting, aligned to the reference">
+        <div class="zoom-view" id="compareView">
+          <img id="compareRef" alt="Reference photo">
+          <img id="compareCur" alt="Your painting, aligned to the reference">
+        </div>
         <div class="pick-marker" id="pickMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div>
       </div>
     </div>
@@ -178,11 +180,11 @@
       <div class="split">
         <div class="pane">
           <p class="pane-label">Reference</p>
-          <div class="frame side-frame" id="sideRefFrame" style="--ar:1;"><img id="sideRef" alt="Reference photo"><div class="pick-marker" id="sideRefMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
+          <div class="frame side-frame" id="sideRefFrame" style="--ar:1;"><div class="zoom-view" id="sideRefView"><img id="sideRef" alt="Reference photo"></div><div class="pick-marker" id="sideRefMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
         <div class="pane">
           <p class="pane-label">Your painting</p>
-          <div class="frame side-frame" id="sideCurFrame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"><div class="pick-marker" id="sideCurMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
+          <div class="frame side-frame" id="sideCurFrame" style="--ar:1;"><div class="zoom-view" id="sideCurView"><img id="sideCur" alt="Your painting, aligned to the reference"></div><div class="pick-marker" id="sideCurMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
       </div>
     </div>
@@ -208,6 +210,8 @@
 
 <script src="munsell-data.js"></script>
 <script src="munsell.js"></script>
+<script src="warp.js"></script>
+<script src="store.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

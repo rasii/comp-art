@@ -193,6 +193,8 @@ input[type=file]{ display:none; }
   aspect-ratio: var(--ar, 1);
 }
 .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+/* pinch-zoomed together across the compare and side-by-side frames */
+.zoom-view{ position:absolute; inset:0; transform-origin: 0 0; }
 .frame img.gray{ filter: grayscale(1) contrast(1.03); }
 #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
 #compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
