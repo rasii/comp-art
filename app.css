@@ -104,6 +104,10 @@ main > section{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
   .step{ flex-direction:row; min-height:0; }
   .step .fit{ min-height:0; }
   .step .controls{ width: 320px; min-height:0; overflow-y:auto; }
+  /* side by side: the two images want the full width, so the colour card
+     goes underneath instead of in a column */
+  .step.side-step{ flex-direction:column; }
+  .step.side-step .controls{ width:auto; overflow:visible; }
 }
 
 /* ---------- tabs ---------- */
