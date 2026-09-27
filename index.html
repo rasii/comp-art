@@ -1,385 +1,1240 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>CompArt</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Sight-Size</title>
 
-    <!-- iOS PWA Meta Tags -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="CompArt">
+<!-- iOS home-screen behavior -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sight-Size">
+<meta name="theme-color" content="#181613">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='38' fill='%23221E19'/%3E%3Ccircle cx='90' cy='90' r='54' fill='none' stroke='%23C1712F' stroke-width='7'/%3E%3Ccircle cx='90' cy='58' r='11' fill='%23C1712F'/%3E%3Ccircle cx='120' cy='90' r='11' fill='%233F5D7D'/%3E%3Ccircle cx='90' cy='122' r='11' fill='%23A6693A'/%3E%3Ccircle cx='60' cy='90' r='11' fill='%23E7DCC8'/%3E%3C/svg%3E">
 
-    <style>
-        :root {
-            --bg-color: #121212;
-            --panel-color: #1e1e1e;
-            --accent-color: #ff9500;
-            --text-color: #ffffff;
-            --text-dim: #aaaaaa;
-            --safe-top: env(safe-area-inset-top, 0px);
-            --safe-bottom: env(safe-area-inset-bottom, 0px);
-        }
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap">
 
-        * {
-            box-sizing: border-box;
-            -webkit-user-select: none;
-            user-select: none;
-            margin: 0;
-            padding: 0;
-        }
+<style>
+  :root{
+    color-scheme: dark;
+    --ink:        #EDE6D9;
+    --ink-dim:    #A79C8B;
+    --bg:         #181613;
+    --panel:      #211E19;
+    --panel-2:    #292420;
+    --line:       #3A342C;
+    --sienna:     #C1712F;
+    --sienna-dim: #8C531F;
+    --ultra:      #4D6E92;
+    --ok:         #7C9473;
+    --danger:     #B15B4A;
+    --radius: 3px;
+    box-sizing: border-box;
+  }
+  *,*::before,*::after{ box-sizing: inherit; }
+  html{ height:100%; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    min-height: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;   /* no iOS long-press callout (save image, copy, etc.) */
+    -webkit-user-select: none; user-select: none;
+  }
+  /* The page is exactly one screen tall: header + main + footer. Main
+     scrolls only if a very small screen can't fit the minimum layout. */
+  body{
+    display:flex; flex-direction:column;
+    height: 100vh; height: 100dvh;
+    overflow: hidden;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+             env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  }
+  img{ -webkit-user-drag:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            overflow: hidden;
-            position: fixed;
-            width: 100%;
-            height: 100%;
-        }
+  /* ---------- header ---------- */
+  header{
+    flex: 0 0 auto;
+    z-index: 20;
+    display:flex; align-items:baseline; justify-content:space-between; gap: 12px;
+    padding: 12px 18px 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  header .brand{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+  h1{
+    font-family:"Fraunces", Georgia, serif;
+    font-weight:600; font-size: 21px; letter-spacing:0.2px;
+    margin:0; white-space:nowrap;
+  }
+  header p{
+    margin:0; font-size:12.5px; color: var(--ink-dim);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .icon-btn{
+    flex: 0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    width:34px; height:34px;
+    background:transparent; border:1px solid var(--line); border-radius: var(--radius);
+    color: var(--ink-dim);
+  }
+  .icon-btn:active{ background: var(--panel-2); }
 
-        /* App Branding Header */
-        header {
-            background-color: var(--panel-color);
-            padding: calc(12px + var(--safe-top)) 16px 12px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid #2d2d2d;
-            z-index: 10;
-            position: relative;
-        }
+  /* ---------- layout ---------- */
+  main{
+    flex:1 1 auto; min-height:0; overflow-y:auto;
+    display:flex; flex-direction:column;
+    max-width: 1400px; width:100%; margin: 0 auto;
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  main > section{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
 
-        .logo-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+  /* ---------- fit-to-screen layout ----------
+     .step  = one screen of work: an image area (.fit) plus its controls.
+     .fit   = takes all leftover space; its .fitted child is scaled to the
+              largest size that fits while keeping the photo's aspect ratio
+              (--ar, e.g. "1100 / 825"). */
+  .step{ flex:1 1 auto; display:flex; flex-direction:column; gap:12px; }
+  .fit{
+    flex:1 1 0; min-height:220px; min-width:0;
+    container-type: size;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .fit > .fitted{
+    flex:0 0 auto;
+    width: min(100cqw, calc(100cqh * var(--ar, 1)));
+    aspect-ratio: var(--ar, 1);
+  }
+  .controls{ flex:0 0 auto; display:flex; flex-direction:column; gap:12px; }
 
-        .logo-icon {
-            width: 24px;
-            height: 24px;
-            border: 2px solid var(--accent-color);
-            border-radius: 6px;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+  /* Landscape tablets / wide screens: controls in a column beside the image. */
+  @media (orientation: landscape) and (min-width: 700px){
+    .step{ flex-direction:row; min-height:0; }
+    .step .fit{ min-height:0; }
+    .step .controls{ width: 320px; min-height:0; overflow-y:auto; }
+  }
 
-        .logo-icon::before {
-            content: '';
-            width: 10px;
-            height: 10px;
-            background-color: #fff;
-            border-radius: 50%;
-            opacity: 0.5;
-        }
+  /* ---------- tabs ---------- */
+  nav.tabs{
+    display:flex; gap:2px;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 3px;
+  }
+  nav.tabs button{
+    flex:1; padding:9px 6px; font-size:13.5px; font-weight:500;
+    background:transparent; border:none; color: var(--ink-dim); border-radius: 2px;
+    font-family: inherit;
+  }
+  nav.tabs button.active{ background: var(--panel-2); color: var(--ink); }
+  nav.tabs button:disabled{ opacity:0.35; }
 
-        h1 {
-            font-size: 18px;
-            font-weight: 600;
-            letter-spacing: -0.5px;
-        }
+  /* ---------- generic buttons ---------- */
+  button{ cursor:pointer; -webkit-appearance:none; appearance:none; touch-action: manipulation; }
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    padding: 11px 16px; font-size: 14px; font-weight:500;
+    border-radius: var(--radius); border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink);
+    font-family: inherit;
+  }
+  .btn:active{ background: var(--panel-2); }
+  .btn.primary{ background: var(--sienna); border-color: var(--sienna); color:#1B1108; font-weight:600; }
+  .btn.primary:active{ background: var(--sienna-dim); }
+  .btn.ghost{ background:transparent; }
+  .btn.small{ padding:7px 11px; font-size:12.5px; }
+  .btn.full{ width:100%; }
+  .btn svg{ width:16px; height:16px; flex:0 0 auto; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; }
+  .row.stretch > *{ flex:1; }
 
-        /* Viewport Canvas Space */
-        .workspace {
-            position: absolute;
-            top: calc(53px + var(--safe-top));
-            bottom: calc(140px + var(--safe-bottom));
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background-color: #0a0a0a;
-        }
+  input[type=file]{ display:none; }
 
-        /* Grayscale Filter Application Group */
-        .filter-group {
-            width: 100%;
-            height: 100%;
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            transition: filter 0.2s ease;
-        }
+  /* ---------- stage ---------- */
+  .stage{
+    position:relative;
+    width:100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    touch-action: none;
+  }
+  .stage canvas{ display:block; width:100%; height:auto; }
 
-        .filter-group.grayscale {
-            filter: grayscale(100%);
-        }
+  /* ---------- corner-pin ---------- */
+  .pin-stage{
+    position:relative; width:100%;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    overflow:hidden; touch-action:none;
+  }
+  .pin-view{ position:absolute; inset:0; transform-origin: 0 0; }
+  .pin-inner{ position:absolute; inset:0; width:100%; height:100%; transform-origin: 0 0; }
+  .pin-inner img{ position:absolute; top:0; left:0; display:block; width:100%; height:100%; object-fit:fill; }
+  /* the reference, perspective-warped (CSS matrix3d) into the four-point
+     quad beneath the photo, so fading the photo shows how well they match */
+  .pin-inner #pinRefImg{
+    width:auto; height:auto; max-width:none;
+    transform-origin: 0 0;
+    pointer-events:none;
+  }  .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:0.6; vector-effect: non-scaling-stroke; }
+  .handle{
+    position:absolute; width:30px; height:30px; margin:-15px 0 0 -15px;
+    border-radius:50%; background: var(--sienna); border:2px solid #1B1108;
+    box-shadow: 0 0 0 3px rgba(193,113,47,0.28);
+    touch-action:none; z-index:5;
+  }
+  .preview-row{ display:flex; align-items:center; gap:12px; padding: 2px 2px 0; }
+  .preview-box{
+    flex:0 0 auto; width:104px;
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    overflow:hidden;
+  }
+  .preview-box canvas{ display:block; width:100%; height:auto; }
+  .preview-label{ margin:0; font-size:12px; color: var(--ink-dim); line-height:1.4; }
 
-        /* Mode: Overlay Container */
-        .view-overlay {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+  .empty{
+    padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
+    max-width: 320px;
+  }
+  .empty strong{ display:block; color: var(--ink); font-size:15px; margin-bottom:6px; font-weight:600; }
 
-        .img-layer {
-            max-width: 90%;
-            max-height: 90%;
-            object-fit: contain;
-            pointer-events: none;
-            position: absolute;
-        }
+  /* ---------- align hint ---------- */
+  .hint{
+    font-size:12.5px; color: var(--ink-dim); text-align:center; margin: 0; padding: 0 8px;
+  }
 
-        #refImage {
-            z-index: 1;
-            opacity: 1;
-        }
+  /* ---------- compare / side-by-side frame ---------- */
+  .frame{
+    position:relative; width:100%; border-radius: var(--radius); overflow:hidden;
+    background: var(--panel); border:1px solid var(--line);
+    aspect-ratio: var(--ar, 1);
+  }
+  .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+  .frame img.gray{ filter: grayscale(1) contrast(1.03); }
+  #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
+  #compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
+  /* side by side: stacked when the space is tall, in a row when it's wide */
+  .side-fit{ display:block; }
+  .split{
+    height:100%; display:flex; flex-direction:column; gap:10px;
+    align-items:center; justify-content:center;
+  }
+  .split .pane{ flex:0 0 auto; }
+  .split .frame{ width: min(100cqw, calc((50cqh - 5px - 22px) * var(--ar, 1))); }
+  @container (min-aspect-ratio: 1/1){
+    .split{ flex-direction:row; }
+    .split .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
+  }
+  .pane-label{ font-size:11.5px; line-height:16px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
 
-        #paintWrapper {
-            position: absolute;
-            z-index: 2;
-            width: 100%;
-            height: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            touch-action: none;
-        }
+  /* ---------- controls panel ---------- */
+  .panel{
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px 16px;
+    display:flex; flex-direction:column; gap:14px;
+  }
+  .ctrl-row{ display:flex; align-items:center; justify-content:space-between; gap:14px; }
+  .ctrl-label{ font-size:13px; color: var(--ink); display:flex; align-items:center; gap:8px; }
+  .ctrl-label svg{ width:16px; height:16px; color: var(--ink-dim); flex:0 0 auto; }
 
-        #paintImage {
-            max-width: 90%;
-            max-height: 90%;
-            object-fit: contain;
-            transform-origin: center center;
-        }
+  input[type=range]{
+    -webkit-appearance:none; appearance:none;
+    width:100%; height:28px; background:transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:3px; background: var(--line); border-radius:2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:19px; height:19px; margin-top:-8px; border-radius:50%;
+    background: var(--sienna); border:2px solid #1B1108;
+  }
 
-        /* Mode: Side by Side Container */
-        .view-side {
-            display: none;
-            width: 100%;
-            height: 100%;
-            flex-direction: row;
-            padding: 16px;
-            gap: 16px;
-        }
+  .switch{
+    position:relative; width:42px; height:24px; flex:0 0 auto;
+    background: var(--line); border-radius: 12px; border:none; padding:0;
+  }
+  .switch::after{
+    content:""; position:absolute; top:2px; left:2px; width:20px; height:20px;
+    background: var(--ink-dim); border-radius:50%; transition: transform .15s ease, background .15s ease;
+  }
+  .switch.on{ background: var(--sienna-dim); }
+  .switch.on::after{ transform: translateX(18px); background:#1B1108; }
 
-        .side-box {
-            flex: 1;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: #151515;
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
+  .divider{ height:1px; background: var(--line); margin: 0 -16px; }
 
-        .side-box span {
-            position: absolute;
-            top: 8px;
-            left: 8px;
-            background: rgba(0, 0, 0, 0.6);
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            color: var(--text-dim);
-            z-index: 3;
-        }
+  footer{
+    flex: 0 0 auto;
+    text-align:center; padding: 2px 16px 8px; color: var(--ink-dim); font-size:11.5px;
+  }
+  footer button{ background:none;border:none;color:inherit;text-decoration:underline;font-family:inherit;font-size:inherit;padding:0; }
 
-        .side-img {
-            max-width: 95%;
-            max-height: 95%;
-            object-fit: contain;
-        }
+  .toast{
+    position: fixed; left:50%; bottom: calc(18px + env(safe-area-inset-bottom,0px));
+    transform: translateX(-50%);
+    background: #2A251F; border:1px solid var(--line); color: var(--ink);
+    padding: 11px 16px; border-radius: var(--radius); font-size:13px;
+    max-width: 88vw; text-align:center; z-index:50;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    opacity:0; pointer-events:none; transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
 
-        /* Control Panel */
-        .controls {
-            position: absolute;
-            bottom: 0;
-            width: 100%;
-            background-color: var(--panel-color);
-            border-top: 1px solid #2d2d2d;
-            padding: 16px 16px calc(16px + var(--safe-bottom)) 16px;
-            z-index: 10;
-        }
+  /* in-page confirm dialog (native confirm() is silently blocked in some
+     embedded browsers and home-screen web apps) */
+  .modal{
+    position:fixed; inset:0; z-index:60;
+    display:none; align-items:center; justify-content:center;
+    padding: 24px; background: rgba(10,9,7,0.6);
+  }
+  .modal.show{ display:flex; }
+  .modal-box{
+    width: min(360px, 100%);
+    background: var(--panel); border:1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 18px 16px; display:flex; flex-direction:column; gap:16px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  }
+  .modal-box p{ margin:0; font-size:14.5px; line-height:1.5; }
 
-        .button-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 16px;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .btn {
-            background-color: #2c2c2e;
-            color: var(--text-color);
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            white-space: nowrap;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            cursor: pointer;
-        }
-
-        .btn.active {
-            background-color: var(--accent-color);
-            color: #000;
-            font-weight: 600;
-        }
-
-        .btn-danger {
-            background-color: #3a1c1c;
-            color: #ff453a;
-        }
-
-        .slider-group {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 8px;
-        }
-
-        .slider-group label {
-            font-size: 13px;
-            color: var(--text-dim);
-            width: 60px;
-        }
-
-        .slider {
-            flex: 1;
-            -webkit-appearance: none;
-            appearance: none;
-            height: 28px;
-            background: transparent;
-        }
-
-        .slider::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 4px;
-            background: #3a3a3c;
-            border-radius: 2px;
-        }
-
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            height: 24px;
-            width: 24px;
-            border-radius: 50%;
-            background: #ffffff;
-            margin-top: -10px;
-            box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.4);
-        }
-
-        input[type="file"] {
-            display: none;
-        }
-
-        .placeholder-text {
-            color: var(--text-dim);
-            font-size: 14px;
-            text-align: center;
-            padding: 20px;
-        }
-    </style>
+  @media (min-width: 720px){
+    .stage{ min-height: 420px; }
+  }
+</style>
 </head>
-
 <body>
 
-    <header>
-        <div class="logo-container">
-            <div class="logo-icon"></div>
-            <h1>CompArt</h1>
-        </div>
-        <button class="btn btn-danger" onclick="resetImages()">Reset</button>
-    </header>
+<header>
+  <div class="brand">
+    <h1>Sight-Size</h1>
+    <p id="stepHint">reference → painting → compare</p>
+  </div>
+  <button class="icon-btn" id="restartBtn" title="Start a new painting" aria-label="Start a new painting">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+  </button>
+</header>
 
-    <div class="workspace">
-        <div id="filterGroup" class="filter-group">
+<main>
 
-            <!-- Overlay Mode Area -->
-            <div id="viewOverlay" class="view-overlay">
-                <div id="refPlaceholder" class="placeholder-text">Upload Reference Photo to start</div>
-                <img id="refImage" class="img-layer" alt="Reference">
+  <nav class="tabs" id="tabs">
+    <button data-mode="align" class="active">Align</button>
+    <button data-mode="compare" disabled>Compare</button>
+    <button data-mode="side" disabled>Side by side</button>
+  </nav>
 
-                <div id="paintWrapper">
-                    <img id="paintImage" alt="Painting State" style="display:none;">
-                </div>
+  <!-- ===================== ALIGN VIEW ===================== -->
+  <section id="view-align">
+
+    <!-- step 2: corner-pin alignment -->
+    <div class="step" id="alignStageWrap" style="display:none;">
+      <div class="fit">
+        <div class="pin-stage fitted" id="pinStage">
+          <div class="pin-view" id="pinView">
+            <div class="pin-inner" id="pinInner">
+              <img id="pinRefImg" alt="Reference photo" draggable="false">
+              <img id="pinImg" alt="Your painting photo" draggable="false">
+              <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
             </div>
-
-            <!-- Side by Side Mode Area -->
-            <div id="viewSide" class="view-side">
-                <div class="side-box">
-                    <span>Reference</span>
-                    <img id="sideRefImg" class="side-img" alt="Ref Side">
-                </div>
-                <div class="side-box">
-                    <span>Your Painting</span>
-                    <img id="sidePaintImg" class="side-img" alt="Paint Side">
-                </div>
-            </div>
-
+          </div>
+          <div class="handle" id="handle0" data-idx="0"></div>
+          <div class="handle" id="handle1" data-idx="1"></div>
+          <div class="handle" id="handle2" data-idx="2"></div>
+          <div class="handle" id="handle3" data-idx="3"></div>
         </div>
+      </div>
+      <div class="controls">
+        <p class="hint">Drag the four points onto the corners of your canvas · fade the photo to check it against the reference · pinch or scroll to zoom in</p>
+
+        <div class="panel" id="alignPanel">
+          <div class="ctrl-row">
+            <div class="ctrl-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+              Photo opacity — fade to see the reference underneath
+            </div>
+          </div>
+          <input type="range" id="pinOpacitySlider" min="0" max="100" value="100">
+
+          <div class="preview-row">
+            <div class="preview-box">
+              <canvas id="previewCanvas"></canvas>
+            </div>
+            <p class="preview-label">Preview of the aligned result</p>
+          </div>
+
+          <div class="row stretch">
+            <button class="btn small" id="resetAlignBtn">Reset</button>
+            <button class="btn small" id="retakeBtn">Retake photo</button>
+          </div>
+          <button class="btn primary full" id="confirmAlignBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Align &amp; continue
+          </button>
+        </div>
+      </div>
     </div>
 
+    <!-- empty / setup states -->
+    <div class="stage" id="emptyStage">
+      <div class="empty" id="emptyStageText">
+        <strong>Start with your reference</strong>
+        Load the photo you're painting from. You'll line your canvas photo up to it next.
+      </div>
+    </div>
+
+    <div class="panel" id="setupPanel">
+      <div class="row stretch" id="refRow">
+        <button class="btn primary full" id="addRefBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="1.5"/><circle cx="8.5" cy="10" r="1.5"/><path d="m21 16-5-5-4.5 4.5"/></svg>
+          Add reference photo
+        </button>
+      </div>
+      <div class="row stretch" id="curRow" style="display:none;">
+        <button class="btn primary full" id="addCurBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.3"/></svg>
+          Photograph your painting
+        </button>
+      </div>
+      <div class="row stretch" id="changeRefRow" style="display:none;">
+        <button class="btn ghost full small" id="changeRefBtn">Use a different reference photo</button>
+      </div>
+    </div>
+
+    <input type="file" id="refInput" accept="image/*">
+    <input type="file" id="curInput" accept="image/*" capture="environment">
+
+  </section>
+
+  <!-- ===================== COMPARE VIEW ===================== -->
+  <section id="view-compare" style="display:none;">
+   <div class="step">
+    <div class="fit">
+      <div class="frame fitted" id="compareFrame" style="--ar:1;">
+        <img id="compareRef" alt="Reference photo">
+        <img id="compareCur" alt="Your painting, aligned to the reference">
+      </div>
+    </div>
     <div class="controls">
-        <div class="button-row">
-            <label class="btn active" id="btnUploadRef">
-                📸 Ref Photo
-                <input type="file" accept="image/*" onchange="loadImg(this, 'ref')">
-            </label>
-            <label class="btn" id="btnUploadPaint" style="display:none;">
-                🎨 Capture Canvas
-                <input type="file" accept="image/*" onchange="loadImg(this, 'paint')">
-            </label>
-            <button class="btn" id="btnToggleVisibility" onclick="toggleVisibility()" style="display:none;">Hide
-                Painting</button>
-            <button class="btn" id="btnLayout" onclick="toggleLayout()" style="display:none;">Side-by-Side</button>
-            <button class="btn" id="btnGrayscale" onclick="toggleGrayscale()">🌓 Grayscale</button>
-        </div>
+    <p class="hint" id="compareHint">Touch and hold the painting to peek at the reference underneath</p>
 
-        <!-- Opacity Slider Panel -->
-        <div class="slider-group" id="opacityControl" style="display:none;">
-            <label id="opacityLabel">Opacity</label>
-            <input type="range" min="0" max="100" value="50" class="slider" id="opacitySlider"
-                oninput="adjustOpacity(this.value)">
+    <div class="panel">
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+          Painting opacity
         </div>
+      </div>
+      <input type="range" id="opacitySlider" min="0" max="100" value="100">
+
+      <div class="divider"></div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+          Adjust position — drag the painting
+        </div>
+        <button class="switch" id="adjustSwitch" aria-label="Toggle position adjustment"></button>
+      </div>
+      <button class="btn ghost full small" id="resetPosBtn" style="display:none;">Reset position</button>
+
+      <div class="divider"></div>
+
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          Check values (black &amp; white)
+        </div>
+        <button class="switch" id="graySwitch" aria-label="Toggle grayscale"></button>
+      </div>
+
+      <div class="divider"></div>
+
+      <button class="btn ghost full small" id="retakeFromCompareBtn">Retake painting photo</button>
     </div>
+    </div>
+   </div>
+  </section>
 
-    <script>
-        let appMode = 'overlay';
-        let paintVisible = true; 
-        let isGrayscale = false; 
-        let hasRef = false; 
-        let hasPaint = false; 
-        let scale = 1; 
-        let translateX = 0; 
-        let translateY = 0; 
-        let isDragging = false; 
-        let startX = 0, startY = 0; 
-        let initialTranslateX = 0, initialTranslateY = 0; 
-        let initialPinchDist = 0; 
-        let initialScale = 1; 
-        const refImg = document.getElementById('refImage'); 
-        const paintImg = document.getElementById('paintImage'); 
-        const paintWrapper = document.getElementById('paintWrapper'); 
-        const sideRefImg = document.getElementById('sideRefImg'); 
-        const sidePaintImg = document.getElementById('sidePaintImg'); 
-        const filterGroup = document.getElementById('filterGroup'); 
-        
-        function loadImg(input, target) { if (input.files && input.files[0]) { 
-            const reader = new FileReader(); reader.onload = function (e) { if (target === 'ref') { refImg.src = e.target.result; sideRefImg.src = e.target.result; document.getElementById('refPlaceholder').style.display = 'none'; document.getElementById('btnUploadPaint').style.display = 'inline-flex'; hasRef = true; } else { paintImg.src = e.target.result; sidePaintImg.src = e.target.result; paintImg.style.display = 'block'; document.getElementById('btnToggleVisibility').style.display = 'inline-flex'; document.getElementById('btnLayout').style.display = 'inline-flex'; document.getElementById('opacityControl').style.display = 'flex'; hasPaint = true; resetTransformation(); } }; reader.readAsDataURL(input.files[0]); } } 
-            
-        function toggleVisibility() { paintVisible = !paintVisible; const btn = document.getElementById('btnToggleVisibility'); if (paintVisible) { paintImg.style.opacity = document.getElementById('opacitySlider').value / 100; btn.textContent = "Hide Painting"; btn.classList.remove('active'); } else { paintImg.style.opacity = 0; btn.textContent = "Show Painting"; btn.classList.add('active'); } } function toggleLayout() { const overlayDiv = document.getElementById('viewOverlay'); const sideDiv = document.getElementById('viewSide'); const layoutBtn = document.getElementById('btnLayout'); const opacityPanel = document.getElementById('opacityControl'); const visibilityBtn = document.getElementById('btnToggleVisibility'); if (appMode === 'overlay') { appMode = 'side'; overlayDiv.style.display = 'none'; sideDiv.style.display = 'flex'; layoutBtn.textContent = "Overlay Mode"; layoutBtn.classList.add('active'); opacityPanel.style.display = 'none'; visibilityBtn.style.display = 'none'; } else { appMode = 'overlay'; overlayDiv.style.display = 'flex'; sideDiv.style.display = 'none'; layoutBtn.textContent = "Side-by-Side"; layoutBtn.classList.remove('active'); opacityPanel.style.display = 'flex'; visibilityBtn.style.display = 'inline-flex'; if (!paintVisible) { paintImg.style.opacity = 0; } else { adjustOpacity(document.getElementById('opacitySlider').value); } } } 
-        function toggleGrayscale() { isGrayscale = !isGrayscale; const btn = document.getElementById('btnGrayscale'); if (isGrayscale) { filterGroup.classList.add('grayscale'); btn.classList.add('active'); } else { filterGroup.classList.remove('grayscale'); btn.classList.remove('active'); } } 
-        function adjustOpacity(val) { if (paintVisible) { paintImg.style.opacity = val / 100; } } 
-        function updateTransform() { paintImg.style.transform = translate(${ translateX }px, ${ translateY }px) scale(${ scale }); } 
-        function resetTransformation() { scale = 1; translateX = 0; translateY = 0; updateTransform(); } 
-        function resetImages() { location.reload(); } 
-        function getDistance(touches) { return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY); } paintWrapper.addEventListener('touchstart', function (e) { if (!hasPaint || appMode === 'side') return; if (e.touches.length === 1) { isDragging = true; startX = e.touches[0].clientX; startY = e.touches[0].clientY; initialTranslateX = translateX; initialTranslateY = translateY; } else if (e.touches.length === 2) { isDragging = false; initialPinchDist = getDistance(e.touches); initialScale = scale; } }, { passive: true }); paintWrapper.addEventListener('touchmove', function (e) { if (!hasPaint || appMode === 'side') return; if (isDragging && e.touches.length === 1) { const deltaX = e.touches[0].clientX - startX; const deltaY = e.touches[0].clientY - startY; translateX = initialTranslateX + deltaX; translateY = initialTranslateY + deltaY; updateTransform(); } else if (e.touches.length === 2) { const currentDist = getDistance(e.touches); if (initialPinchDist > 0) { const newScale = initialScale * (currentDist / initialPinchDist); scale = Math.max(0.2, Math.min(newScale, 5)); updateTransform(); } } }, { passive: true }); paintWrapper.addEventListener('touchend', function (e) { if (e.touches.length < 2) { initialPinchDist = 0; } if (e.touches.length === 0) { isDragging = false; } }, { passive: true });
+  <!-- ===================== SIDE BY SIDE VIEW ===================== -->
+  <section id="view-side" style="display:none;">
+    <div class="fit side-fit">
+      <div class="split">
+        <div class="pane">
+          <p class="pane-label">Reference</p>
+          <div class="frame" style="--ar:1;"><img id="sideRef" alt="Reference photo"></div>
+        </div>
+        <div class="pane">
+          <p class="pane-label">Your painting</p>
+          <div class="frame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ctrl-row">
+        <div class="ctrl-label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+          Check values (black &amp; white)
+        </div>
+        <button class="switch" id="graySwitch2" aria-label="Toggle grayscale"></button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Photos stay on this device. <button id="footerRestart">Start a new painting</button>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmMsg">
+  <div class="modal-box">
+    <p id="confirmMsg"></p>
+    <div class="row stretch">
+      <button class="btn" id="confirmCancel">Cancel</button>
+      <button class="btn primary" id="confirmOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORE_KEY = "sightsize_v1";
+  var WORK_DIM = 1100;      // long-edge working resolution for reference + final aligned output
+  var CUR_SRC_MAX = 1800;   // working resolution kept for the raw painting photo (perspective source)
+  var PREVIEW_SRC_MAX = 420; // small copy used for the fast live preview warp
+
+  // ---------------- state ----------------
+  var state = {
+    refDataUrl: null, refW: 0, refH: 0,
+    alignedDataUrl: null,
+    curSourceCanvas: null, curW: 0, curH: 0,   // working-res painting photo, corner-pin source
+    previewSourceCanvas: null, previewW: 0, previewH: 0, // small copy for live preview
+    corners: null,              // 4 {u,v} normalized points, order TL,TR,BR,BL
+    pinZoom: 1, pinPanX: 0, pinPanY: 0, // view-only zoom/pan on the align stage
+    offU: 0, offV: 0,           // aligned painting shifted against the reference (compare), fraction of its size
+    adjusting: false,           // compare view: drag moves the painting instead of peeking
+    mode: "align",
+    grayscale: false,
+    opacity: 100
+  };
+
+  var refImgObj = new Image();
+
+  // ---------------- element refs ----------------
+  var $ = function(id){ return document.getElementById(id); };
+  var tabs = $("tabs");
+  var stepHint = $("stepHint");
+
+  var emptyStage = $("emptyStage"), emptyStageText = $("emptyStageText");
+  var setupPanel = $("setupPanel");
+  var refRow = $("refRow"), curRow = $("curRow"), changeRefRow = $("changeRefRow");
+  var addRefBtn = $("addRefBtn"), addCurBtn = $("addCurBtn"), changeRefBtn = $("changeRefBtn");
+  var refInput = $("refInput"), curInput = $("curInput");
+
+  var alignStageWrap = $("alignStageWrap");
+  var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg"), pinPoly = $("pinPoly");
+  var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
+  var pinOpacitySlider = $("pinOpacitySlider");
+  var previewCanvas = $("previewCanvas");
+  var alignPanel = $("alignPanel");
+  var resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
+  var confirmAlignBtn = $("confirmAlignBtn");
+
+  var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
+  var compareRef = $("compareRef"), compareCur = $("compareCur"), compareFrame = $("compareFrame");
+  var opacitySlider = $("opacitySlider");
+  var graySwitch = $("graySwitch"), graySwitch2 = $("graySwitch2");
+  var retakeFromCompareBtn = $("retakeFromCompareBtn");
+  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), compareHint = $("compareHint");
+
+  var sideRef = $("sideRef"), sideCur = $("sideCur");
+
+  var restartBtn = $("restartBtn"), footerRestart = $("footerRestart");
+  var toastEl = $("toast");
+
+  // Suppress long-press / right-click context menus and text selection
+  // everywhere, so holding on an image never pops up browser actions.
+  document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  document.addEventListener("selectstart", function(e){ e.preventDefault(); });
+
+  // ---------------- helpers ----------------
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function(){ toastEl.classList.remove("show"); }, 2600);
+  }
+
+  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  function fileToResizedDataUrl(file, maxDim){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error("read failed")); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error("decode failed")); };
+        img.onload = function(){
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var scale = Math.min(1, maxDim / Math.max(w,h));
+          var outW = Math.round(w*scale), outH = Math.round(h*scale);
+          var c = document.createElement("canvas");
+          c.width = outW; c.height = outH;
+          var cctx = c.getContext("2d");
+          cctx.drawImage(img, 0, 0, outW, outH);
+          resolve({ dataUrl: c.toDataURL("image/jpeg", 0.9), width: outW, height: outH, img: img });
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function saveStore(){
+    try{
+      var payload = JSON.stringify({
+        ref: state.refDataUrl, refW: state.refW, refH: state.refH,
+        aligned: state.alignedDataUrl,
+        offU: state.offU, offV: state.offV
+      });
+      localStorage.setItem(STORE_KEY, payload);
+    }catch(e){
+      if(!saveStore.warned) toast("Your photos are too large to keep saved between visits, but this session works fine.");
+      saveStore.warned = true;
+    }
+  }
+
+  function loadStore(){
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+
+  function clearStore(){
+    try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+  }
+
+  // ---------------- tab / mode switching ----------------
+  function setMode(m){
+    if(m === "compare" && !state.alignedDataUrl) return;
+    if(m === "side" && !state.alignedDataUrl) return;
+    state.mode = m;
+    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
+      b.classList.toggle("active", b.dataset.mode === m);
+    });
+    viewAlign.style.display = (m === "align") ? "" : "none";
+    viewCompare.style.display = (m === "compare") ? "" : "none";
+    viewSide.style.display = (m === "side") ? "" : "none";
+
+    if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
+    if(m === "compare") { stepHint.textContent = "hold the painting to peek at the reference"; renderCompare(); }
+    if(m === "side") { stepHint.textContent = "reference and painting, side by side"; renderSide(); }
+  }
+
+  tabs.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-mode]");
+    if(!b || b.disabled) return;
+    setMode(b.dataset.mode);
+  });
+
+  function enableCompareTabs(on){
+    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
+      if(b.dataset.mode !== "align") b.disabled = !on;
+    });
+  }
+
+  // ---------------- reference loading ----------------
+  addRefBtn.addEventListener("click", function(){ refInput.click(); });
+  changeRefBtn.addEventListener("click", function(){ refInput.click(); });
+  refInput.addEventListener("change", function(){
+    var f = refInput.files && refInput.files[0];
+    refInput.value = "";
+    if(!f) return;
+    fileToResizedDataUrl(f, WORK_DIM).then(function(res){
+      state.refDataUrl = res.dataUrl;
+      state.refW = res.width; state.refH = res.height;
+      state.alignedDataUrl = null;
+      state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
+      refImgObj.src = res.dataUrl;
+      enableCompareTabs(false);
+      saveStore();
+      refreshSetupUI();
+      setMode("align");
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+
+  addCurBtn.addEventListener("click", function(){ curInput.click(); });
+  retakeBtn.addEventListener("click", function(){ curInput.click(); });
+  retakeFromCompareBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
+
+  curInput.addEventListener("change", function(){
+    var f = curInput.files && curInput.files[0];
+    curInput.value = "";
+    if(!f) return;
+    loadCurrentPhoto(f).then(function(){
+      state.alignedDataUrl = null;
+      enableCompareTabs(false);
+      refreshSetupUI();
+      startPinning();
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+
+  function loadCurrentPhoto(file){
+    return new Promise(function(resolve, reject){
+      var reader = new FileReader();
+      reader.onerror = function(){ reject(new Error("read failed")); };
+      reader.onload = function(){
+        var img = new Image();
+        img.onerror = function(){ reject(new Error("decode failed")); };
+        img.onload = function(){
+          var w = img.naturalWidth, h = img.naturalHeight;
+          var srcScale = Math.min(1, CUR_SRC_MAX / Math.max(w,h));
+          var sW = Math.round(w*srcScale), sH = Math.round(h*srcScale);
+          var srcCanvas = document.createElement("canvas");
+          srcCanvas.width = sW; srcCanvas.height = sH;
+          srcCanvas.getContext("2d").drawImage(img, 0, 0, sW, sH);
+
+          setupSource(srcCanvas);
+          resolve();
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function refreshSetupUI(){
+    var hasRef = !!state.refDataUrl;
+    var hasRaw = !!state.curSourceCanvas;
+    var onPin  = hasRef && hasRaw;
+
+    emptyStage.style.display = (hasRef) ? "none" : "flex";
+    setupPanel.style.display = (hasRef && hasRaw) ? "none" : "";
+    refRow.style.display = hasRef ? "none" : "";
+    curRow.style.display = hasRef ? "" : "none";
+    changeRefRow.style.display = hasRef ? "" : "none";
+
+    alignStageWrap.style.display = onPin ? "" : "none";
+
+    if(!hasRef){
+      stepHint.textContent = "reference → painting → compare";
+    } else if(!hasRaw){
+      stepHint.textContent = "now photograph your painting";
+    } else {
+      stepHint.textContent = "drag the corners, then align";
+    }
+  }
+
+  // Prepares the painting photo as the corner-pin source (plus a small
+  // copy for the live preview) and resets the corners and pan/zoom.
+  function setupSource(c){
+    state.curSourceCanvas = c; state.curW = c.width; state.curH = c.height;
+
+    var pvScale = Math.min(1, PREVIEW_SRC_MAX / Math.max(c.width, c.height));
+    var pW = Math.round(c.width*pvScale), pH = Math.round(c.height*pvScale);
+    var pv = document.createElement("canvas");
+    pv.width = pW; pv.height = pH;
+    pv.getContext("2d").drawImage(c, 0, 0, pW, pH);
+    state.previewSourceCanvas = pv; state.previewW = pW; state.previewH = pH;
+
+    state.corners = defaultCorners();
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+  }
+
+  // ================== corner-pin perspective engine ==================
+  // Four normalized points (0..1), order TL, TR, BR, BL, describing where
+  // the edges of the canvas fall inside the photo. Warping maps
+  // these onto the reference's rectangle, automatically resizing and
+  // correcting perspective in one step.
+
+  function defaultCorners(){
+    var m = 0.1; // start a little inside the edges — the photo usually has background around the canvas
+    return [
+      { u: m,     v: m     },
+      { u: 1 - m, v: m     },
+      { u: 1 - m, v: 1 - m },
+      { u: m,     v: 1 - m }
+    ];
+  }
+
+  function startPinning(){
+    pinImg.src = state.curSourceCanvas.toDataURL("image/jpeg", 0.9);
+    pinRefImg.src = state.refDataUrl;
+    pinRefImg.style.opacity = "1";
+    pinStage.style.setProperty("--ar", state.curW + " / " + state.curH);
+    previewCanvas.style.aspectRatio = state.refW + " / " + state.refH;
+    pinImg.style.opacity = "1";
+    pinOpacitySlider.value = 100;
+    applyPinTransform();
+    schedulePreview();
+  }
+
+  // Layers: pin-view is zoomed/panned as a whole (a viewing aid only). Inside
+  // it, pin-inner holds the photo and, beneath it, the reference warped into
+  // the four-point quad — so fading the photo shows the reference at the
+  // painting's size and perspective. Handles are siblings of pin-view so
+  // their on-screen size stays constant regardless of zoom; their position
+  // is derived from pin-inner's rect.
+  function layoutHandles(){
+    var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
+    pinPoly.setAttribute("points", pts);
+    layoutRefOverlay();
+    var stageRect = pinStage.getBoundingClientRect();
+    var innerRect = pinInner.getBoundingClientRect();
+    handles.forEach(function(h, i){
+      var u = state.corners[i].u, v = state.corners[i].v;
+      var xPx = (innerRect.left - stageRect.left) + u*innerRect.width;
+      var yPx = (innerRect.top  - stageRect.top)  + v*innerRect.height;
+      h.style.left = xPx + "px";
+      h.style.top  = yPx + "px";
+    });
+  }
+
+  var activeHandle = null;
+  handles.forEach(function(h, i){
+    h.addEventListener("pointerdown", function(e){
+      e.preventDefault(); e.stopPropagation();
+      activeHandle = i;
+      h.setPointerCapture(e.pointerId);
+    });
+    h.addEventListener("pointermove", function(e){
+      if(activeHandle !== i) return;
+      var rect = pinInner.getBoundingClientRect();
+      var u = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      var v = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+      state.corners[i] = { u: u, v: v };
+      layoutHandles();
+      schedulePreview();
+    });
+    function release(){ if(activeHandle === i) activeHandle = null; }
+    h.addEventListener("pointerup", release);
+    h.addEventListener("pointercancel", release);
+  });
+
+  // Maps the reference image (refW x refH box) onto the corner quad with a
+  // CSS matrix3d built from the same homography used for the final warp.
+  function layoutRefOverlay(){
+    if(!state.refW || !state.corners) return;
+    var w = pinInner.offsetWidth, h = pinInner.offsetHeight;
+    if(!w || !h) return;
+    var src = [ {x:0,y:0}, {x:state.refW,y:0}, {x:state.refW,y:state.refH}, {x:0,y:state.refH} ];
+    var dst = cornersToPx(state.corners, w, h);
+    var m = computeHomography(src, dst);
+    pinRefImg.style.width = state.refW + "px";
+    pinRefImg.style.height = state.refH + "px";
+    pinRefImg.style.transform = "matrix3d(" + [
+      m[0], m[3], 0, m[6],
+      m[1], m[4], 0, m[7],
+      0,    0,    1, 0,
+      m[2], m[5], 0, m[8]
+    ].join(",") + ")";
+  }
+
+  resetAlignBtn.addEventListener("click", function(){
+    if(!state.curSourceCanvas) return;
+    state.corners = defaultCorners();
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    applyPinTransform();
+    schedulePreview();
+  });
+
+  pinOpacitySlider.addEventListener("input", function(){
+    pinImg.style.opacity = String(Number(pinOpacitySlider.value) / 100);
+  });
+
+  // -------- pinch-zoom / pan of the align view, for placing corners precisely --------
+  var PIN_MAX_ZOOM = 5;
+  var bgPointers = {};
+  var bgGesture = null;
+
+  function clampPinTransform(){
+    var rect = pinStage.getBoundingClientRect();
+    state.pinZoom = clamp(state.pinZoom, 1, PIN_MAX_ZOOM);
+    // the zoomed view always covers the stage
+    state.pinPanX = clamp(state.pinPanX, (1-state.pinZoom)*rect.width, 0);
+    state.pinPanY = clamp(state.pinPanY, (1-state.pinZoom)*rect.height, 0);
+  }
+  function applyPinTransform(){
+    pinView.style.transform = "translate(" + state.pinPanX + "px," + state.pinPanY + "px) scale(" + state.pinZoom + ")";
+    layoutHandles();
+  }
+  function bgLocalMid(){
+    var ids = Object.keys(bgPointers);
+    if(!ids.length) return null;
+    var sx=0, sy=0;
+    ids.forEach(function(id){ sx += bgPointers[id].x; sy += bgPointers[id].y; });
+    var rect = pinStage.getBoundingClientRect();
+    return { x: (sx/ids.length) - rect.left, y: (sy/ids.length) - rect.top };
+  }
+  function bgDist(){
+    var ids = Object.keys(bgPointers);
+    if(ids.length < 2) return 0;
+    var a = bgPointers[ids[0]], b = bgPointers[ids[1]];
+    return Math.hypot(a.x-b.x, a.y-b.y);
+  }
+  function beginBgGesture(){
+    var mid = bgLocalMid();
+    bgGesture = mid ? { midLocal: mid, zoom0: state.pinZoom, pan0: {x:state.pinPanX,y:state.pinPanY}, dist0: bgDist() } : null;
+  }
+
+  pinStage.addEventListener("pointerdown", function(e){
+    if(e.target.closest(".handle")) return;
+    if(!state.curSourceCanvas) return;
+    pinStage.setPointerCapture(e.pointerId);
+    bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+    beginBgGesture();
+  });
+  pinStage.addEventListener("pointermove", function(e){
+    if(!bgPointers[e.pointerId] || !bgGesture) return;
+    bgPointers[e.pointerId] = { x:e.clientX, y:e.clientY };
+    var mid = bgLocalMid(); if(!mid) return;
+    var newDist = bgDist();
+    var newZoom = state.pinZoom;
+    if(newDist > 0 && bgGesture.dist0 > 0){
+      newZoom = clamp(bgGesture.zoom0 * (newDist/bgGesture.dist0), 1, PIN_MAX_ZOOM);
+    }
+    var contentX = (bgGesture.midLocal.x - bgGesture.pan0.x) / bgGesture.zoom0;
+    var contentY = (bgGesture.midLocal.y - bgGesture.pan0.y) / bgGesture.zoom0;
+    state.pinZoom = newZoom;
+    state.pinPanX = mid.x - contentX*newZoom;
+    state.pinPanY = mid.y - contentY*newZoom;
+    clampPinTransform();
+    applyPinTransform();
+  });
+  function endBgPointer(e){ delete bgPointers[e.pointerId]; beginBgGesture(); }
+  pinStage.addEventListener("pointerup", endBgPointer);
+  pinStage.addEventListener("pointercancel", endBgPointer);
+
+  pinStage.addEventListener("wheel", function(e){
+    if(!state.curSourceCanvas) return;
+    e.preventDefault();
+    var rect = pinStage.getBoundingClientRect();
+    var mx = e.clientX-rect.left, my = e.clientY-rect.top;
+    var factor = 1 - clamp(e.deltaY,-80,80)*0.0025;
+    var newZoom = clamp(state.pinZoom*factor, 1, PIN_MAX_ZOOM);
+    var contentX = (mx-state.pinPanX)/state.pinZoom, contentY = (my-state.pinPanY)/state.pinZoom;
+    state.pinZoom = newZoom;
+    state.pinPanX = mx-contentX*newZoom;
+    state.pinPanY = my-contentY*newZoom;
+    clampPinTransform();
+    applyPinTransform();
+  }, { passive:false });
+
+  // The stage resizes with the window / rotation (it's fitted to the screen),
+  // so keep the pan in bounds and the handles on their corners.
+  function relayoutPin(){
+    if(state.mode !== "align" || !state.corners) return;
+    clampPinTransform();
+    applyPinTransform();
+  }
+  if(window.ResizeObserver) new ResizeObserver(relayoutPin).observe(pinStage);
+  window.addEventListener("resize", relayoutPin);
+
+  // -------- linear algebra: 4-point homography + inverse --------
+  function solveLinear8(A, b){
+    var n = 8;
+    for(var i=0;i<n;i++) A[i].push(b[i]);
+    for(var col=0; col<n; col++){
+      var maxRow = col;
+      for(var r=col+1;r<n;r++){ if(Math.abs(A[r][col]) > Math.abs(A[maxRow][col])) maxRow = r; }
+      var tmp = A[col]; A[col] = A[maxRow]; A[maxRow] = tmp;
+      var pivot = A[col][col]; if(Math.abs(pivot) < 1e-12) pivot = 1e-12;
+      for(var c=col;c<=n;c++) A[col][c] /= pivot;
+      for(var r2=0;r2<n;r2++){
+        if(r2 === col) continue;
+        var factor = A[r2][col];
+        for(var c2=col;c2<=n;c2++) A[r2][c2] -= factor*A[col][c2];
+      }
+    }
+    var x = [];
+    for(var i2=0;i2<n;i2++) x.push(A[i2][n]);
+    return x;
+  }
+
+  function computeHomography(src, dst){
+    var A = [], b = [];
+    for(var i=0;i<4;i++){
+      var sx=src[i].x, sy=src[i].y, dx=dst[i].x, dy=dst[i].y;
+      A.push([sx, sy, 1, 0,0,0, -sx*dx, -sy*dx]); b.push(dx);
+      A.push([0,0,0, sx, sy, 1, -sx*dy, -sy*dy]); b.push(dy);
+    }
+    var h = solveLinear8(A, b);
+    return [h[0],h[1],h[2], h[3],h[4],h[5], h[6],h[7],1];
+  }
+
+  function invert3x3(m){
+    var a=m[0],b=m[1],c=m[2], d=m[3],e=m[4],f=m[5], g=m[6],h=m[7],i=m[8];
+    var A = e*i-f*h, B = -(d*i-f*g), C = d*h-e*g;
+    var D = -(b*i-c*h), E = a*i-c*g, F = -(a*h-b*g);
+    var G = b*f-c*e, H = -(a*f-c*d), I = a*e-b*d;
+    var det = a*A + b*B + c*C; if(Math.abs(det) < 1e-12) det = 1e-12;
+    var k = 1/det;
+    return [A*k,D*k,G*k, B*k,E*k,H*k, C*k,F*k,I*k];
+  }
+
+  // Warps srcCanvas into a new dstW x dstH canvas so that the quadrilateral
+  // defined by srcCornersPx maps onto the full destination rectangle.
+  function warpPerspective(srcCanvas, srcCornersPx, dstW, dstH){
+    var dstCorners = [ {x:0,y:0}, {x:dstW,y:0}, {x:dstW,y:dstH}, {x:0,y:dstH} ];
+    var H = computeHomography(srcCornersPx, dstCorners);
+    var Hinv = invert3x3(H);
+
+    var sW = srcCanvas.width, sH = srcCanvas.height;
+    var sData = srcCanvas.getContext("2d").getImageData(0,0,sW,sH).data;
+
+    var out = document.createElement("canvas");
+    out.width = dstW; out.height = dstH;
+    var octx = out.getContext("2d");
+    var outImg = octx.createImageData(dstW, dstH);
+    var oData = outImg.data;
+
+    for(var j=0;j<dstH;j++){
+      var Y = j + 0.5;
+      for(var i=0;i<dstW;i++){
+        var X = i + 0.5;
+        var w = Hinv[6]*X + Hinv[7]*Y + Hinv[8];
+        var sx = (Hinv[0]*X + Hinv[1]*Y + Hinv[2]) / w;
+        var sy = (Hinv[3]*X + Hinv[4]*Y + Hinv[5]) / w;
+        var idx = (j*dstW + i) * 4;
+        if(sx >= 0 && sx < sW-1 && sy >= 0 && sy < sH-1){
+          var x0 = sx|0, y0 = sy|0, x1 = x0+1, y1 = y0+1;
+          var fx = sx-x0, fy = sy-y0;
+          var i00=(y0*sW+x0)*4, i10=(y0*sW+x1)*4, i01=(y1*sW+x0)*4, i11=(y1*sW+x1)*4;
+          for(var c=0;c<4;c++){
+            var top = sData[i00+c] + (sData[i10+c]-sData[i00+c])*fx;
+            var bot = sData[i01+c] + (sData[i11+c]-sData[i01+c])*fx;
+            oData[idx+c] = top + (bot-top)*fy;
+          }
+        } else {
+          oData[idx]=oData[idx+1]=oData[idx+2]=oData[idx+3]=0;
+        }
+      }
+    }
+    octx.putImageData(outImg, 0, 0);
+    return out;
+  }
+
+  function cornersToPx(corners, w, h){
+    return corners.map(function(p){ return { x: p.u*w, y: p.v*h }; });
+  }
+
+  // -------- live low-res preview --------
+  var previewPending = false;
+  function schedulePreview(){
+    if(previewPending) return;
+    previewPending = true;
+    requestAnimationFrame(function(){
+      previewPending = false;
+      renderPreview();
+    });
+  }
+  function renderPreview(){
+    if(!state.previewSourceCanvas || !state.refW) return;
+    var pw = 200, ph = Math.round(pw * state.refH / state.refW);
+    var srcPx = cornersToPx(state.corners, state.previewW, state.previewH);
+    var warped = warpPerspective(state.previewSourceCanvas, srcPx, pw, ph);
+    previewCanvas.width = pw; previewCanvas.height = ph;
+    var pctx = previewCanvas.getContext("2d");
+    pctx.clearRect(0,0,pw,ph);
+    pctx.drawImage(warped, 0, 0);
+  }
+
+  // -------- confirm alignment (full-resolution bake) --------
+  confirmAlignBtn.addEventListener("click", function(){
+    if(!state.curSourceCanvas || !state.refW) return;
+    confirmAlignBtn.disabled = true;
+    confirmAlignBtn.textContent = "Aligning…";
+    setTimeout(function(){
+      var srcPx = cornersToPx(state.corners, state.curW, state.curH);
+      var baked = warpPerspective(state.curSourceCanvas, srcPx, state.refW, state.refH);
+      state.offU = 0; state.offV = 0;
+      state.alignedDataUrl = baked.toDataURL("image/jpeg", 0.92);
+      saveStore();
+      enableCompareTabs(true);
+      confirmAlignBtn.disabled = false;
+      confirmAlignBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Align &amp; continue';
+      setMode("compare");
+    }, 30);
+  });
+
+  // ---------------- compare view ----------------
+  function renderCompare(){
+    if(!state.refDataUrl || !state.alignedDataUrl) return;
+    compareFrame.style.setProperty("--ar", state.refW + "/" + state.refH);
+    compareRef.src = state.refDataUrl;
+    compareCur.src = state.alignedDataUrl;
+    compareCur.style.opacity = String(state.opacity / 100);
+    applyGrayscale();
+    applyOffset();
+    applyAdjusting();
+  }
+
+  function setOpacity(v){
+    state.opacity = v;
+    opacitySlider.value = v;
+    compareCur.style.opacity = String(v/100);
+  }
+  opacitySlider.addEventListener("input", function(){ setOpacity(Number(opacitySlider.value)); });
+
+  // -------- position adjustment: shift the aligned painting over the reference --------
+  // The offset is a fraction of the frame, applied as a CSS translate to the
+  // painting in both compare and side-by-side views (the aligned image and
+  // the reference share the same aspect ratio, so % of the image = % of frame).
+  var OFF_MAX = 0.5;
+  function applyOffset(){
+    var t = (state.offU || state.offV) ? "translate(" + (state.offU*100) + "%," + (state.offV*100) + "%)" : "";
+    compareCur.style.transform = t;
+    sideCur.style.transform = t;
+    resetPosBtn.style.display = (state.adjusting || state.offU || state.offV) ? "" : "none";
+  }
+  function applyAdjusting(){
+    adjustSwitch.classList.toggle("on", state.adjusting);
+    compareFrame.classList.toggle("adjusting", state.adjusting);
+    compareHint.textContent = state.adjusting
+      ? "Drag the painting to line it up with the reference"
+      : "Touch and hold the painting to peek at the reference underneath";
+    applyOffset();
+  }
+  adjustSwitch.addEventListener("click", function(){
+    state.adjusting = !state.adjusting;
+    // the reference has to show through to line things up
+    if(state.adjusting && state.opacity > 70) setOpacity(50);
+    applyAdjusting();
+  });
+  resetPosBtn.addEventListener("click", function(){
+    state.offU = 0; state.offV = 0;
+    applyOffset();
+    saveStore();
+  });
+
+  var peeking = false, posDrag = null;
+  function peekStart(e){
+    if(peeking || !state.alignedDataUrl) return;
+    peeking = true;
+    compareFrame.setPointerCapture(e.pointerId);
+    compareCur.style.opacity = "0";
+  }
+  function peekEnd(){
+    if(!peeking) return;
+    peeking = false;
+    compareCur.style.opacity = String(state.opacity/100);
+  }
+  compareFrame.addEventListener("pointerdown", function(e){
+    e.preventDefault();
+    if(!state.adjusting){ peekStart(e); return; }
+    if(posDrag || !state.alignedDataUrl) return;
+    compareFrame.setPointerCapture(e.pointerId);
+    posDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, u0: state.offU, v0: state.offV };
+  });
+  compareFrame.addEventListener("pointermove", function(e){
+    if(!posDrag || e.pointerId !== posDrag.id) return;
+    var rect = compareFrame.getBoundingClientRect();
+    state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / rect.width, -OFF_MAX, OFF_MAX);
+    state.offV = clamp(posDrag.v0 + (e.clientY - posDrag.y) / rect.height, -OFF_MAX, OFF_MAX);
+    applyOffset();
+  });
+  function endPointer(e){
+    if(posDrag && e.pointerId === posDrag.id){ posDrag = null; saveStore(); }
+    peekEnd();
+  }
+  compareFrame.addEventListener("pointerup", endPointer);
+  compareFrame.addEventListener("pointercancel", endPointer);
+  compareFrame.addEventListener("pointerleave", function(){ peekEnd(); });
+
+  function applyGrayscale(){
+    var on = state.grayscale;
+    graySwitch.classList.toggle("on", on);
+    graySwitch2.classList.toggle("on", on);
+    [compareRef, compareCur, sideRef, sideCur].forEach(function(img){
+      img.classList.toggle("gray", on);
+    });
+  }
+  function toggleGray(){ state.grayscale = !state.grayscale; applyGrayscale(); }
+  graySwitch.addEventListener("click", toggleGray);
+  graySwitch2.addEventListener("click", toggleGray);
+
+  // ---------------- side-by-side view ----------------
+  function renderSide(){
+    if(!state.refDataUrl || !state.alignedDataUrl) return;
+    var ar = state.refW + "/" + state.refH;
+    sideRef.closest(".frame").style.setProperty("--ar", ar);
+    sideCur.closest(".frame").style.setProperty("--ar", ar);
+    sideRef.src = state.refDataUrl;
+    sideCur.src = state.alignedDataUrl;
+    applyGrayscale();
+    applyOffset();
+  }
+
+  // ---------------- restart ----------------
+  // Clears the saved photos, resets the screen immediately, then reloads the
+  // page so every bit of state (inputs, pan/zoom, sliders) starts fresh.
+  function restart(){
+    clearStore();
+    state.refDataUrl = null; state.refW = 0; state.refH = 0;
+    state.alignedDataUrl = null;
+    state.curSourceCanvas = null; state.previewSourceCanvas = null; state.corners = null;
+    state.pinZoom = 1; state.pinPanX = 0; state.pinPanY = 0;
+    state.offU = 0; state.offV = 0;
+    enableCompareTabs(false);
+    refreshSetupUI();
+    setMode("align");
+    try{ location.reload(); }catch(e){}
+  }
+  // In-page replacement for confirm(), which some embedded browsers and
+  // home-screen web apps silently block (it returns false without showing).
+  var confirmModal = $("confirmModal"), confirmMsg = $("confirmMsg");
+  var confirmOk = $("confirmOk"), confirmCancel = $("confirmCancel");
+  var confirmAction = null;
+  function askConfirm(msg, okLabel, action){
+    confirmMsg.textContent = msg;
+    confirmOk.textContent = okLabel;
+    confirmAction = action;
+    confirmModal.classList.add("show");
+  }
+  function closeConfirm(){ confirmModal.classList.remove("show"); confirmAction = null; }
+  confirmOk.addEventListener("click", function(){ var a = confirmAction; closeConfirm(); if(a) a(); });
+  confirmCancel.addEventListener("click", closeConfirm);
+  confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
+  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && confirmModal.classList.contains("show")) closeConfirm(); });
+
+  function askRestart(){
+    askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", restart);
+  }
+  restartBtn.addEventListener("click", askRestart);
+  footerRestart.addEventListener("click", askRestart);
+
+  // ---------------- boot ----------------
+  (function boot(){
+    var saved = loadStore();
+    if(saved && saved.ref){
+      state.refDataUrl = saved.ref;
+      state.refW = saved.refW; state.refH = saved.refH;
+      state.alignedDataUrl = saved.aligned || null;
+      state.offU = Number(saved.offU) || 0; state.offV = Number(saved.offV) || 0;
+      refImgObj.src = saved.ref;
+      if(state.alignedDataUrl){
+        enableCompareTabs(true);
+        refreshSetupUI();
+        setMode("compare");
+        return;
+      }
+    }
+    refreshSetupUI();
+    setMode("align");
+  })();
+
+})();
+</script>
+</body>
+</html>
