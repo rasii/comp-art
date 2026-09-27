@@ -229,11 +229,12 @@
   .pick-marker[hidden]{ display:none; }
   .pick-marker span{ position:absolute; display:block; }
   .pm-ring{
-    left:-11px; top:-11px; width:22px; height:22px; border-radius:50%;
+    left:-14px; top:-14px; width:28px; height:28px; border-radius:50%;
     border:2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.6);
+    background-clip: padding-box;
   }
   .pm-dot, .pm-stem{ display:none !important; }
-  .pick-marker.touch .pm-ring{ top:-70px; }
+  .pick-marker.touch .pm-ring{ top:-76px; }
   .pick-marker.touch .pm-stem{
     display:block !important; left:-1px; top:-48px; width:2px; height:45px;
     background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5);
@@ -657,13 +658,19 @@ window.Munsell = (function(){
 
   // ---- plain-words comparison: how `p` (painting) differs from `r` (reference) ----
   var HUE_WORDS = [ {w:"redder",a:25}, {w:"yellower",a:90}, {w:"greener",a:160}, {w:"bluer",a:250}, {w:"purpler",a:320} ];
-  function hueWord(fromHue, dir){
-    var best = null, bestD = Infinity;
+  // Names the direction of a hue shift of dh degrees from fromHue: the
+  // farthest hue landmark the shift (roughly) reaches, or for a small
+  // shift, the nearest landmark it is heading toward.
+  function hueWord(fromHue, dh){
+    var reach = Math.abs(dh) + 30;
+    var nearest = null, nearestD = Infinity, farthest = null, farthestD = -1;
     HUE_WORDS.forEach(function(hw){
-      var d = dir > 0 ? (hw.a - fromHue + 360) % 360 : (fromHue - hw.a + 360) % 360;
-      if(d > 2 && d < bestD){ bestD = d; best = hw.w; }
+      var d = dh > 0 ? (hw.a - fromHue + 360) % 360 : (fromHue - hw.a + 360) % 360;
+      if(d <= 2) return;
+      if(d < nearestD){ nearestD = d; nearest = hw.w; }
+      if(d <= reach && d > farthestD){ farthestD = d; farthest = hw.w; }
     });
-    return best;
+    return farthest || nearest;
   }
   function amount(x){
     var halves = Math.round(Math.abs(x)*2), whole = Math.floor(halves/2), half = halves % 2;
@@ -1386,7 +1393,8 @@ window.Munsell = (function(){
   // Reads both images at frame-normalized (u,v) — the same spot in each,
   // with the painting's position offset taken into account.
   // frameEl: the frame touched; refImg/curImg: that view's images;
-  // markers: the marker element(s) to show at the spot.
+  // markers: [{el, fill}] to show at the spot, where fill is "ref", "cur"
+  // or "split" (left half reference, right half painting).
   function pickAt(e, frameEl, refImg, curImg, markers){
     var refPx = pixelsOf(refImg), curPx = pixelsOf(curImg);
     if(!refPx) return;
@@ -1394,12 +1402,20 @@ window.Munsell = (function(){
     var u = (e.clientX - rect.left) / rect.width, v = (e.clientY - rect.top) / rect.height;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
 
-    markers.forEach(function(mk){ placeMarker(mk, u, v, e.pointerType); });
 
     var refLin = samplePatch(refPx, u, v);
     // the painting is drawn shifted by the position offset
     var curLin = curPx ? samplePatch(curPx, u - state.offU, v - state.offV) : null;
     var r = readColour(refLin), p = curLin ? readColour(curLin) : null;
+
+    var pCss = p ? p.css : "transparent";
+    markers.forEach(function(mk){
+      placeMarker(mk.el, u, v, e.pointerType);
+      mk.el.querySelector(".pm-ring").style.background =
+        mk.fill === "ref" ? r.css :
+        mk.fill === "cur" ? pCss :
+        "linear-gradient(90deg, " + r.css + " 50%, " + pCss + " 50%)";
+    });
 
     ccEmpty.hidden = true; ccBody.hidden = false;
     ccRefMun.textContent = r.chip;
@@ -1418,12 +1434,12 @@ window.Munsell = (function(){
     }
   }
 
-  function pickCompare(e){ pickAt(e, compareFrame, compareRef, compareCur, [pickMarker]); }
+  function pickCompare(e){ pickAt(e, compareFrame, compareRef, compareCur, [{el: pickMarker, fill: "split"}]); }
 
   // Side by side: touching either image reads the same spot in both.
   var sidePick = null;
   [sideRefFrame, sideCurFrame].forEach(function(frame){
-    function pick(e){ pickAt(e, frame, sideRef, sideCur, [sideRefMarker, sideCurMarker]); }
+    function pick(e){ pickAt(e, frame, sideRef, sideCur, [{el: sideRefMarker, fill: "ref"}, {el: sideCurMarker, fill: "cur"}]); }
     frame.addEventListener("pointerdown", function(e){
       e.preventDefault();
       if(!state.alignedDataUrl) return;
