@@ -220,6 +220,8 @@
   .frame img.gray{ filter: grayscale(1) contrast(1.03); }
   #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
   #compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
+  .side-frame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
+  #compareCardSlot, #sideCardSlot{ display: contents; }
 
   /* colour-reading marker: a ring on the sampled spot (mouse/pen), or for
      touch a ring lifted above the fingertip with a stem down to the spot */
@@ -464,6 +466,7 @@
     <div class="controls">
     <p class="hint" id="compareHint">Touch and hold the painting to peek at the reference and read colours</p>
 
+    <div id="compareCardSlot"></div>
     <div class="panel color-card" id="colorCard">
       <p class="cc-empty" id="ccEmpty">Touch and hold the painting to read colours</p>
       <div class="cc-body" id="ccBody" hidden>
@@ -519,14 +522,15 @@
       <div class="split">
         <div class="pane">
           <p class="pane-label">Reference</p>
-          <div class="frame" style="--ar:1;"><img id="sideRef" alt="Reference photo"></div>
+          <div class="frame side-frame" id="sideRefFrame" style="--ar:1;"><img id="sideRef" alt="Reference photo"><div class="pick-marker" id="sideRefMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
         <div class="pane">
           <p class="pane-label">Your painting</p>
-          <div class="frame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"></div>
+          <div class="frame side-frame" id="sideCurFrame" style="--ar:1;"><img id="sideCur" alt="Your painting, aligned to the reference"><div class="pick-marker" id="sideCurMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
       </div>
     </div>
+    <div id="sideCardSlot"></div>
     <div class="panel">
       <div class="ctrl-row">
         <div class="ctrl-label">
@@ -740,6 +744,9 @@ window.Munsell = (function(){
   var retakeFromCompareBtn = $("retakeFromCompareBtn");
   var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), compareHint = $("compareHint");
   var pickMarker = $("pickMarker"), ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
+  var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
+  var sideRefFrame = $("sideRefFrame"), sideCurFrame = $("sideCurFrame");
+  var sideRefMarker = $("sideRefMarker"), sideCurMarker = $("sideCurMarker");
   var ccRefMun = $("ccRefMun"), ccRefVal = $("ccRefVal"), ccPaintMun = $("ccPaintMun"), ccPaintVal = $("ccPaintVal");
   var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
 
@@ -826,7 +833,7 @@ window.Munsell = (function(){
 
     if(m === "align") stepHint.textContent = state.refDataUrl ? (state.curSourceCanvas ? "drag the corners, then align" : "photograph your painting") : "reference → painting → compare";
     if(m === "compare") { stepHint.textContent = "hold the painting to peek and read colours"; renderCompare(); }
-    if(m === "side") { stepHint.textContent = "reference and painting, side by side"; renderSide(); }
+    if(m === "side") { stepHint.textContent = "touch either image to read colours"; renderSide(); }
   }
 
   tabs.addEventListener("click", function(e){
@@ -1265,7 +1272,7 @@ window.Munsell = (function(){
     applyGrayscale();
     applyOffset();
     applyAdjusting();
-    clearReading();
+    clearReading("compare");
   }
 
   function setOpacity(v){
@@ -1356,22 +1363,38 @@ window.Munsell = (function(){
     return m;
   }
 
-  function clearReading(){
-    pickMarker.hidden = true;
+  // One colour card, moved into whichever view (compare / side by side) is showing.
+  function clearReading(where){
+    [pickMarker, sideRefMarker, sideCurMarker].forEach(function(mk){ mk.hidden = true; });
+    if(where === "side"){
+      sideCardSlot.appendChild(colorCard);
+      ccEmpty.textContent = "Touch either image to read colours";
+    } else if(where === "compare"){
+      compareCardSlot.appendChild(colorCard);
+      ccEmpty.textContent = "Touch and hold the painting to read colours";
+    }
     ccBody.hidden = true;
     ccEmpty.hidden = false;
   }
-  function pickAt(e){
-    var refPx = pixelsOf(compareRef), curPx = pixelsOf(compareCur);
+  function placeMarker(mk, u, v, pointerType){
+    mk.hidden = false;
+    mk.classList.toggle("touch", pointerType === "touch");
+    mk.style.left = (u*100) + "%";
+    mk.style.top = (v*100) + "%";
+  }
+
+  // Reads both images at frame-normalized (u,v) — the same spot in each,
+  // with the painting's position offset taken into account.
+  // frameEl: the frame touched; refImg/curImg: that view's images;
+  // markers: the marker element(s) to show at the spot.
+  function pickAt(e, frameEl, refImg, curImg, markers){
+    var refPx = pixelsOf(refImg), curPx = pixelsOf(curImg);
     if(!refPx) return;
-    var rect = compareFrame.getBoundingClientRect();
+    var rect = frameEl.getBoundingClientRect();
     var u = (e.clientX - rect.left) / rect.width, v = (e.clientY - rect.top) / rect.height;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
 
-    pickMarker.hidden = false;
-    pickMarker.classList.toggle("touch", e.pointerType === "touch");
-    pickMarker.style.left = (u*100) + "%";
-    pickMarker.style.top = (v*100) + "%";
+    markers.forEach(function(mk){ placeMarker(mk, u, v, e.pointerType); });
 
     var refLin = samplePatch(refPx, u, v);
     // the painting is drawn shifted by the position offset
@@ -1395,15 +1418,34 @@ window.Munsell = (function(){
     }
   }
 
+  function pickCompare(e){ pickAt(e, compareFrame, compareRef, compareCur, [pickMarker]); }
+
+  // Side by side: touching either image reads the same spot in both.
+  var sidePick = null;
+  [sideRefFrame, sideCurFrame].forEach(function(frame){
+    function pick(e){ pickAt(e, frame, sideRef, sideCur, [sideRefMarker, sideCurMarker]); }
+    frame.addEventListener("pointerdown", function(e){
+      e.preventDefault();
+      if(!state.alignedDataUrl) return;
+      frame.setPointerCapture(e.pointerId);
+      sidePick = e.pointerId;
+      pick(e);
+    });
+    frame.addEventListener("pointermove", function(e){ if(sidePick === e.pointerId) pick(e); });
+    function end(e){ if(sidePick === e.pointerId) sidePick = null; }
+    frame.addEventListener("pointerup", end);
+    frame.addEventListener("pointercancel", end);
+  });
+
   compareFrame.addEventListener("pointerdown", function(e){
     e.preventDefault();
-    if(!state.adjusting){ peekStart(e); pickAt(e); return; }
+    if(!state.adjusting){ peekStart(e); pickCompare(e); return; }
     if(posDrag || !state.alignedDataUrl) return;
     compareFrame.setPointerCapture(e.pointerId);
     posDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, u0: state.offU, v0: state.offV };
   });
   compareFrame.addEventListener("pointermove", function(e){
-    if(peeking){ pickAt(e); return; }
+    if(peeking){ pickCompare(e); return; }
     if(!posDrag || e.pointerId !== posDrag.id) return;
     var rect = compareFrame.getBoundingClientRect();
     state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / rect.width, -OFF_MAX, OFF_MAX);
@@ -1440,6 +1482,7 @@ window.Munsell = (function(){
     sideCur.src = state.alignedDataUrl;
     applyGrayscale();
     applyOffset();
+    clearReading("side");
   }
 
   // ---------------- restart ----------------
