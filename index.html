@@ -220,6 +220,20 @@
           </div>
           <input type="range" id="shapesSlider" min="8" max="80" value="30" aria-label="Number of shapes">
         </div>
+        <div class="ctrl-row opacity-row">
+          <div class="ctrl-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+            Shapes opacity
+          </div>
+          <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Shapes opacity">
+        </div>
+        <div class="ctrl-row opacity-row" id="chromaRow">
+          <div class="ctrl-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9H12Z" fill="currentColor" stroke="none"/></svg>
+            Colour intensity <span class="shapes-count" id="chromaLabel"></span>
+          </div>
+          <input type="range" id="chromaSlider" min="100" max="300" step="5" value="100" aria-label="Colour intensity">
+        </div>
 
         <div class="divider"></div>
 

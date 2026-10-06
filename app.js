@@ -32,7 +32,7 @@
     busy: false,     // alignment being baked
     // Shapes tab: the reference grouped into its big shapes. Values vs colour
     // follows the black & white button (state.grayscale).
-    shapes: { count: 30, outlines: true, fill: false, bgOne: true },
+    shapes: { count: 30, outlines: true, fill: false, bgOne: true, opacity: 100, chroma: 100 }, // chroma: % of the average colour's chroma
     shapesResult: null, // latest analysis (labels, average colours, outlines)
     shapesBusy: false,
     shapesPick: null    // id of the tapped shape
@@ -70,6 +70,8 @@
 
   var viewShapes = $("view-shapes"), shapesFrame = $("shapesFrame"), shapesView = $("shapesView");
   var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
+  var shapesOpacitySlider = $("shapesOpacitySlider");
+  var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
   var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch"), bgOneSwitch = $("bgOneSwitch");
   var shapeSwatch = $("shapeSwatch"), shapeText = $("shapeText");
 
@@ -976,26 +978,59 @@
     shapesCount.textContent = state.shapesBusy ? "· working…" : (R ? "· " + R.count : "");
   }
 
-  // colour of shape k for display: its average colour, or in values mode a
-  // grey of the same luminance
-  function shapeCss(R, k){
+  // ---- colour intensity: scale chroma in OKLab, keeping lightness and hue ----
+  function linToOklab(r, g, b){
+    var l = Math.cbrt(0.4122214708*r + 0.5363325363*g + 0.0514459929*b);
+    var m = Math.cbrt(0.2119034982*r + 0.6806995451*g + 0.1073969566*b);
+    var s = Math.cbrt(0.0883024619*r + 0.2817188376*g + 0.6299787005*b);
+    return [0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+            1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+            0.0259040371*l + 0.7827717662*m - 0.8086757660*s];
+  }
+  function oklabToLin(L, a, b){
+    var l = L + 0.3963377774*a + 0.2158037573*b, m = L - 0.1055613458*a - 0.0638541728*b, s = L - 0.0894841775*a - 1.2914855480*b;
+    l = l*l*l; m = m*m*m; s = s*s*s;
+    return [ 4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+            -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+            -0.0041960863*l - 0.7034186147*m + 1.7076949654*s];
+  }
+  function inGamut(c){ return c[0] >= -1e-4 && c[0] <= 1.0001 && c[1] >= -1e-4 && c[1] <= 1.0001 && c[2] >= -1e-4 && c[2] <= 1.0001; }
+  // boost the chroma of a linear-RGB colour by `factor`; if that leaves the
+  // screen's range, go as far as possible in the same direction
+  function boostChroma(r, g, b, factor){
+    if(factor === 1) return [r, g, b];
+    var lab = linToOklab(r, g, b), lo = 1, hi = factor, out = oklabToLin(lab[0], lab[1]*factor, lab[2]*factor);
+    if(inGamut(out)) return out;
+    for(var i=0;i<20;i++){
+      var mid = (lo + hi)/2, c = oklabToLin(lab[0], lab[1]*mid, lab[2]*mid);
+      if(inGamut(c)) lo = mid; else hi = mid;
+    }
+    out = oklabToLin(lab[0], lab[1]*lo, lab[2]*lo);
+    return [clamp(out[0], 0, 1), clamp(out[1], 0, 1), clamp(out[2], 0, 1)];
+  }
+
+  // Display colour of shape k (linear RGB): its average colour with the
+  // colour intensity applied, or in values mode a grey of the same luminance.
+  function shapeLin(R, k){
     var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
-    if(R.values){ var y = 0.2126*r + 0.7152*g + 0.0722*b; r = g = b = y; }
-    return "rgb(" + toSrgb(r) + "," + toSrgb(g) + "," + toSrgb(b) + ")";
+    if(R.values){ var y = 0.2126*r + 0.7152*g + 0.0722*b; return [y, y, y]; }
+    return boostChroma(r, g, b, state.shapes.chroma/100);
+  }
+  function shapeCss(R, k){
+    var c = shapeLin(R, k);
+    return "rgb(" + toSrgb(c[0]) + "," + toSrgb(c[1]) + "," + toSrgb(c[2]) + ")";
   }
   // flat image of all shapes in their colours (fills any gaps the
-  // straightened outlines leave)
+  // straightened outlines leave); rebuilt when the intensity changes
   function shapesFillImage(R){
-    if(R.fillImage) return R.fillImage;
-    var c = document.createElement("canvas"); c.width = R.w; c.height = R.h;
+    var key = R.values ? "v" : state.shapes.chroma;
+    if(R.fillImage && R.fillKey === key) return R.fillImage;
+    var c = R.fillImage || document.createElement("canvas"); c.width = R.w; c.height = R.h;
     var ctx = c.getContext("2d"), img = ctx.createImageData(R.w, R.h), d = img.data, cache = [];
-    for(var k=0;k<R.count;k++){
-      var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
-      if(R.values){ var y = 0.2126*r + 0.7152*g + 0.0722*b; r = g = b = y; }
-      cache.push([toSrgb(r), toSrgb(g), toSrgb(b)]);
-    }
-    for(var p=0;p<R.w*R.h;p++){ var col = cache[R.labels[p]]; d[p*4] = col[0]; d[p*4+1] = col[1]; d[p*4+2] = col[2]; d[p*4+3] = 255; }
+    for(var k=0;k<R.count;k++){ var col = shapeLin(R, k); cache.push([toSrgb(col[0]), toSrgb(col[1]), toSrgb(col[2])]); }
+    for(var p=0;p<R.w*R.h;p++){ var cc = cache[R.labels[p]]; d[p*4] = cc[0]; d[p*4+1] = cc[1]; d[p*4+2] = cc[2]; d[p*4+3] = 255; }
     ctx.putImageData(img, 0, 0);
+    R.fillKey = key;
     return (R.fillImage = c);
   }
 
@@ -1004,6 +1039,13 @@
     setSrc(shapesRef, state.ref);
     shapesRef.classList.toggle("gray", state.grayscale);
     if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
+    if(shapesOpacitySlider.value != state.shapes.opacity) shapesOpacitySlider.value = state.shapes.opacity;
+    if(chromaSlider.value != state.shapes.chroma) chromaSlider.value = state.shapes.chroma;
+    chromaSlider.disabled = state.grayscale;             // greys have no chroma
+    chromaRow.classList.toggle("disabled", state.grayscale);
+    chromaLabel.textContent = "· ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "");
+    // the shapes layer (outlines and fill) over the reference photo
+    shapesCanvas.style.opacity = String(state.shapes.opacity/100);
     outlinesSwitch.classList.toggle("on", state.shapes.outlines);
     fillSwitch.classList.toggle("on", state.shapes.fill);
     bgOneSwitch.classList.toggle("on", state.shapes.bgOne);
@@ -1062,9 +1104,15 @@
     var m = Munsell.fromLinearRGB(r, g, b);
     shapeSwatch.style.background = shapeCss(R, k);
     var pct = Math.max(1, Math.round(R.sizes[k]/(R.w*R.h)*100));
-    shapeText.innerHTML = R.values
-      ? "Value <b>" + m.value.toFixed(1) + "</b> · about " + pct + "% of the picture"
-      : "<b>" + m.notation + "</b> · about " + pct + "% of the picture";
+    if(R.values){
+      shapeText.innerHTML = "Value <b>" + m.value.toFixed(1) + "</b> · about " + pct + "% of the picture";
+    } else if(state.shapes.chroma !== 100){
+      // the intensified colour, with the photo's own average for reference
+      var c = shapeLin(R, k), mb = Munsell.fromLinearRGB(c[0], c[1], c[2]);
+      shapeText.innerHTML = "<b>" + mb.notation + "</b> (photo " + m.notation + ") · about " + pct + "%";
+    } else {
+      shapeText.innerHTML = "<b>" + m.notation + "</b> · about " + pct + "% of the picture";
+    }
   }
 
   // tap a shape to read its average colour
@@ -1087,6 +1135,17 @@
     renderShapesStatus();
   });
   shapesSlider.addEventListener("change", persistMeta);
+  shapesOpacitySlider.addEventListener("input", function(){
+    state.shapes.opacity = Number(shapesOpacitySlider.value);
+    shapesCanvas.style.opacity = String(state.shapes.opacity/100);
+  });
+  shapesOpacitySlider.addEventListener("change", persistMeta);
+  chromaSlider.addEventListener("input", function(){
+    state.shapes.chroma = Number(chromaSlider.value);
+    if(!state.shapes.fill) state.shapes.fill = true;    // the boost is only visible on the filled shapes
+    render();
+  });
+  chromaSlider.addEventListener("change", persistMeta);
   function toggleShapesOption(name){
     return function(){
       state.shapes[name] = !state.shapes[name];
@@ -1159,7 +1218,9 @@
         var s = meta.shapes;
         state.shapes = {
           count: clamp(Number(s.count) || 30, 8, 80),
-          outlines: s.outlines !== false, fill: !!s.fill, bgOne: s.bgOne !== false
+          outlines: s.outlines !== false, fill: !!s.fill, bgOne: s.bgOne !== false,
+          opacity: s.opacity === undefined ? 100 : clamp(Number(s.opacity) || 0, 0, 100),
+          chroma: clamp(Number(s.chroma) || 100, 100, 300)
         };
       }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){

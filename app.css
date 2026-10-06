@@ -265,6 +265,7 @@ input[type=file]{ display:none; }
 #shapesFrame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
 #shapesCanvas{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .shapes-count{ color: var(--ink-dim); font-size:12px; font-variant-numeric: tabular-nums; }
+#chromaRow.disabled{ opacity:0.4; }
 .shape-readout{ display:flex; align-items:center; gap:10px; min-height:32px; font-size:13px; }
 .sr-swatch{ flex:0 0 auto; width:32px; height:32px; border-radius: var(--radius); border:1px solid var(--line); background: transparent; }
 .sr-text{ color: var(--ink-dim); }
