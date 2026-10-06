@@ -3,6 +3,8 @@
 A small web app for painters: photograph your painting, line it up with the
 reference photo, then compare the two — overlay with peek and opacity, side by
 side, black & white for values, and a Munsell colour readout at any spot.
+The Shapes tab breaks the reference into its big shapes (by value, or value
+and colour) as a guide for blocking in.
 
 Runs entirely in the browser; photos never leave the device. Made for an iPad
 saved to the home screen, but works on any modern browser.
@@ -18,6 +20,8 @@ saved to the home screen, but works on any modern browser.
 | `warp-worker.js` | Runs the warp off the main thread |
 | `detect.js` | Finds the canvas in the painting photo (whole-photo guess, and snapping rough points to the edges) |
 | `detect-worker.js` | Runs detection off the main thread |
+| `shapes.js` | Breaks the reference into its big shapes (by value, or value and colour) |
+| `shapes-worker.js` | Runs the shape analysis off the main thread |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
 | `munsell-data.js` | Munsell renotation chip data (RIT MCSL `real.dat`) |
 | `store.js` | IndexedDB key/value store for the photos, corners and offsets |

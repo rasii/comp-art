@@ -260,6 +260,15 @@ input[type=file]{ display:none; }
 .cc-name{ color: var(--ink-dim); }
 .cc-mun{ font-weight:600; letter-spacing:0.2px; }
 .cc-diff{ margin:1px 0 0; font-size:13px; line-height:1.35; text-align:center; }
+
+/* ---------- shapes ---------- */
+#shapesFrame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
+#shapesCanvas{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.shapes-count{ color: var(--ink-dim); font-size:12px; font-variant-numeric: tabular-nums; }
+.shape-readout{ display:flex; align-items:center; gap:10px; min-height:32px; font-size:13px; }
+.sr-swatch{ flex:0 0 auto; width:32px; height:32px; border-radius: var(--radius); border:1px solid var(--line); background: transparent; }
+.sr-text{ color: var(--ink-dim); }
+.sr-text b{ color: var(--ink); font-weight:600; }
 /* side by side: stacked or in a row, whichever gives the bigger images
    (chosen in app.js from the space and the photo's shape) */
 .side-fit{ display:block; }

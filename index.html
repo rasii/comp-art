@@ -43,6 +43,7 @@
     <button data-mode="align" class="active">Align</button>
     <button data-mode="compare" disabled>Compare</button>
     <button data-mode="side" disabled>Side by side</button>
+    <button data-mode="shapes" disabled>Shapes</button>
   </nav>
 
   <!-- ===================== ALIGN VIEW ===================== -->
@@ -198,6 +199,54 @@
    </div>
   </section>
 
+  <!-- ===================== SHAPES VIEW ===================== -->
+  <!-- the reference broken into its big shapes (value, or value + colour) -->
+  <section id="view-shapes" style="display:none;">
+   <div class="step">
+    <div class="fit">
+      <div class="frame fitted" id="shapesFrame" style="--ar:1;">
+        <div class="zoom-view" id="shapesView">
+          <img id="shapesRef" alt="Reference photo">
+          <canvas id="shapesCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="panel">
+        <div class="ctrl-row opacity-row">
+          <div class="ctrl-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
+            Shapes <span class="shapes-count" id="shapesCount"></span>
+          </div>
+          <input type="range" id="shapesSlider" min="8" max="80" value="30" aria-label="Number of shapes">
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="ctrl-row">
+          <div class="ctrl-label">Outlines</div>
+          <button class="switch on" id="outlinesSwitch" aria-label="Show outlines"></button>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">Average colour</div>
+          <button class="switch" id="fillSwitch" aria-label="Fill shapes with their average colour"></button>
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">Background as one shape</div>
+          <button class="switch on" id="bgOneSwitch" aria-label="Treat the out-of-focus background as one shape"></button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="shape-readout" id="shapeReadout">
+          <span class="sr-swatch" id="shapeSwatch"></span>
+          <span class="sr-text" id="shapeText">Tap a shape to read its colour</span>
+        </div>
+      </div>
+    </div>
+   </div>
+  </section>
+
 </main>
 
 <div class="toast" id="toast"></div>
@@ -217,6 +266,7 @@
 <script src="munsell.js"></script>
 <script src="warp.js"></script>
 <script src="detect.js"></script>
+<script src="shapes.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
 </body>

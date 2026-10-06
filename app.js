@@ -29,7 +29,13 @@
     opacity: 100,    // painting opacity on the compare view
     peeking: false,  // finger held on the compare image: painting hidden
     reading: null,   // last colour reading {u, v, pointerType, r, p}
-    busy: false      // alignment being baked
+    busy: false,     // alignment being baked
+    // Shapes tab: the reference grouped into its big shapes. Values vs colour
+    // follows the black & white button (state.grayscale).
+    shapes: { count: 30, outlines: true, fill: false, bgOne: true },
+    shapesResult: null, // latest analysis (labels, average colours, outlines)
+    shapesBusy: false,
+    shapesPick: null    // id of the tapped shape
   };
 
   // ---------------- element refs ----------------
@@ -61,6 +67,11 @@
   var sideRefView = $("sideRefView"), sideCurView = $("sideCurView");
   var sideRef = $("sideRef"), sideCur = $("sideCur");
   var sideRefMarker = $("sideRefMarker"), sideCurMarker = $("sideCurMarker");
+
+  var viewShapes = $("view-shapes"), shapesFrame = $("shapesFrame"), shapesView = $("shapesView");
+  var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
+  var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch"), bgOneSwitch = $("bgOneSwitch");
+  var shapeSwatch = $("shapeSwatch"), shapeText = $("shapeText");
 
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
   var ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
@@ -142,7 +153,7 @@
     storeWarned = true;
   }
   function persistMeta(){
-    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV }).catch(storeFail);
+    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes }).catch(storeFail);
   }
   function persistBlob(key, blob){ return Store.set(key, blob).catch(storeFail); }
   function persistCanvas(key, canvas){
@@ -157,11 +168,13 @@
     // tabs and views
     Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
       b.classList.toggle("active", b.dataset.mode === m);
-      if(b.dataset.mode !== "align") b.disabled = !hasAligned;
+      if(b.dataset.mode === "shapes") b.disabled = !hasRef;          // needs only the reference
+      else if(b.dataset.mode !== "align") b.disabled = !hasAligned;
     });
     show(viewAlign, m === "align");
     show(viewCompare, m === "compare");
     show(viewSide, m === "side");
+    show(viewShapes, m === "shapes");
     grayBtn.hidden = (m === "align");
     grayBtn.classList.toggle("on", state.grayscale);
     grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
@@ -175,10 +188,14 @@
            : "check the points are on the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
+    } else if(m === "shapes"){
+      hint = state.shapesBusy && !state.shapesResult ? "finding the big shapes…"
+           : (state.grayscale ? "big value shapes" : "big shapes by value and colour") + " · tap one to read it";
     } else {
       hint = "touch either image to read colours";
     }
-    if(m !== "align" && viewZoom.z > 1) hint += " · double-tap to reset zoom";
+    if((m === "compare" || m === "side") && viewZoom.z > 1) hint += " · double-tap to reset zoom";
+    if(m === "shapes" && shapesZoom.z > 1) hint += " · double-tap to reset zoom";
     stepHint.textContent = hint;
 
     // ---- align ----
@@ -225,6 +242,9 @@
     sideCur.style.transform = shift;
     [compareRef, compareCur, sideRef, sideCur].forEach(function(img){ img.classList.toggle("gray", state.grayscale); });
     viewZoom.apply();
+
+    // ---- shapes ----
+    if(hasRef && m === "shapes") renderShapes();
 
     // colour card: one card, shown in whichever view is active
     var slot = (m === "side") ? sideCardSlot : compareCardSlot;
@@ -318,6 +338,7 @@
   }
   var pinZoom = makeZoom([pinView], PIN_MAX_ZOOM);
   var viewZoom = makeZoom([compareView, sideRefView, sideCurView], VIEW_MAX_ZOOM);
+  var shapesZoom = makeZoom([shapesView], VIEW_MAX_ZOOM);
 
   // Pointer handling for a frame: two fingers (or wheel) zoom and pan the
   // group; one pointer goes to the `single` callbacks; a quick double tap
@@ -389,6 +410,7 @@
   // ---------------- mode ----------------
   function setMode(m){
     if((m === "compare" || m === "side") && !state.aligned) return;
+    if(m === "shapes" && !state.ref) return;
     if(m !== state.mode){
       state.mode = m;
       state.reading = null;
@@ -401,7 +423,7 @@
     if(!b || b.disabled) return;
     setMode(b.dataset.mode);
   });
-  grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; render(); });
+  grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; state.shapesPick = null; render(); });
 
   // ---------------- loading photos ----------------
   addRefBtn.addEventListener("click", function(){ refInput.click(); });
@@ -412,6 +434,7 @@
     if(!f) return;
     decodeToCanvas(f, WORK_DIM).then(function(im){
       state.ref = im;
+      newShapesSource();
       state.aligned = null; state.photo = null; state.corners = null;
       state.offU = 0; state.offV = 0; state.reading = null;
       state.mode = "align";
@@ -871,6 +894,212 @@
     }, render);
   });
 
+  // ---------------- shapes: the reference's big shapes ----------------
+  // The analysis runs in shapes-worker.js (main-thread fallback). The
+  // reference is sent once; changing the number of shapes, values/colour or
+  // the background option only replays the stored merge order, so it's quick.
+  var SHAPES_DIM = 640;     // analysis resolution (long edge)
+  var callShapes = workerCaller("shapes-worker.js");
+  var shapesToken = 0, workerShapesToken = -1, shapesSeq = 0, shapesTimer = null;
+  var mainAnalyzer = null, mainAnalyzerToken = -1, shapesPendingKey = null;
+
+  // a new reference: forget the analysis
+  function newShapesSource(){
+    shapesToken++;
+    state.shapesResult = null;
+    state.shapesPick = null;
+    shapesPendingKey = null;
+    shapesZoom.reset();
+  }
+  function shapesWant(){
+    return { token: shapesToken, values: state.grayscale, count: state.shapes.count, bgOne: state.shapes.bgOne };
+  }
+  function shapesKey(w){ return [w.token, w.values ? "v" : "c", w.count, w.bgOne ? 1 : 0].join(":"); }
+
+  function requestShapes(delay){
+    if(!state.ref) return;
+    var want = shapesWant(), key = shapesKey(want);
+    if((state.shapesResult && state.shapesResult.key === key) || shapesPendingKey === key) return;
+    shapesPendingKey = key;
+    clearTimeout(shapesTimer);
+    shapesTimer = setTimeout(function(){ runShapes(want, key); }, delay || 0);
+  }
+  function runShapes(want, key){
+    var seq = ++shapesSeq;
+    state.shapesBusy = true;
+    renderShapesStatus();
+    function ask(withPixels){
+      var msg = { token: want.token, values: want.values, count: want.count, bgOne: want.bgOne }, transfer = [];
+      if(withPixels){
+        var px = scaledPixels(state.ref, SHAPES_DIM);
+        msg.pixels = { buf: px.data.buffer, w: px.w, h: px.h };
+        transfer = [px.data.buffer];
+      }
+      return callShapes(msg, transfer).then(function(reply){
+        if(reply.needPixels){
+          if(withPixels) throw new Error("worker lost the image");
+          return ask(true);
+        }
+        workerShapesToken = want.token;
+        return reply.result;
+      });
+    }
+    function runHere(){
+      if(mainAnalyzerToken !== want.token){
+        var px = scaledPixels(state.ref, SHAPES_DIM);
+        mainAnalyzer = new Shapes.Analyzer(px.data, px.w, px.h);
+        mainAnalyzerToken = want.token;
+      }
+      return mainAnalyzer.compute(want.values, want.count, want.bgOne);
+    }
+    ask(workerShapesToken !== want.token)
+      .catch(function(){ return runHere(); })
+      .then(function(res){
+        if(seq !== shapesSeq || want.token !== shapesToken) return;   // superseded
+        res.key = key; res.values = want.values;
+        state.shapesResult = res;
+        state.shapesBusy = false;
+        shapesPendingKey = null;
+        if(state.shapesPick !== null && state.shapesPick >= res.count) state.shapesPick = null;
+        render();
+      })
+      .catch(function(){
+        if(seq !== shapesSeq) return;
+        state.shapesBusy = false; shapesPendingKey = null;
+        render();
+        toast("The shapes couldn't be worked out for this photo.");
+      });
+  }
+
+  function renderShapesStatus(){
+    var R = state.shapesResult;
+    shapesCount.textContent = state.shapesBusy ? "· working…" : (R ? "· " + R.count : "");
+  }
+
+  // colour of shape k for display: its average colour, or in values mode a
+  // grey of the same luminance
+  function shapeCss(R, k){
+    var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
+    if(R.values){ var y = 0.2126*r + 0.7152*g + 0.0722*b; r = g = b = y; }
+    return "rgb(" + toSrgb(r) + "," + toSrgb(g) + "," + toSrgb(b) + ")";
+  }
+  // flat image of all shapes in their colours (fills any gaps the
+  // straightened outlines leave)
+  function shapesFillImage(R){
+    if(R.fillImage) return R.fillImage;
+    var c = document.createElement("canvas"); c.width = R.w; c.height = R.h;
+    var ctx = c.getContext("2d"), img = ctx.createImageData(R.w, R.h), d = img.data, cache = [];
+    for(var k=0;k<R.count;k++){
+      var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
+      if(R.values){ var y = 0.2126*r + 0.7152*g + 0.0722*b; r = g = b = y; }
+      cache.push([toSrgb(r), toSrgb(g), toSrgb(b)]);
+    }
+    for(var p=0;p<R.w*R.h;p++){ var col = cache[R.labels[p]]; d[p*4] = col[0]; d[p*4+1] = col[1]; d[p*4+2] = col[2]; d[p*4+3] = 255; }
+    ctx.putImageData(img, 0, 0);
+    return (R.fillImage = c);
+  }
+
+  function renderShapes(){
+    shapesFrame.style.setProperty("--ar", state.ref.w + "/" + state.ref.h);
+    setSrc(shapesRef, state.ref);
+    shapesRef.classList.toggle("gray", state.grayscale);
+    if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
+    outlinesSwitch.classList.toggle("on", state.shapes.outlines);
+    fillSwitch.classList.toggle("on", state.shapes.fill);
+    bgOneSwitch.classList.toggle("on", state.shapes.bgOne);
+    shapesZoom.apply();
+    requestShapes(0);
+    renderShapesStatus();
+    drawShapes();
+    renderShapeReadout();
+  }
+
+  function drawShapes(){
+    var R = state.shapesResult, dpr = window.devicePixelRatio || 1;
+    var W = Math.max(1, Math.round(shapesFrame.clientWidth*dpr)), H = Math.max(1, Math.round(shapesFrame.clientHeight*dpr));
+    if(shapesCanvas.width !== W || shapesCanvas.height !== H){ shapesCanvas.width = W; shapesCanvas.height = H; }
+    var ctx = shapesCanvas.getContext("2d");
+    ctx.clearRect(0, 0, W, H);
+    // the previous result stays up while a new one is worked out, so the
+    // picture doesn't flash as the slider moves
+    if(!R) return;
+    var sx = W/R.w, sy = H/R.h;
+    function path(poly){
+      var pts = poly.pts;
+      ctx.beginPath();
+      for(var i=0;i<pts.length;i+=2){
+        var x = (pts[i] + 0.5)*sx, y = (pts[i+1] + 0.5)*sy;
+        if(i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      }
+      ctx.closePath();
+    }
+    if(state.shapes.fill){
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
+      R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
+    }
+    ctx.lineJoin = "round"; ctx.lineCap = "round";
+    if(state.shapes.outlines){
+      ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 3.2*dpr;
+      R.polys.forEach(function(poly){ path(poly); ctx.stroke(); });
+      ctx.strokeStyle = "rgba(240,236,228,0.92)"; ctx.lineWidth = 1.6*dpr;
+      R.polys.forEach(function(poly){ path(poly); ctx.stroke(); });
+    }
+    if(state.shapesPick !== null){
+      ctx.strokeStyle = "#E39A4C"; ctx.lineWidth = 3*dpr;
+      R.polys.forEach(function(poly){ if(poly.id === state.shapesPick){ path(poly); ctx.stroke(); } });
+    }
+  }
+
+  function renderShapeReadout(){
+    var R = state.shapesResult, k = state.shapesPick;
+    if(!R || k === null){
+      shapeSwatch.style.background = "transparent";
+      shapeText.textContent = "Tap a shape to read its " + (state.grayscale ? "value" : "colour");
+      return;
+    }
+    var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
+    var m = Munsell.fromLinearRGB(r, g, b);
+    shapeSwatch.style.background = shapeCss(R, k);
+    var pct = Math.max(1, Math.round(R.sizes[k]/(R.w*R.h)*100));
+    shapeText.innerHTML = R.values
+      ? "Value <b>" + m.value.toFixed(1) + "</b> · about " + pct + "% of the picture"
+      : "<b>" + m.notation + "</b> · about " + pct + "% of the picture";
+  }
+
+  // tap a shape to read its average colour
+  function pickShape(e){
+    var R = state.shapesResult;
+    if(!R) return;
+    var vr = shapesView.getBoundingClientRect();
+    var u = (e.clientX - vr.left)/vr.width, v = (e.clientY - vr.top)/vr.height;
+    if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
+    state.shapesPick = R.labels[Math.floor(v*R.h)*R.w + Math.floor(u*R.w)];
+    drawShapes();
+    renderShapeReadout();
+  }
+  attachGestures(shapesFrame, shapesZoom, { start: pickShape, move: pickShape }, render);
+
+  shapesSlider.addEventListener("input", function(){
+    state.shapes.count = Number(shapesSlider.value);
+    state.shapesPick = null;
+    requestShapes(120);
+    renderShapesStatus();
+  });
+  shapesSlider.addEventListener("change", persistMeta);
+  function toggleShapesOption(name){
+    return function(){
+      state.shapes[name] = !state.shapes[name];
+      if(name === "bgOne") state.shapesPick = null;
+      render();
+      persistMeta();
+    };
+  }
+  outlinesSwitch.addEventListener("click", toggleShapesOption("outlines"));
+  fillSwitch.addEventListener("click", toggleShapesOption("fill"));
+  bgOneSwitch.addEventListener("click", toggleShapesOption("bgOne"));
+  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "shapes") drawShapes(); }).observe(shapesFrame);
+
   // ---------------- restart ----------------
   var confirmAction = null;
   function askConfirm(msg, okLabel, action){
@@ -887,6 +1116,7 @@
 
   function restart(){
     state.ref = null; state.photo = null; state.aligned = null;
+    newShapesSource();
     state.corners = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
     state.reading = null; state.peeking = false; state.mode = "align";
@@ -925,8 +1155,16 @@
       if(!refBlob) return;
       state.lastCorners = (meta.lastCorners && validCorners(meta.lastCorners.pts)) ? meta.lastCorners : null;
       state.offU = Number(meta.offU) || 0; state.offV = Number(meta.offV) || 0;
+      if(meta.shapes && typeof meta.shapes === "object"){
+        var s = meta.shapes;
+        state.shapes = {
+          count: clamp(Number(s.count) || 30, 8, 80),
+          outlines: s.outlines !== false, fill: !!s.fill, bgOne: s.bgOne !== false
+        };
+      }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
         state.ref = ref;
+        newShapesSource();
         var jobs = [];
         if(photoBlob) jobs.push(decodeToCanvas(photoBlob, SRC_MAX).then(function(im){
           setPhoto(im, validCorners(meta.corners) ? meta.corners : null);
