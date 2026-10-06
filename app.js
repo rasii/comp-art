@@ -17,6 +17,8 @@
     photo: null,     // painting photo (warp source)
     aligned: null,   // painting warped onto the reference's rectangle
     corners: null,   // 4 {u,v} normalized points in the photo, order TL,TR,BR,BL
+    cornerSure: null, // after auto-detection: per corner, false = not sure (shown amber)
+    detecting: false, // auto-detection running
     lastCorners: null, // {ar, pts} from the last alignment, reused for a same-shape photo
     pinOpacity: 100, // photo opacity on the align stage
     offU: 0, offV: 0, // aligned painting shifted against the reference, fraction of the frame
@@ -45,7 +47,7 @@
   var pinPoly = $("pinPoly"), pinPolyHalo = $("pinPolyHalo"), loupe = $("loupe");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var pinOpacitySlider = $("pinOpacitySlider");
-  var zoomFitBtn = $("zoomFitBtn"), resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
+  var findEdgesBtn = $("findEdgesBtn"), zoomFitBtn = $("zoomFitBtn"), resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
   var confirmAlignBtn = $("confirmAlignBtn"), confirmAlignHTML = confirmAlignBtn.innerHTML;
 
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
@@ -169,7 +171,8 @@
     if(m === "align"){
       hint = !hasRef ? "reference → painting → compare"
            : !hasPhoto ? "now photograph your painting"
-           : "drag the points to the canvas corners · double-tap to zoom in";
+           : state.detecting ? "finding the canvas edges…"
+           : "check the points are on the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
     } else {
@@ -195,6 +198,9 @@
       pinImg.style.opacity = String(state.pinOpacity/100);
       if(pinOpacitySlider.value != state.pinOpacity) pinOpacitySlider.value = state.pinOpacity;
       zoomFitBtn.textContent = pinZoom.z > 1 ? "Show whole photo" : "Zoom to painting";
+      findEdgesBtn.disabled = state.detecting;
+      findEdgesBtn.textContent = state.detecting ? "Finding…" : "Find edges";
+      handles.forEach(function(h, i){ h.classList.toggle("unsure", !!state.cornerSure && !state.cornerSure[i]); });
       pinZoom.apply();
       if(m === "align") layoutHandles();
     }
@@ -429,8 +435,10 @@
       state.aligned = null; state.reading = null;
       state.mode = "align";
       render();
-      // reused corners are already close: zoom in so they're easy to fine-tune
+      // Find the canvas: snap the remembered corners on a retake (already
+      // close, so also zoom in for fine-tuning), or guess from scratch.
       if(reused) requestAnimationFrame(zoomToPainting);
+      detectCanvas(reused ? "snap" : "guess");
       persistBlob("photo", f);
       Store.remove("aligned").catch(function(){});
       persistMeta();
@@ -445,6 +453,7 @@
     var last = state.lastCorners;
     var sameShape = last && last.ar && Math.abs(last.ar - im.w/im.h) < 0.01;
     state.corners = corners ? corners.map(copyPt) : sameShape ? last.pts.map(copyPt) : defaultCorners();
+    state.cornerSure = null;
     state.pinOpacity = 100;
     pinZoom.reset();
     return !corners && sameShape; // corners were reused from the last alignment
@@ -579,6 +588,9 @@
     h.addEventListener("pointerdown", function(e){
       e.preventDefault(); e.stopPropagation();
       activeHandle = i;
+      dragGen++;                                   // hand placement wins over any detection in progress
+      if(state.cornerSure) state.cornerSure[i] = true;
+      h.classList.remove("unsure");
       capturePointer(h, e);
       drawLoupe(i);
     });
@@ -606,7 +618,9 @@
   pinOpacitySlider.addEventListener("input", function(){ state.pinOpacity = Number(pinOpacitySlider.value); render(); });
   resetAlignBtn.addEventListener("click", function(){
     if(!state.photo) return;
+    dragGen++;
     state.corners = defaultCorners();
+    state.cornerSure = null;
     pinZoom.reset();
     render();
     persistMeta();
@@ -618,24 +632,34 @@
   if(window.ResizeObserver) new ResizeObserver(relayoutPin).observe(pinStage);
   window.addEventListener("resize", function(){ relayoutPin(); render(); });
 
-  // ---------------- the warp, off the main thread when possible ----------------
-  var worker = null, pendingWarp = null, warpSeq = 0;
-  function getWorker(){
-    if(worker || getWorker.failed) return worker;
-    try{
-      worker = new Worker("warp-worker.js");
-      worker.onmessage = function(e){
-        var p = pendingWarp; pendingWarp = null;
-        if(p && p.id === e.data.id) p.resolve(e.data);
-      };
-      worker.onerror = function(){
-        getWorker.failed = true; worker = null;
-        var p = pendingWarp; pendingWarp = null;
-        if(p) p.reject(new Error("worker failed"));
-      };
-    }catch(e){ getWorker.failed = true; worker = null; }
-    return worker;
+  // ---------------- background workers ----------------
+  // Returns call(msg, transfer) → Promise of the worker's reply. Rejects if
+  // workers aren't available or the worker fails, so callers can fall back
+  // to doing the work on the main thread.
+  function workerCaller(url){
+    var w = null, failed = false, pending = {}, seq = 0;
+    return function(msg, transfer){
+      if(!w && !failed){
+        try{
+          w = new Worker(url);
+          w.onmessage = function(e){ var p = pending[e.data.id]; delete pending[e.data.id]; if(p) p.resolve(e.data); };
+          w.onerror = function(){
+            failed = true; w = null;
+            Object.keys(pending).forEach(function(k){ pending[k].reject(new Error("worker failed")); delete pending[k]; });
+          };
+        }catch(e){ failed = true; w = null; }
+      }
+      if(!w) return Promise.reject(new Error("no worker"));
+      return new Promise(function(resolve, reject){
+        msg.id = ++seq;
+        pending[msg.id] = { resolve: resolve, reject: reject };
+        w.postMessage(msg, transfer || []);
+      });
+    };
   }
+
+  // ---------------- the warp ----------------
+  var callWarp = workerCaller("warp-worker.js");
   function warpToCanvas(w, h, bytes){
     var out = document.createElement("canvas");
     out.width = w; out.height = h;
@@ -645,21 +669,76 @@
   }
   function warpAsync(srcIm, cornersPx, dstW, dstH){
     var sData = srcIm.canvas.getContext("2d").getImageData(0, 0, srcIm.w, srcIm.h).data;
-    var wk = getWorker();
-    if(wk){
-      return new Promise(function(resolve, reject){
-        var id = ++warpSeq;
-        pendingWarp = { id: id, resolve: resolve, reject: reject };
-        wk.postMessage({ id: id, src: sData.buffer, sW: srcIm.w, sH: srcIm.h, corners: cornersPx, dstW: dstW, dstH: dstH }, [sData.buffer]);
-      }).then(function(msg){ return warpToCanvas(msg.w, msg.h, msg.data); })
-        .catch(function(){ return warpSync(srcIm, cornersPx, dstW, dstH); });
-    }
-    return Promise.resolve().then(function(){ return warpSync(srcIm, cornersPx, dstW, dstH); });
+    return callWarp({ src: sData.buffer, sW: srcIm.w, sH: srcIm.h, corners: cornersPx, dstW: dstW, dstH: dstH }, [sData.buffer])
+      .then(function(msg){ return warpToCanvas(msg.w, msg.h, msg.data); })
+      .catch(function(){ return warpSync(srcIm, cornersPx, dstW, dstH); });
   }
   function warpSync(srcIm, cornersPx, dstW, dstH){
     var sData = srcIm.canvas.getContext("2d").getImageData(0, 0, srcIm.w, srcIm.h).data;
     return warpToCanvas(dstW, dstH, Warp.warpPerspective(sData, srcIm.w, srcIm.h, cornersPx, dstW, dstH).buffer);
   }
+
+  // ---------------- finding the canvas automatically ----------------
+  // "guess": from the whole photo, no hints (a new painting photo).
+  // "snap": refine the current points (remembered corners on a retake, or
+  //         points placed roughly by hand), helped by the guess where it agrees.
+  // Corners it isn't sure of stay where they were and are shown in amber.
+  // If the points are moved by hand while it's working, the result is dropped.
+  var callDetect = workerCaller("detect-worker.js");
+  var detectSeq = 0, dragGen = 0;
+  function scaledPixels(im, longEdge){
+    var s = Math.min(1, longEdge/Math.max(im.w, im.h));
+    var w = Math.max(1, Math.round(im.w*s)), h = Math.max(1, Math.round(im.h*s));
+    var c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    var ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(im.canvas, 0, 0, w, h);
+    return { data: ctx.getImageData(0, 0, w, h).data, w: w, h: h };
+  }
+  function isDefaultCorners(c){
+    return c && defaultCorners().every(function(d, i){ return Math.abs(d.u - c[i].u) < 0.005 && Math.abs(d.v - c[i].v) < 0.005; });
+  }
+  function detectCanvas(mode){
+    if(!state.photo || !state.ref || !state.corners) return;
+    var seq = ++detectSeq, photo = state.photo, gen = dragGen;
+    var corners = state.corners.map(copyPt), refAspect = state.ref.w/state.ref.h;
+    state.detecting = true;
+    render();
+    function runHere(){
+      var small = scaledPixels(photo, 600), medium = scaledPixels(photo, 1500);
+      return mode === "snap" ? Detect.snap(small, medium, corners, refAspect) : Detect.guess(small, medium, refAspect);
+    }
+    var small = scaledPixels(photo, 600), medium = scaledPixels(photo, 1500);
+    callDetect({ mode: mode, corners: corners, refAspect: refAspect,
+                 small: { buf: small.data.buffer, w: small.w, h: small.h },
+                 medium: { buf: medium.data.buffer, w: medium.w, h: medium.h } },
+               [small.data.buffer, medium.data.buffer])
+      .then(function(msg){ return msg.result; })
+      .catch(function(){ return runHere(); })
+      .then(function(res){
+        if(seq !== detectSeq || state.photo !== photo) return;     // a newer request or photo took over
+        state.detecting = false;
+        if(gen !== dragGen){ render(); return; }                   // the points were moved by hand meanwhile
+        if(!res || !res.found){
+          render();
+          toast("Couldn't find the canvas edges. Drag the points onto the corners.");
+          return;
+        }
+        state.corners = res.corners.map(copyPt);
+        state.cornerSure = res.sure.slice();
+        render();
+        persistMeta();
+        var unsure = res.sure.filter(function(s){ return !s; }).length;
+        toast(unsure ? "Found the canvas. Check the amber point" + (unsure > 1 ? "s" : "") + "."
+                     : "Found the canvas. Check the corners with the loupe.");
+      })
+      .catch(function(){ if(seq === detectSeq){ state.detecting = false; render(); } });
+  }
+  findEdgesBtn.addEventListener("click", function(){
+    if(state.detecting) return;
+    detectCanvas(isDefaultCorners(state.corners) ? "guess" : "snap");
+  });
 
   confirmAlignBtn.addEventListener("click", function(){
     if(!state.photo || !state.ref || state.busy) return;

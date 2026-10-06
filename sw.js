@@ -6,7 +6,7 @@ importScripts("version.js");
 var CACHE = "compart-" + self.APP_VERSION;
 var SHELL = [
   "./", "index.html", "app.css", "app.js", "store.js", "warp.js", "warp-worker.js",
-  "munsell.js", "munsell-data.js", "version.js", "apple-touch-icon.png"
+  "munsell.js", "munsell-data.js", "detect.js", "detect-worker.js", "version.js", "apple-touch-icon.png"
 ];
 
 self.addEventListener("install", function(e){

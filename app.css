@@ -195,6 +195,8 @@ input[type=file]{ display:none; }
   box-shadow: 0 0 0 3px rgba(193,113,47,0.28);
   touch-action:none; z-index:5;
 }
+/* a corner auto-detection wasn't sure of: amber, so it stands out to check */
+.handle.unsure{ background:#E3B341; box-shadow: 0 0 0 3px rgba(227,179,65,.4); }
 .empty{
   padding: 48px 24px; text-align:center; color: var(--ink-dim); font-size:14px; line-height:1.55;
   max-width: 320px;

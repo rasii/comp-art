@@ -16,6 +16,8 @@ saved to the home screen, but works on any modern browser.
 | `app.js` | The app: state, `render()`, gestures, alignment, compare, colour reading |
 | `warp.js` | Perspective warp (4-point homography), shared with the worker |
 | `warp-worker.js` | Runs the warp off the main thread |
+| `detect.js` | Finds the canvas in the painting photo (whole-photo guess, and snapping rough points to the edges) |
+| `detect-worker.js` | Runs detection off the main thread |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
 | `munsell-data.js` | Munsell renotation chip data (RIT MCSL `real.dat`) |
 | `store.js` | IndexedDB key/value store for the photos, corners and offsets |
