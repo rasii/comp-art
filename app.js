@@ -82,6 +82,10 @@
 
   var toastEl = $("toast");
   var confirmModal = $("confirmModal"), confirmMsg = $("confirmMsg"), confirmOk = $("confirmOk"), confirmCancel = $("confirmCancel");
+  var ccMixBtn = $("ccMixBtn"), shapeMixBtn = $("shapeMixBtn");
+  var mixModal = $("mixModal"), mixTitle = $("mixTitle"), mixTargetSw = $("mixTargetSw"), mixResultSw = $("mixResultSw");
+  var mixClose = $("mixClose"), mixList = $("mixList"), mixAlt = $("mixAlt"), mixAltTitle = $("mixAltTitle"), mixAltList = $("mixAltList");
+  var mixNote = $("mixNote"), mixDone = $("mixDone");
 
   $("versionLabel").textContent = "v" + (window.APP_VERSION || "?");
 
@@ -828,6 +832,7 @@
   function readColour(lin){
     var m = Munsell.fromLinearRGB(lin.r, lin.g, lin.b);
     m.css = "rgb(" + toSrgb(lin.r) + "," + toSrgb(lin.g) + "," + toSrgb(lin.b) + ")";
+    m.lin = [lin.r, lin.g, lin.b];
     return m;
   }
   // Reads both images at the same spot under the pointer (the painting is
@@ -1095,6 +1100,7 @@
 
   function renderShapeReadout(){
     var R = state.shapesResult, k = state.shapesPick;
+    shapeMixBtn.hidden = !R || k === null;
     if(!R || k === null){
       shapeSwatch.style.background = "transparent";
       shapeText.textContent = "Tap a shape to read its " + (state.grayscale ? "value" : "colour");
@@ -1171,7 +1177,57 @@
   confirmOk.addEventListener("click", function(){ var a = confirmAction; closeConfirm(); if(a) a(); });
   confirmCancel.addEventListener("click", closeConfirm);
   confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
-  document.addEventListener("keydown", function(e){ if(e.key === "Escape" && confirmModal.classList.contains("show")) closeConfirm(); });
+  document.addEventListener("keydown", function(e){
+    if(e.key !== "Escape") return;
+    if(confirmModal.classList.contains("show")) closeConfirm();
+    if(mixModal.classList.contains("show")) closeMix();
+  });
+
+  // ---------------- paint recipes (mix.js) ----------------
+  // Shows which of your paints, in what proportions, come closest to a colour.
+  function showRecipe(targetLin, what){
+    var res = Mix.recipe(targetLin), best = res.best;
+    mixTitle.textContent = "Mix " + what;
+    mixTargetSw.style.background = "rgb(" + toSrgb(targetLin[0]) + "," + toSrgb(targetLin[1]) + "," + toSrgb(targetLin[2]) + ")";
+    mixResultSw.style.background = best.css;
+    mixClose.innerHTML = "<b>" + best.closeness + "</b> (ΔE " + best.de.toFixed(1) + ")";
+    fillRecipeList(mixList, best);
+    mixAlt.hidden = !res.closer;
+    if(res.closer){
+      mixAltTitle.textContent = "Closer (ΔE " + res.closer.de.toFixed(1) + "), with " + res.closer.parts.length + " paints:";
+      fillRecipeList(mixAltList, res.closer);
+    }
+    var notes = ["Proportions are estimates from typical pigment strengths — a starting point to adjust by eye."];
+    if(best.approx || (res.closer && res.closer.approx)) notes.push("Alizarin Crimson and Transparent Maroon are approximated until they're calibrated from a swatch card.");
+    notes.push("Mixing predicted with Mixbox (Secret Weapons), non-commercial licence.");
+    mixNote.textContent = notes.join(" ");
+    mixModal.classList.add("show");
+  }
+  function fillRecipeList(ul, r){
+    ul.innerHTML = "";
+    r.parts.forEach(function(p){
+      var li = document.createElement("li");
+      var chip = document.createElement("span"); chip.className = "mix-chip"; chip.style.background = p.paint.css;
+      var name = document.createElement("span"); name.textContent = p.paint.name + (p.paint.approx ? " *" : "");
+      var amt = document.createElement("span"); amt.className = "mix-amount";
+      amt.innerHTML = "<b>" + p.label + "</b> · " + Math.max(1, Math.round(p.vol*100)) + "%";
+      li.appendChild(chip); li.appendChild(name); li.appendChild(amt);
+      ul.appendChild(li);
+    });
+  }
+  function closeMix(){ mixModal.classList.remove("show"); }
+  mixDone.addEventListener("click", closeMix);
+  mixModal.addEventListener("click", function(e){ if(e.target === mixModal) closeMix(); });
+
+  // reference colour at the spot read on the compare / side-by-side views
+  ccMixBtn.addEventListener("click", function(){
+    if(state.reading) showRecipe(state.reading.r.lin, "the reference colour");
+  });
+  // the tapped shape's colour as shown (including any colour intensity)
+  shapeMixBtn.addEventListener("click", function(){
+    var R = state.shapesResult, k = state.shapesPick;
+    if(R && k !== null) showRecipe(shapeLin(R, k), state.grayscale ? "this value" : "this shape's colour");
+  });
 
   function restart(){
     state.ref = null; state.photo = null; state.aligned = null;

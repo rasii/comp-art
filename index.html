@@ -146,7 +146,10 @@
           <span><span class="cc-name">Reference</span> <span class="cc-mun" id="ccRefMun"></span></span>
           <span><span class="cc-name">Painting</span> <span class="cc-mun" id="ccPaintMun"></span></span>
         </div>
-        <p class="cc-diff" id="ccDiff"></p>
+        <div class="cc-diffrow">
+          <p class="cc-diff" id="ccDiff"></p>
+          <button class="mix-btn" id="ccMixBtn" title="Recipe for the reference colour from your paints">Mix</button>
+        </div>
       </div>
     </div>
 
@@ -255,6 +258,7 @@
         <div class="shape-readout" id="shapeReadout">
           <span class="sr-swatch" id="shapeSwatch"></span>
           <span class="sr-text" id="shapeText">Tap a shape to read its colour</span>
+          <button class="mix-btn" id="shapeMixBtn" title="Recipe for this shape's colour from your paints" hidden>Mix</button>
         </div>
       </div>
     </div>
@@ -275,12 +279,31 @@
   </div>
 </div>
 
+<!-- paint recipe for a colour, from your palette -->
+<div class="modal" id="mixModal" role="dialog" aria-modal="true" aria-labelledby="mixTitle">
+  <div class="modal-box mix-box">
+    <p class="mix-title" id="mixTitle">Mix from your paints</p>
+    <div class="cc-swatches mix-swatches"><div id="mixTargetSw"></div><div id="mixResultSw"></div></div>
+    <div class="mix-swlabels"><span>Target</span><span>Predicted mix</span></div>
+    <p class="mix-close" id="mixClose"></p>
+    <ul class="mix-list" id="mixList"></ul>
+    <div class="mix-alt" id="mixAlt" hidden>
+      <p class="mix-alt-title" id="mixAltTitle"></p>
+      <ul class="mix-list" id="mixAltList"></ul>
+    </div>
+    <p class="mix-note" id="mixNote"></p>
+    <div class="row stretch"><button class="btn" id="mixDone">Done</button></div>
+  </div>
+</div>
+
 <script src="version.js"></script>
 <script src="munsell-data.js"></script>
 <script src="munsell.js"></script>
 <script src="warp.js"></script>
 <script src="detect.js"></script>
 <script src="shapes.js"></script>
+<script src="mixbox.js"></script>
+<script src="mix.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
 </body>
