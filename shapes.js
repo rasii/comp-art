@@ -315,5 +315,51 @@
     return { w: w, h: h, labels: out, colors: colors, sizes: sizes, count: stats.length, polys: polys };
   };
 
-  root.Shapes = { Analyzer: Analyzer };
+  // ---------------- colour intensity (OKLab chroma scaling) ----------------
+  // Scales a colour's chroma while keeping its lightness and hue; if the
+  // result leaves the screen's range it goes as far as it can instead.
+  function linToOklab(r, g, b){
+    var l = Math.cbrt(0.4122214708*r + 0.5363325363*g + 0.0514459929*b);
+    var m = Math.cbrt(0.2119034982*r + 0.6806995451*g + 0.1073969566*b);
+    var s = Math.cbrt(0.0883024619*r + 0.2817188376*g + 0.6299787005*b);
+    return [0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
+            1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
+            0.0259040371*l + 0.7827717662*m - 0.8086757660*s];
+  }
+  function oklabToLin(L, a, b){
+    var l = L + 0.3963377774*a + 0.2158037573*b, m = L - 0.1055613458*a - 0.0638541728*b, s = L - 0.0894841775*a - 1.2914855480*b;
+    l = l*l*l; m = m*m*m; s = s*s*s;
+    return [ 4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+            -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+            -0.0041960863*l - 0.7034186147*m + 1.7076949654*s];
+  }
+  function inGamut(c){ return c[0] >= -1e-4 && c[0] <= 1.0001 && c[1] >= -1e-4 && c[1] <= 1.0001 && c[2] >= -1e-4 && c[2] <= 1.0001; }
+  function clamp01(v){ return v < 0 ? 0 : v > 1 ? 1 : v; }
+  // r, g, b linear light 0..1 → boosted linear rgb
+  function boostChroma(r, g, b, factor, iterations){
+    if(factor === 1) return [r, g, b];
+    var lab = linToOklab(r, g, b), out = oklabToLin(lab[0], lab[1]*factor, lab[2]*factor);
+    if(inGamut(out)) return [clamp01(out[0]), clamp01(out[1]), clamp01(out[2])];
+    var lo = 1, hi = factor, n = iterations || 20;
+    for(var i=0;i<n;i++){
+      var mid = (lo + hi)/2, c = oklabToLin(lab[0], lab[1]*mid, lab[2]*mid);
+      if(inGamut(c)) lo = mid; else hi = mid;
+    }
+    out = oklabToLin(lab[0], lab[1]*lo, lab[2]*lo);
+    return [clamp01(out[0]), clamp01(out[1]), clamp01(out[2])];
+  }
+  // A whole photo (RGBA sRGB bytes) with its colour intensity scaled.
+  var TO_SRGB = new Uint8ClampedArray(4096);
+  for(i=0;i<4096;i++){ var lv = i/4095; TO_SRGB[i] = Math.round((lv <= 0.0031308 ? 12.92*lv : 1.055*Math.pow(lv, 1/2.4) - 0.055)*255); }
+  function enhance(rgba, w, h, factor){
+    var out = new Uint8ClampedArray(rgba.length);
+    for(var p=0, n=w*h; p<n; p++){
+      var q = p*4, c = boostChroma(LIN[rgba[q]], LIN[rgba[q+1]], LIN[rgba[q+2]], factor, 10);
+      out[q] = TO_SRGB[Math.round(c[0]*4095)]; out[q+1] = TO_SRGB[Math.round(c[1]*4095)]; out[q+2] = TO_SRGB[Math.round(c[2]*4095)];
+      out[q+3] = 255;
+    }
+    return out;
+  }
+
+  root.Shapes = { Analyzer: Analyzer, boostChroma: boostChroma, enhance: enhance };
 })(typeof self !== "undefined" ? self : this);

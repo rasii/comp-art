@@ -210,8 +210,10 @@
       <div class="frame fitted" id="shapesFrame" style="--ar:1;">
         <div class="zoom-view" id="shapesView">
           <img id="shapesRef" alt="Reference photo">
+          <canvas id="shapesPhoto" hidden></canvas>
           <canvas id="shapesCanvas"></canvas>
         </div>
+        <div class="pick-marker" id="shapesMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div>
       </div>
     </div>
     <div class="controls">
@@ -252,13 +254,23 @@
           <div class="ctrl-label">Background as one shape</div>
           <button class="switch on" id="bgOneSwitch" aria-label="Treat the out-of-focus background as one shape"></button>
         </div>
+        <div class="ctrl-row" id="enhanceRow">
+          <div class="ctrl-label">Show colour intensity on the photo</div>
+          <button class="switch" id="enhanceSwitch" aria-label="Apply the colour intensity to the reference photo"></button>
+        </div>
 
         <div class="divider"></div>
 
-        <div class="shape-readout" id="shapeReadout">
+        <p class="sr-prompt" id="shapePrompt">Tap a shape to read its colour</p>
+        <div class="shape-readout" id="shapeReadout" hidden>
           <span class="sr-swatch" id="shapeSwatch"></span>
-          <span class="sr-text" id="shapeText">Tap a shape to read its colour</span>
-          <button class="mix-btn" id="shapeMixBtn" title="Recipe for this shape's colour from your paints" hidden>Mix</button>
+          <span class="sr-text"><span class="sr-name">Shape</span> <span id="shapeText"></span></span>
+          <button class="mix-btn" id="shapeMixBtn" title="Recipe for this shape's colour from your paints">Mix</button>
+        </div>
+        <div class="shape-readout" id="photoReadout" hidden>
+          <span class="sr-swatch" id="photoSwatch"></span>
+          <span class="sr-text"><span class="sr-name">Photo</span> <span id="photoText"></span></span>
+          <button class="mix-btn" id="photoMixBtn" title="Recipe for the photo's colour at this spot from your paints">Mix</button>
         </div>
       </div>
     </div>
