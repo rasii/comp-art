@@ -165,6 +165,7 @@ window.Mix = (function(){
     var lats = r.parts.map(function(p){ return p.paint.latent; }), w = r.parts.map(function(p){ return p.w; });
     var c = mixColour(lats, w);
     r.css = "rgb(" + c.map(function(v){ return Math.round(v*255); }).join(",") + ")";
+    r.lin = c.map(srgbToLin);   // predicted colour, linear light (for the Munsell readout)
     r.approx = r.parts.some(function(p){ return p.paint.approx; });
     // real tube amounts: the model's proportion divided by tinting strength
     var sum = 0;

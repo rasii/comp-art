@@ -85,7 +85,7 @@
   var ccMixBtn = $("ccMixBtn"), shapeMixBtn = $("shapeMixBtn");
   var mixModal = $("mixModal"), mixTitle = $("mixTitle"), mixTargetSw = $("mixTargetSw"), mixResultSw = $("mixResultSw");
   var mixClose = $("mixClose"), mixList = $("mixList"), mixAlt = $("mixAlt"), mixAltTitle = $("mixAltTitle"), mixAltList = $("mixAltList");
-  var mixNote = $("mixNote"), mixDone = $("mixDone");
+  var mixNote = $("mixNote"), mixDone = $("mixDone"), mixTargetMun = $("mixTargetMun"), mixResultMun = $("mixResultMun");
 
   $("versionLabel").textContent = "v" + (window.APP_VERSION || "?");
 
@@ -840,6 +840,7 @@
   function readAt(e, view){
     if(!state.ref || !state.aligned) return;
     var vr = view.getBoundingClientRect();
+    if(!vr.width || !vr.height) return;            // not laid out (hidden)
     var u = (e.clientX - vr.left) / vr.width, v = (e.clientY - vr.top) / vr.height;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     var refLin = samplePatch(state.ref, u, v);
@@ -1126,6 +1127,7 @@
     var R = state.shapesResult;
     if(!R) return;
     var vr = shapesView.getBoundingClientRect();
+    if(!vr.width || !vr.height) return;            // not laid out (hidden)
     var u = (e.clientX - vr.left)/vr.width, v = (e.clientY - vr.top)/vr.height;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     state.shapesPick = R.labels[Math.floor(v*R.h)*R.w + Math.floor(u*R.w)];
@@ -1190,11 +1192,14 @@
     mixTitle.textContent = "Mix " + what;
     mixTargetSw.style.background = "rgb(" + toSrgb(targetLin[0]) + "," + toSrgb(targetLin[1]) + "," + toSrgb(targetLin[2]) + ")";
     mixResultSw.style.background = best.css;
+    function notation(lin){ return Munsell.fromLinearRGB(lin[0], lin[1], lin[2]).notation; }
+    mixTargetMun.textContent = notation(targetLin);
+    mixResultMun.textContent = notation(best.lin);
     mixClose.innerHTML = "<b>" + best.closeness + "</b> (ΔE " + best.de.toFixed(1) + ")";
     fillRecipeList(mixList, best);
     mixAlt.hidden = !res.closer;
     if(res.closer){
-      mixAltTitle.textContent = "Closer (ΔE " + res.closer.de.toFixed(1) + "), with " + res.closer.parts.length + " paints:";
+      mixAltTitle.textContent = "Closer (ΔE " + res.closer.de.toFixed(1) + ", " + notation(res.closer.lin) + "), with " + res.closer.parts.length + " paints:";
       fillRecipeList(mixAltList, res.closer);
     }
     var notes = ["Proportions are estimates from typical pigment strengths — a starting point to adjust by eye."];

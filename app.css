@@ -282,6 +282,7 @@ input[type=file]{ display:none; }
 .mix-swatches > div + div{ border-left:2px solid var(--panel); }
 .mix-swlabels{ display:flex; font-size:11px; color: var(--ink-dim); margin-top:-6px; }
 .mix-swlabels span{ flex:1; text-align:center; }
+.mix-swlabels b{ display:block; color: var(--ink); font-size:13px; font-weight:600; margin-top:2px; font-variant-numeric: tabular-nums; }
 .mix-close{ font-size:13px !important; text-align:center; color: var(--ink-dim); }
 .mix-close b{ color: var(--ink); }
 .mix-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:7px; }
