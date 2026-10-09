@@ -53,7 +53,7 @@
 
   var alignStageWrap = $("alignStageWrap");
   var pinStage = $("pinStage"), pinView = $("pinView"), pinInner = $("pinInner"), pinRefImg = $("pinRefImg"), pinImg = $("pinImg");
-  var pinPoly = $("pinPoly"), pinPolyHalo = $("pinPolyHalo"), loupe = $("loupe");
+  var pinPoly = $("pinPoly"), loupe = $("loupe");
   var handles = [$("handle0"), $("handle1"), $("handle2"), $("handle3")];
   var pinOpacitySlider = $("pinOpacitySlider");
   var findEdgesBtn = $("findEdgesBtn"), zoomFitBtn = $("zoomFitBtn"), resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
@@ -71,7 +71,7 @@
   var sideRef = $("sideRef"), sideCur = $("sideCur");
   var sideRefMarker = $("sideRefMarker"), sideCurMarker = $("sideCurMarker");
 
-  var viewShapes = $("view-shapes"), shapesFrame = $("shapesFrame"), shapesView = $("shapesView");
+  var viewShapes = $("view-shapes"), shapesFrame = $("shapesFrame"), shapesView = $("shapesView"), shapesImg = $("shapesImg");
   var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
   var shapesOpacitySlider = $("shapesOpacitySlider");
   var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
@@ -205,7 +205,7 @@
     } else {
       hint = "touch either image to read colours";
     }
-    if((m === "compare" || m === "side") && viewZoom.z > 1) hint += " · double-tap to reset zoom";
+    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1)) hint += " · double-tap to reset zoom";
     if(m === "shapes" && shapesZoom.z > 1) hint += " · double-tap to reset zoom";
     stepHint.textContent = hint;
 
@@ -235,10 +235,6 @@
 
     // ---- compare / side ----
     if(hasRef && hasAligned){
-      var ar = state.ref.w + "/" + state.ref.h;
-      compareFrame.style.setProperty("--ar", ar);
-      sideRefFrame.style.setProperty("--ar", ar);
-      sideCurFrame.style.setProperty("--ar", ar);
       setSrc(compareRef, state.ref); setSrc(compareCur, state.aligned);
       setSrc(sideRef, state.ref);    setSrc(sideCur, state.aligned);
       if(m === "side") layoutSide();
@@ -248,11 +244,19 @@
     adjustSwitch.classList.toggle("on", state.adjusting);
     compareFrame.classList.toggle("adjusting", state.adjusting);
     show(resetPosBtn, state.adjusting || state.offU !== 0 || state.offV !== 0);
-    var shift = (state.offU || state.offV) ? "translate(" + (state.offU*100) + "%," + (state.offV*100) + "%)" : "";
-    compareCur.style.transform = shift;
-    sideCur.style.transform = shift;
+    // the offset is a fraction of the photo, which is letterboxed in its frame
+    function shiftIn(frame){
+      if(!state.offU && !state.offV) return "";
+      var c = imageRect(frame);
+      return "translate(" + (state.offU*c.w*100) + "%," + (state.offV*c.h*100) + "%)";
+    }
+    compareCur.style.transform = shiftIn(compareFrame);
+    sideCur.style.transform = shiftIn(sideCurFrame);
     [compareRef, compareCur, sideRef, sideCur].forEach(function(img){ img.classList.toggle("gray", state.grayscale); });
-    viewZoom.apply();
+    // re-fit pan to the frame's current size (only measurable while shown)
+    if(m === "compare") compareZoom.clampPan();
+    if(m === "side") sideZoom.clampPan();
+    compareZoom.apply(); sideZoom.apply();
 
     // ---- shapes ----
     if(hasRef && m === "shapes") renderShapes();
@@ -300,9 +304,9 @@
   // keeps its size whatever the view zoom. For touch, the ring sits above
   // the fingertip (or below it near the top edge).
   function placeMarker(mk, frame, view, rd, fill){
-    var fr = frame.getBoundingClientRect(), vr = view.getBoundingClientRect();
-    var x = vr.left - (fr.left + frame.clientLeft) + rd.u*vr.width;
-    var y = vr.top  - (fr.top  + frame.clientTop)  + rd.v*vr.height;
+    var fr = frame.getBoundingClientRect(), vr = view.getBoundingClientRect(), c = imageRect(frame);
+    var x = vr.left - (fr.left + frame.clientLeft) + (c.x + rd.u*c.w)*vr.width;
+    var y = vr.top  - (fr.top  + frame.clientTop)  + (c.y + rd.v*c.h)*vr.height;
     var touch = rd.pointerType === "touch";
     mk.classList.toggle("touch", touch);
     mk.classList.toggle("below", touch && y < 96);
@@ -311,18 +315,36 @@
     mk.querySelector(".pm-ring").style.background = fill;
   }
 
+  // Where the reference sits in a frame that letterboxes it (object-fit:
+  // contain), as fractions of the frame: {x, y, w, h}.
+  function imageRect(frame){
+    var W = frame.clientWidth, H = frame.clientHeight;
+    if(!state.ref || !W || !H) return { x: 0, y: 0, w: 1, h: 1 };
+    var ar = state.ref.w / state.ref.h, w = 1, h = 1;
+    if(W/H > ar) w = H*ar/W; else h = W/ar/H;
+    return { x: (1-w)/2, y: (1-h)/2, w: w, h: h };
+  }
+
   // ---------------- lockstep pinch-zoom for a group of views ----------------
   // z/pu/pv are the same for every view in the group; pan is a fraction of
-  // each frame, so frames of different pixel sizes stay in step.
-  function makeZoom(views, maxZoom){
+  // each frame, so frames of different pixel sizes stay in step. With
+  // content() (the image's rect in the frame, for a letterboxed image), pan
+  // keeps the image covering the frame on any axis where it's bigger than
+  // the frame, and centred where it's still smaller.
+  function makeZoom(views, maxZoom, content){
     var zm = { z: 1, pu: 0, pv: 0 };
+    function clampAxis(p, z, a, len){
+      if(z*len <= 1) return 0.5 - z*(a + len/2);
+      return clamp(p, 1 - z*(a + len), -z*a);
+    }
     zm.clampPan = function(){
       zm.z = clamp(zm.z, 1, maxZoom);
-      zm.pu = clamp(zm.pu, 1 - zm.z, 0);
-      zm.pv = clamp(zm.pv, 1 - zm.z, 0);
+      var c = content ? content() : { x: 0, y: 0, w: 1, h: 1 };
+      zm.pu = clampAxis(zm.pu, zm.z, c.x, c.w);
+      zm.pv = clampAxis(zm.pv, zm.z, c.y, c.h);
     };
     zm.apply = function(){
-      var t = (zm.z === 1) ? "" : "translate(" + (zm.pu*100) + "%," + (zm.pv*100) + "%) scale(" + zm.z + ")";
+      var t = (zm.z === 1 && !zm.pu && !zm.pv) ? "" : "translate(" + (zm.pu*100) + "%," + (zm.pv*100) + "%) scale(" + zm.z + ")";
       views.forEach(function(v){ if(v.style.transform !== t) v.style.transform = t; });
     };
     zm.reset = function(){ zm.z = 1; zm.pu = 0; zm.pv = 0; };
@@ -348,8 +370,9 @@
     return zm;
   }
   var pinZoom = makeZoom([pinView], PIN_MAX_ZOOM);
-  var viewZoom = makeZoom([compareView, sideRefView, sideCurView], VIEW_MAX_ZOOM);
-  var shapesZoom = makeZoom([shapesView], VIEW_MAX_ZOOM);
+  var compareZoom = makeZoom([compareView], VIEW_MAX_ZOOM, function(){ return imageRect(compareFrame); });
+  var sideZoom = makeZoom([sideRefView, sideCurView], VIEW_MAX_ZOOM, function(){ return imageRect(sideRefFrame); });
+  var shapesZoom = makeZoom([shapesView], VIEW_MAX_ZOOM, function(){ return imageRect(shapesFrame); });
 
   // Pointer handling for a frame: two fingers (or wheel) zoom and pan the
   // group; one pointer goes to the `single` callbacks; a quick double tap
@@ -523,7 +546,6 @@
     if(!state.corners) return;
     var pts = state.corners.map(function(p){ return (p.u*100) + "," + (p.v*100); }).join(" ");
     pinPoly.setAttribute("points", pts);
-    pinPolyHalo.setAttribute("points", pts);
     layoutRefOverlay();
     handles.forEach(function(h, i){
       var pos = cornerStagePos(i);
@@ -785,7 +807,7 @@
       state.adjusting = false; state.opacityBeforeAdjust = null;
       state.lastCorners = { ar: state.photo.w/state.photo.h, pts: state.corners.map(copyPt) };
       state.reading = null;
-      viewZoom.reset();
+      compareZoom.reset(); sideZoom.reset();
       state.busy = false;
       state.mode = "compare";
       render();
@@ -842,11 +864,12 @@
   }
   // Reads both images at the same spot under the pointer (the painting is
   // drawn shifted by the position offset, so it's sampled shifted back).
-  function readAt(e, view){
+  function readAt(e, frame, view){
     if(!state.ref || !state.aligned) return;
-    var vr = view.getBoundingClientRect();
+    var vr = view.getBoundingClientRect(), c = imageRect(frame);
     if(!vr.width || !vr.height) return;            // not laid out (hidden)
-    var u = (e.clientX - vr.left) / vr.width, v = (e.clientY - vr.top) / vr.height;
+    var u = ((e.clientX - vr.left) / vr.width - c.x) / c.w;
+    var v = ((e.clientY - vr.top) / vr.height - c.y) / c.h;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     var refLin = samplePatch(state.ref, u, v);
     var curLin = samplePatch(state.aligned, u - state.offU, v - state.offV);
@@ -856,7 +879,7 @@
 
   // compare frame: hold to peek + read; drag to reposition when adjusting
   var posDrag = null;
-  attachGestures(compareFrame, viewZoom, {
+  attachGestures(compareFrame, compareZoom, {
     start: function(e){
       if(!state.aligned) return;
       if(state.adjusting){
@@ -864,17 +887,17 @@
       } else {
         state.peeking = true;
         render();
-        readAt(e, compareView);
+        readAt(e, compareFrame, compareView);
       }
     },
     move: function(e){
       if(posDrag){
-        var rect = compareView.getBoundingClientRect();
-        state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / rect.width, -OFF_MAX, OFF_MAX);
-        state.offV = clamp(posDrag.v0 + (e.clientY - posDrag.y) / rect.height, -OFF_MAX, OFF_MAX);
+        var rect = compareView.getBoundingClientRect(), c = imageRect(compareFrame);
+        state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / (rect.width*c.w), -OFF_MAX, OFF_MAX);
+        state.offV = clamp(posDrag.v0 + (e.clientY - posDrag.y) / (rect.height*c.h), -OFF_MAX, OFF_MAX);
         render();
       } else if(state.peeking){
-        readAt(e, compareView);
+        readAt(e, compareFrame, compareView);
       }
     },
     end: function(){
@@ -898,12 +921,13 @@
     sideSplit.classList.toggle("row", rowW >= colW);
   }
   if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "side") render(); }).observe(sideFit);
+  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "compare") render(); }).observe(compareFrame);
 
   // side by side: touching either image reads the same spot in both
   [ [sideRefFrame, sideRefView], [sideCurFrame, sideCurView] ].forEach(function(pair){
-    attachGestures(pair[0], viewZoom, {
-      start: function(e){ readAt(e, pair[1]); },
-      move: function(e){ readAt(e, pair[1]); }
+    attachGestures(pair[0], sideZoom, {
+      start: function(e){ readAt(e, pair[0], pair[1]); },
+      move: function(e){ readAt(e, pair[0], pair[1]); }
     }, render);
   });
 
@@ -1076,7 +1100,6 @@
   }
 
   function renderShapes(){
-    shapesFrame.style.setProperty("--ar", state.ref.w + "/" + state.ref.h);
     setSrc(shapesRef, state.ref);
     shapesRef.classList.toggle("gray", state.grayscale);
     if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
@@ -1093,7 +1116,7 @@
     enhanceSwitch.classList.toggle("on", state.shapes.enhancePhoto);
     enhanceSwitch.disabled = state.grayscale;
     enhanceRow.classList.toggle("disabled", state.grayscale);
-    shapesZoom.apply();
+    shapesZoom.clampPan(); shapesZoom.apply();
     requestShapes(0);
     requestEnhanced(120);
     renderShapesStatus();
@@ -1101,9 +1124,16 @@
     renderShapeReadout();
   }
 
+  // the photo and shapes layers sit where the letterboxed photo goes
+  function layoutShapesImg(){
+    var c = imageRect(shapesFrame), st = shapesImg.style;
+    st.left = (c.x*100) + "%"; st.top = (c.y*100) + "%";
+    st.width = (c.w*100) + "%"; st.height = (c.h*100) + "%";
+  }
   function drawShapes(){
+    layoutShapesImg();
     var R = state.shapesResult, dpr = window.devicePixelRatio || 1;
-    var W = Math.max(1, Math.round(shapesFrame.clientWidth*dpr)), H = Math.max(1, Math.round(shapesFrame.clientHeight*dpr));
+    var W = Math.max(1, Math.round(shapesImg.clientWidth*dpr)), H = Math.max(1, Math.round(shapesImg.clientHeight*dpr));
     if(shapesCanvas.width !== W || shapesCanvas.height !== H){ shapesCanvas.width = W; shapesCanvas.height = H; }
     var ctx = shapesCanvas.getContext("2d");
     ctx.clearRect(0, 0, W, H);
@@ -1165,9 +1195,9 @@
   function pickShape(e){
     var R = state.shapesResult;
     if(!R) return;
-    var vr = shapesView.getBoundingClientRect();
+    var vr = shapesView.getBoundingClientRect(), c = imageRect(shapesFrame);
     if(!vr.width || !vr.height) return;            // not laid out (hidden)
-    var u = (e.clientX - vr.left)/vr.width, v = (e.clientY - vr.top)/vr.height;
+    var u = ((e.clientX - vr.left)/vr.width - c.x)/c.w, v = ((e.clientY - vr.top)/vr.height - c.y)/c.h;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     state.shapesPoint = { u: u, v: v, pointerType: e.pointerType };
     state.shapesPick = labelAt(R, state.shapesPoint);
@@ -1205,7 +1235,7 @@
   fillSwitch.addEventListener("click", toggleShapesOption("fill"));
   bgOneSwitch.addEventListener("click", toggleShapesOption("bgOne"));
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
-  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "shapes"){ drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
+  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "shapes"){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
 
   // ---------------- restart ----------------
   var confirmAction = null;
@@ -1284,7 +1314,7 @@
     state.corners = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
     state.reading = null; state.peeking = false; state.mode = "align";
-    pinZoom.reset(); viewZoom.reset();
+    pinZoom.reset(); compareZoom.reset(); sideZoom.reset();
     render();
     Store.clear().catch(function(){});
     try{ localStorage.removeItem(LEGACY_KEY); }catch(e){}

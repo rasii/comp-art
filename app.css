@@ -179,7 +179,6 @@ input[type=file]{ display:none; }
 }
 .pin-stage svg{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .pin-stage polygon{ fill: none; stroke: var(--sienna); stroke-width:2; vector-effect: non-scaling-stroke; }
-.pin-stage polygon.halo{ stroke: rgba(0,0,0,.55); stroke-width:5; }
 /* magnifier shown while a corner point is held: the photo around the
    point at 3x, with the outline and a crosshair */
 .loupe{
@@ -209,6 +208,10 @@ input[type=file]{ display:none; }
   background: var(--panel); border:1px solid var(--line);
   aspect-ratio: var(--ar, 1);
 }
+/* compare / side by side: the frame takes all the space it's given and the
+   photo is letterboxed in it, so zooming in can use the whole area */
+.frame.fill{ aspect-ratio:auto; background:transparent; border:none; }
+.fit > .fill{ flex:0 0 auto; width:100cqw; height:100cqh; }
 .frame img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
 /* pinch-zoomed together across the compare and side-by-side frames */
 .zoom-view{ position:absolute; inset:0; transform-origin: 0 0; }
@@ -263,6 +266,8 @@ input[type=file]{ display:none; }
 
 /* ---------- shapes ---------- */
 #shapesFrame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
+/* the photo's letterboxed spot in the frame (placed from app.js) */
+.shapes-img{ position:absolute; }
 #shapesCanvas, #shapesPhoto{ position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 #shapesPhoto[hidden]{ display:none; }
 #shapesPhoto.gray{ filter: grayscale(1) contrast(1.03); }
@@ -311,11 +316,11 @@ input[type=file]{ display:none; }
   height:100%; display:flex; flex-direction:column; gap:10px;
   align-items:center; justify-content:center;
 }
-.split .pane{ flex:0 0 auto; }
-.split .frame{ width: min(100cqw, calc((50cqh - 5px - 22px) * var(--ar, 1))); }
+.split .pane{ flex:1 1 0; min-width:0; min-height:0; align-self:stretch; display:flex; flex-direction:column; }
+.split .frame{ flex:1 1 0; min-height:0; width:100%; }
 .split.row{ flex-direction:row; }
-.split.row .frame{ width: min(calc(50cqw - 5px), calc((100cqh - 22px) * var(--ar, 1))); }
 .pane-label{ font-size:11.5px; line-height:16px; color: var(--ink-dim); margin:0 0 6px 2px; font-weight:500; }
+.split .pane-label{ text-align:center; }
 
 /* ---------- controls panel ---------- */
 .panel{

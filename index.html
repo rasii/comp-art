@@ -58,7 +58,7 @@
               <div class="pin-inner" id="pinInner">
                 <img id="pinRefImg" alt="Reference photo" draggable="false">
                 <img id="pinImg" alt="Your painting photo" draggable="false">
-                <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPolyHalo" class="halo" points=""></polygon><polygon id="pinPoly" points=""></polygon></svg>
+                <svg id="pinSvg" viewBox="0 0 100 100" preserveAspectRatio="none"><polygon id="pinPoly" points=""></polygon></svg>
               </div>
             </div>
           </div>
@@ -128,7 +128,7 @@
   <section id="view-compare" style="display:none;">
    <div class="step">
     <div class="fit">
-      <div class="frame fitted" id="compareFrame" style="--ar:1;">
+      <div class="frame fill" id="compareFrame">
         <div class="zoom-view" id="compareView">
           <img id="compareRef" alt="Reference photo">
           <img id="compareCur" alt="Your painting, aligned to the reference">
@@ -188,11 +188,11 @@
       <div class="split" id="sideSplit">
         <div class="pane">
           <p class="pane-label">Reference</p>
-          <div class="frame side-frame" id="sideRefFrame" style="--ar:1;"><div class="zoom-view" id="sideRefView"><img id="sideRef" alt="Reference photo"></div><div class="pick-marker" id="sideRefMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
+          <div class="frame fill side-frame" id="sideRefFrame"><div class="zoom-view" id="sideRefView"><img id="sideRef" alt="Reference photo"></div><div class="pick-marker" id="sideRefMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
         <div class="pane">
           <p class="pane-label">Your painting</p>
-          <div class="frame side-frame" id="sideCurFrame" style="--ar:1;"><div class="zoom-view" id="sideCurView"><img id="sideCur" alt="Your painting, aligned to the reference"></div><div class="pick-marker" id="sideCurMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
+          <div class="frame fill side-frame" id="sideCurFrame"><div class="zoom-view" id="sideCurView"><img id="sideCur" alt="Your painting, aligned to the reference"></div><div class="pick-marker" id="sideCurMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div></div>
         </div>
       </div>
     </div>
@@ -207,11 +207,13 @@
   <section id="view-shapes" style="display:none;">
    <div class="step">
     <div class="fit">
-      <div class="frame fitted" id="shapesFrame" style="--ar:1;">
+      <div class="frame fill" id="shapesFrame">
         <div class="zoom-view" id="shapesView">
-          <img id="shapesRef" alt="Reference photo">
-          <canvas id="shapesPhoto" hidden></canvas>
-          <canvas id="shapesCanvas"></canvas>
+          <div class="shapes-img" id="shapesImg">
+            <img id="shapesRef" alt="Reference photo">
+            <canvas id="shapesPhoto" hidden></canvas>
+            <canvas id="shapesCanvas"></canvas>
+          </div>
         </div>
         <div class="pick-marker" id="shapesMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div>
       </div>
