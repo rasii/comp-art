@@ -44,6 +44,7 @@
     <button data-mode="compare" disabled>Compare</button>
     <button data-mode="side" disabled>Side by side</button>
     <button data-mode="shapes" disabled>Shapes</button>
+    <button data-mode="blocks" disabled>Block-in</button>
   </nav>
 
   <!-- ===================== ALIGN VIEW ===================== -->
@@ -203,7 +204,8 @@
   </section>
 
   <!-- ===================== SHAPES VIEW ===================== -->
-  <!-- the reference broken into its big shapes (value, or value + colour) -->
+  <!-- the reference broken down: big shapes (Shapes tab) or a limited
+       palette of flat masses (Block-in tab). One view, two methods. -->
   <section id="view-shapes" style="display:none;">
    <div class="step">
     <div class="fit">
@@ -220,12 +222,19 @@
     </div>
     <div class="controls">
       <div class="panel">
-        <div class="ctrl-row opacity-row">
+        <div class="ctrl-row opacity-row" id="countRow">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
             Shapes <span class="shapes-count" id="shapesCount"></span>
           </div>
           <input type="range" id="shapesSlider" min="8" max="80" value="30" aria-label="Number of shapes">
+        </div>
+        <div class="ctrl-row opacity-row" id="detailRow" hidden>
+          <div class="ctrl-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
+            Detail <span class="shapes-count" id="detailLabel"></span>
+          </div>
+          <input type="range" id="detailSlider" min="0" max="100" value="50" aria-label="Less to more detail">
         </div>
         <div class="ctrl-row opacity-row">
           <div class="ctrl-label">
@@ -252,7 +261,7 @@
           <div class="ctrl-label">Average colour</div>
           <button class="switch" id="fillSwitch" aria-label="Fill shapes with their average colour"></button>
         </div>
-        <div class="ctrl-row">
+        <div class="ctrl-row" id="bgOneRow">
           <div class="ctrl-label">Background as one shape</div>
           <button class="switch on" id="bgOneSwitch" aria-label="Treat the out-of-focus background as one shape"></button>
         </div>
@@ -263,10 +272,11 @@
 
         <div class="divider"></div>
 
+        <div class="palette" id="paletteRow" hidden></div>
         <p class="sr-prompt" id="shapePrompt">Tap a shape to read its colour</p>
         <div class="shape-readout" id="shapeReadout" hidden>
           <span class="sr-swatch" id="shapeSwatch"></span>
-          <span class="sr-text"><span class="sr-name">Shape</span> <span id="shapeText"></span></span>
+          <span class="sr-text"><span class="sr-name" id="shapeName">Shape</span> <span id="shapeText"></span></span>
           <button class="mix-btn" id="shapeMixBtn" title="Recipe for this shape's colour from your paints">Mix</button>
         </div>
         <div class="shape-readout" id="photoReadout" hidden>

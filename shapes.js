@@ -12,6 +12,10 @@
 //      (everything out of focus), average colours, and outlines simplified
 //      to straight segments
 //
+// Block-in (Analyzer.blocks) is the other breakdown: the photo covered with
+// a limited palette of flat masses, from a single less-to-more detail
+// setting.
+//
 // Plain functions on RGBA buffers: runs in shapes-worker.js or the page.
 (function(root){
   "use strict";
@@ -286,18 +290,36 @@
       }
     }
 
-    // compact ids and average colours (from the original photo, linear RGB)
-    var ids = new Map(), out = new Uint16Array(n), stats = [];
-    for(p=0;p<n;p++){
+    return finish(im, lab, opts.straight || 2);
+  };
+
+  // A result from a region map: ids compacted, each region's average colour
+  // (from the original photo, linear RGB) and size, and the outline of every
+  // connected piece straightened to segments within `straight` of the edge.
+  // `group` (optional) maps a region id to its paint: regions that share
+  // a palette colour but are kept apart (inside/outside the subject). The
+  // result also carries each paint's colour and size; without groups every
+  // region is its own paint.
+  function finish(im, lab, straight, group){
+    var w = im.w, h = im.h, n = w*h;
+    var ids = new Map(), out = new Uint16Array(n), stats = [], raw = [];
+    for(var p=0;p<n;p++){
       var k = ids.get(lab[p]);
-      if(k === undefined){ k = stats.length; ids.set(lab[p], k); stats.push([0, 0, 0, 0]); }
+      if(k === undefined){ k = stats.length; ids.set(lab[p], k); stats.push([0, 0, 0, 0]); raw.push(lab[p]); }
       out[p] = k; var s = stats[k]; s[0] += im.lr[p]; s[1] += im.lg[p]; s[2] += im.lb[p]; s[3]++;
     }
     var colors = new Float32Array(stats.length*3), sizes = new Uint32Array(stats.length);
     stats.forEach(function(s, k){ colors[k*3] = s[0]/s[3]; colors[k*3+1] = s[1]/s[3]; colors[k*3+2] = s[2]/s[3]; sizes[k] = s[3]; });
+    var paint = new Uint16Array(stats.length), gids = new Map(), psum = [];
+    stats.forEach(function(s, k){
+      var g = group ? group[raw[k]] : k, j = gids.get(g);
+      if(j === undefined){ j = psum.length; gids.set(g, j); psum.push([0, 0, 0, 0]); }
+      paint[k] = j; var q = psum[j]; q[0] += s[0]; q[1] += s[1]; q[2] += s[2]; q[3] += s[3];
+    });
+    var paintColors = new Float32Array(psum.length*3), paintSizes = new Uint32Array(psum.length);
+    psum.forEach(function(q, j){ paintColors[j*3] = q[0]/q[3]; paintColors[j*3+1] = q[1]/q[3]; paintColors[j*3+2] = q[2]/q[3]; paintSizes[j] = q[3]; });
 
-    // outlines: every connected piece of every shape, straightened
-    var eps = Math.max(1.5, Math.max(w, h)/260*(opts.straight || 2)), seen = new Uint8Array(n), polys = [], st = new Int32Array(n);
+    var eps = Math.max(1.5, Math.max(w, h)/260*straight), seen = new Uint8Array(n), polys = [], st = new Int32Array(n);
     for(p=0;p<n;p++){
       if(seen[p]) continue;
       var id = out[p], sp = 0, size = 0; st[sp++] = p; seen[p] = 1;
@@ -312,7 +334,261 @@
       var pts = simplify(trace(out, w, h, id, p % w, (p / w) | 0), eps);
       if(pts.length >= 6) polys.push({ id: id, pts: new Float32Array(pts) });
     }
-    return { w: w, h: h, labels: out, colors: colors, sizes: sizes, count: stats.length, polys: polys };
+    return { w: w, h: h, labels: out, colors: colors, sizes: sizes, count: stats.length, polys: polys,
+             paint: paint, paints: psum.length, paintColors: paintColors, paintSizes: paintSizes };
+  }
+
+  // ---------------- block-in: flat masses from a limited palette ----------------
+  // A painter's first pass: mix a few piles of paint and cover the canvas
+  // with them. The photo is smoothed, every pixel takes the nearest of K
+  // palette colours, specks are absorbed into their surroundings and the
+  // mass edges rounded off. One `detail` setting (0..1) drives the palette
+  // size, the smoothing scale and the smallest mass kept.
+  function rng(seed){
+    return function(){
+      seed = (seed + 0x6D2B79F5) | 0;
+      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // The palette: weighted k-means (k-means++ seeding, fixed seed so the
+  // same photo always gives the same palette) on the smoothed colours.
+  // Pixel weights let small but strongly coloured accents count more.
+  // Accents are then handled on the photo's own colours, since heavy
+  // smoothing has already mixed a small orange face into the grey head: a
+  // strongly coloured patch far from every palette colour gets one of its
+  // own (up to two), and strongly coloured pixels are placed by their own
+  // colour rather than the smoothed one.
+  function palette(sm, im, n, k, cw, weight, accent){
+    var stride = Math.max(1, Math.ceil(n/60000)), m = Math.ceil(n/stride);
+    var X = new Float32Array(m*3), Xo = new Float32Array(m*3), Wt = new Float32Array(m), Ac = new Uint8Array(m);
+    for(var j=0, i=0; j<m; j++, i+=stride){
+      X[j*3] = sm.L[i]; X[j*3+1] = sm.A[i]*cw; X[j*3+2] = sm.B[i]*cw;
+      Xo[j*3] = im.L[i]; Xo[j*3+1] = im.A[i]*cw; Xo[j*3+2] = im.B[i]*cw;
+      Wt[j] = weight ? weight[i] : 1; Ac[j] = accent ? accent[i] : 0;
+    }
+    function d2(P, j, c){ var a = P[j*3]-c[0], b = P[j*3+1]-c[1], d = P[j*3+2]-c[2]; return a*a + b*b + d*d; }
+    var rand = rng(7), C = [], D = new Float32Array(m).fill(1);
+    for(var c=0;c<k;c++){
+      var total = 0; for(j=0;j<m;j++) total += Wt[j]*D[j];
+      var r = rand()*total, pick = m-1;
+      for(j=0;j<m;j++){ r -= Wt[j]*D[j]; if(r <= 0){ pick = j; break; } }
+      var cen = [X[pick*3], X[pick*3+1], X[pick*3+2]];
+      C.push(cen);
+      for(j=0;j<m;j++){ var d = d2(X, j, cen); if(c === 0 || d < D[j]) D[j] = d; }
+    }
+    for(var it=0; it<10; it++){
+      var S = []; for(c=0;c<k;c++) S.push([0,0,0,0]);
+      for(j=0;j<m;j++){
+        var bd = Infinity, bc = 0;
+        for(c=0;c<k;c++){ d = d2(X, j, C[c]); if(d < bd){ bd = d; bc = c; } }
+        var s = S[bc], wj = Wt[j]; s[0] += X[j*3]*wj; s[1] += X[j*3+1]*wj; s[2] += X[j*3+2]*wj; s[3] += wj;
+      }
+      for(c=0;c<k;c++) if(S[c][3]) C[c] = [S[c][0]/S[c][3], S[c][1]/S[c][3], S[c][2]/S[c][3]];
+    }
+    // accents (judged and placed on the photo's own colours): among the
+    // strongly coloured pixels far from every palette colour, the densest
+    // cluster becomes a colour of its own
+    var FAR = 400, NEAR = 225, few = 0.001*m;   // ΔE 20 and 15
+    for(var extra=0; extra<2; extra++){
+      var far = [];
+      for(j=0;j<m;j++){
+        if(!Ac[j]) continue;
+        var dj = Infinity; for(c=0;c<C.length;c++){ d = d2(Xo, j, C[c]); if(d < dj) dj = d; }
+        if(dj > FAR) far.push(j);
+      }
+      if(far.length < few) break;
+      var step = Math.max(1, Math.ceil(far.length/1500)), best = -1, bestN = 0;
+      for(var u=0;u<far.length;u+=step){
+        var cu = [Xo[far[u]*3], Xo[far[u]*3+1], Xo[far[u]*3+2]], cnt = 0;
+        for(var v=0;v<far.length;v++) if(d2(Xo, far[v], cu) < NEAR) cnt++;
+        if(cnt > bestN){ bestN = cnt; best = u; }
+      }
+      if(bestN < few) break;
+      var cb = [Xo[far[best]*3], Xo[far[best]*3+1], Xo[far[best]*3+2]], acc = [0,0,0,0];
+      for(v=0;v<far.length;v++) if(d2(Xo, far[v], cb) < NEAR){ acc[0] += Xo[far[v]*3]; acc[1] += Xo[far[v]*3+1]; acc[2] += Xo[far[v]*3+2]; acc[3]++; }
+      C.push([acc[0]/acc[3], acc[1]/acc[3], acc[2]/acc[3]]);
+    }
+    // the darkest darks and lightest lights: anything of some size beyond
+    // the palette's range of value gets its own colour, since a painter
+    // wants those on the palette before anything else
+    var lo = Infinity, hi = -Infinity;
+    for(c=0;c<C.length;c++){ lo = Math.min(lo, C[c][0]); hi = Math.max(hi, C[c][0]); }
+    [[-1, lo - 12], [1, hi + 12]].forEach(function(edge){
+      var acc = [0,0,0,0];
+      for(var j=0;j<m;j++){ var L = X[j*3]; if(edge[0] < 0 ? L < edge[1] : L > edge[1]){ acc[0] += L; acc[1] += X[j*3+1]; acc[2] += X[j*3+2]; acc[3]++; } }
+      if(acc[3] >= few) C.push([acc[0]/acc[3], acc[1]/acc[3], acc[2]/acc[3]]);
+    });
+    var out = new Int32Array(n), K = C.length;
+    for(i=0;i<n;i++){
+      var own = accent && accent[i], P = own ? im : sm;
+      var l = P.L[i], a = P.A[i]*cw, b2 = P.B[i]*cw; bd = Infinity; bc = 0;
+      for(c=0;c<K;c++){ var cc = C[c], dl = l-cc[0], da = a-cc[1], db = b2-cc[2]; d = dl*dl + da*da + db*db; if(d < bd){ bd = d; bc = c; } }
+      out[i] = bc;
+    }
+    var chroma = new Float32Array(K);
+    for(c=0;c<K;c++) chroma[c] = Math.hypot(C[c][1], C[c][2]);
+    return { lab: out, chroma: chroma, base: k };
+  }
+  // Majority filter for a map with few labels (window 2r+1): one box-count
+  // pass per label, so the radius costs nothing extra. With a subject mask,
+  // labels from `half` up belong inside it and a pixel only ever takes a
+  // label from its own side, so the silhouette is never rounded away.
+  function majorityK(w, h, lab, k, r, mask, half){
+    var n = w*h, W1 = w + 1, I = new Int32Array(W1*(h+1)), best = new Int32Array(n), bestN = new Int32Array(n);
+    for(var c=0;c<k;c++){
+      var side = c >= half ? 1 : 0;
+      for(var y=0;y<h;y++){ var s = 0; for(var x=0;x<w;x++){ if(lab[y*w + x] === c) s++; I[(y+1)*W1 + x + 1] = I[y*W1 + x + 1] + s; } }
+      for(y=0;y<h;y++){
+        var y0 = Math.max(0, y-r), y1 = Math.min(h-1, y+r);
+        for(x=0;x<w;x++){
+          var x0 = Math.max(0, x-r), x1 = Math.min(w-1, x+r);
+          var cnt = I[(y1+1)*W1 + x1 + 1] - I[y0*W1 + x1 + 1] - I[(y1+1)*W1 + x0] + I[y0*W1 + x0];
+          var p = y*w + x;
+          if(mask && mask[p] !== side) continue;
+          if(cnt > bestN[p] || (cnt === bestN[p] && lab[p] === c)){ bestN[p] = cnt; best[p] = c; }
+        }
+      }
+    }
+    return best;
+  }
+  // Pieces smaller than their label's minimum (less where the piece is in
+  // focus) join whichever neighbouring label they touch most. Two passes,
+  // so a speck absorbed into another speck follows it into the mass.
+  function absorbSpecks(lab, w, h, minSize, focus, mask){
+    var n = w*h;
+    for(var pass=0; pass<2; pass++){
+      var comp = new Int32Array(n).fill(-1), stack = new Int32Array(n), pix = new Int32Array(n);
+      for(var s=0;s<n;s++){
+        if(comp[s] >= 0) continue;
+        var id = s, me = lab[s], sp = 0, size = 0, touch = new Map(), fsum = 0;
+        stack[sp++] = s; comp[s] = id;
+        while(sp){
+          var p = stack[--sp], x = p % w, y = (p / w) | 0; pix[size++] = p; fsum += focus[p];
+          var nb = [x > 0 ? p-1 : -1, x < w-1 ? p+1 : -1, y > 0 ? p-w : -1, y < h-1 ? p+w : -1];
+          for(var i=0;i<4;i++){
+            var q = nb[i]; if(q < 0) continue;
+            if(lab[q] === me){ if(comp[q] < 0){ comp[q] = id; stack[sp++] = q; } }
+            else if(!mask || mask[q] === mask[p]) touch.set(lab[q], (touch.get(lab[q]) || 0) + 1);
+          }
+        }
+        if(size >= minSize[me]*(1 - 0.8*fsum/size) || !touch.size) continue;   // in focus: a fifth the size survives
+        var bestL = me, bestN = -1;
+        touch.forEach(function(c, l){ if(c > bestN){ bestN = c; bestL = l; } });
+        for(i=0;i<size;i++) lab[pix[i]] = bestL;
+      }
+    }
+    return lab;
+  }
+  function lerp(a, b, t){ return a + (b - a)*t; }
+
+  // ---- the subject's silhouette, from the focus map ----
+  // Box dilate (any set pixel within r) or erode (all set), via an integral image.
+  function morph(m, w, h, r, erode){
+    var W1 = w + 1, I = new Int32Array(W1*(h+1)), out = new Uint8Array(w*h);
+    for(var y=0;y<h;y++){ var s = 0; for(var x=0;x<w;x++){ s += m[y*w + x]; I[(y+1)*W1 + x + 1] = I[y*W1 + x + 1] + s; } }
+    for(y=0;y<h;y++){
+      var y0 = Math.max(0, y-r), y1 = Math.min(h-1, y+r);
+      for(x=0;x<w;x++){
+        var x0 = Math.max(0, x-r), x1 = Math.min(w-1, x+r);
+        var cnt = I[(y1+1)*W1 + x1 + 1] - I[y0*W1 + x1 + 1] - I[(y1+1)*W1 + x0] + I[y0*W1 + x0];
+        out[y*w + x] = erode ? (cnt === (x1-x0+1)*(y1-y0+1) ? 1 : 0) : (cnt > 0 ? 1 : 0);
+      }
+    }
+    return out;
+  }
+  // Flood-fills pieces of `value` in m; each piece is dropped (set to 1-value)
+  // when smaller than minSize, or, with fromBorder, kept only if it touches
+  // the border (so enclosed holes are filled).
+  function cleanPieces(m, w, h, value, minSize, fromBorder){
+    var n = w*h, seen = new Uint8Array(n), stack = new Int32Array(n), pix = new Int32Array(n);
+    for(var s=0;s<n;s++){
+      if(seen[s] || m[s] !== value) continue;
+      var sp = 0, size = 0, border = false; stack[sp++] = s; seen[s] = 1;
+      while(sp){
+        var p = stack[--sp], x = p % w, y = (p / w) | 0; pix[size++] = p;
+        if(x === 0 || y === 0 || x === w-1 || y === h-1) border = true;
+        if(x > 0 && !seen[p-1] && m[p-1] === value){ seen[p-1] = 1; stack[sp++] = p-1; }
+        if(x < w-1 && !seen[p+1] && m[p+1] === value){ seen[p+1] = 1; stack[sp++] = p+1; }
+        if(y > 0 && !seen[p-w] && m[p-w] === value){ seen[p-w] = 1; stack[sp++] = p-w; }
+        if(y < h-1 && !seen[p+w] && m[p+w] === value){ seen[p+w] = 1; stack[sp++] = p+w; }
+      }
+      var drop = fromBorder ? !border : size < minSize;
+      if(drop) for(var i=0;i<size;i++) m[pix[i]] = 1 - value;
+    }
+    return m;
+  }
+  // The in-focus part of the photo as one clean silhouette (gaps closed,
+  // specks dropped, holes filled), or null when
+  // there's no clear subject: nothing in focus, or everything.
+  function subjectMask(focus, w, h){
+    var n = w*h, m = new Uint8Array(n), on = 0;
+    for(var p=0;p<n;p++){ m[p] = focus[p] > 0.5 ? 1 : 0; on += m[p]; }
+    if(on < 0.005*n || on > 0.7*n) return null;
+    var r = Math.max(2, Math.round(Math.max(w, h)/200));
+    m = morph(morph(m, w, h, r, false), w, h, r, true);
+    cleanPieces(m, w, h, 1, 0.003*n, false);
+    cleanPieces(m, w, h, 0, 0, true);
+    on = 0; for(p=0;p<n;p++) on += m[p];
+    return (on < 0.005*n || on > 0.8*n) ? null : m;
+  }
+
+  // Detail where it's in focus: the sharp parts of the photo (the subject)
+  // are smoothed less, keep their smaller masses and finer edges; the
+  // out-of-focus parts get the full coarse treatment. A painter's crisp
+  // subject on a soft background.
+  Analyzer.prototype.blocks = function(values, detail){
+    var im = this.im, w = im.w, h = im.h, n = w*h, t = Math.max(0, Math.min(1, detail)), long = Math.max(w, h);
+    var self = this;
+    this.smooth = this.smooth || {};
+    function smoothAt(r){ return self.smooth[r] || (self.smooth[r] = kuwahara(im, r)); }
+    var focus = new Float32Array(n), p;
+    for(p=0;p<n;p++){ var f = (this.sharp[p] - 0.12)/0.25; focus[p] = f < 0 ? 0 : f > 1 ? 1 : f; }
+
+    var k = Math.round(6*Math.pow(40/6, t));
+    var rH = Math.max(2, Math.round(long/160*lerp(3.5, 0.6, t))), rL = Math.max(2, Math.round(rH/3));
+    var smH = smoothAt(rH), sm = smH;
+    if(rL < rH){
+      var smL = smoothAt(rL);
+      sm = { L: new Float32Array(n), A: new Float32Array(n), B: new Float32Array(n) };
+      for(p=0;p<n;p++){ f = focus[p]; sm.L[p] = smH.L[p] + (smL.L[p] - smH.L[p])*f; sm.A[p] = smH.A[p] + (smL.A[p] - smH.A[p])*f; sm.B[p] = smH.B[p] + (smL.B[p] - smH.B[p])*f; }
+    }
+    // Choosing the palette, an in-focus pixel counts 4x a blurry one, so
+    // most of the colours go to the subject and the background makes do
+    // with a few general ones. In colour mode strongly coloured pixels
+    // count up to 9x on top, and the strongest mark accents.
+    var weight = new Float32Array(n), accent = values ? null : new Uint8Array(n);
+    for(p=0;p<n;p++){
+      var c = values ? 0 : Math.min(1, Math.hypot(im.A[p], im.B[p])/40);
+      weight[p] = (1 + 8*c*c)*(1 + 3*focus[p]);
+      if(accent) accent[p] = c >= 0.7 ? 1 : 0;
+    }
+    var pal = palette(sm, im, n, k, values ? 0 : 1, weight, accent), lab = pal.lab;
+    var K = pal.chroma.length;      // may be a few more: the accents
+    // The subject's silhouette is a line no mass crosses: inside it the
+    // palette colours are separate masses (ids K..2K-1) from the same
+    // colours outside, through the rounding and the speck absorption. A
+    // beak the colour of the snow behind it still keeps its edge.
+    var mask = subjectMask(focus, w, h);
+    k = mask ? 2*K : K;
+    if(mask) for(p=0;p<n;p++) if(mask[p]) lab[p] += K;
+    var mr = Math.max(1, Math.round(long/320*lerp(3.5, 0.5, t))), mrL = Math.max(1, Math.round(mr/3));
+    var labH = majorityK(w, h, majorityK(w, h, lab, k, mr, mask, K), k, mr, mask, K);
+    if(mrL < mr){
+      var labL = majorityK(w, h, majorityK(w, h, lab, k, mrL, mask, K), k, mrL, mask, K);
+      for(p=0;p<n;p++) labH[p] = focus[p] > 0.5 ? labL[p] : labH[p];
+    }
+    lab = labH;
+    // an accent is kept at a sixth the size of a neutral mass, and any
+    // strongly coloured mass at a quarter
+    var minSize = new Float32Array(k), group = new Int32Array(k), base = n*lerp(0.005, 0.0002, t);
+    for(c=0;c<k;c++){
+      var g = c % K; group[c] = g;
+      minSize[c] = base*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
+    }
+    absorbSpecks(lab, w, h, minSize, focus, mask);
+    return finish(im, lab, 1, group);
   };
 
   // ---------------- colour intensity (OKLab chroma scaling) ----------------

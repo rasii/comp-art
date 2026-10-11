@@ -35,6 +35,7 @@
     // chroma: colour intensity, % of the photo's own chroma; enhancePhoto:
     // apply it to the reference photo too, not just the shapes' colours
     shapes: { count: 30, outlines: true, fill: false, bgOne: true, opacity: 100, chroma: 100, enhancePhoto: false },
+    blocks: { detail: 50, outlines: false, fill: true },   // the Block-in tab's own settings; the rest is shared with Shapes
     shapesResult: null, // latest analysis (labels, average colours, outlines)
     shapesBusy: false,
     shapesPick: null,   // id of the tapped shape
@@ -73,6 +74,8 @@
 
   var viewShapes = $("view-shapes"), shapesFrame = $("shapesFrame"), shapesView = $("shapesView"), shapesImg = $("shapesImg");
   var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
+  var countRow = $("countRow"), detailRow = $("detailRow"), detailSlider = $("detailSlider"), detailLabel = $("detailLabel");
+  var bgOneRow = $("bgOneRow"), paletteRow = $("paletteRow"), shapeName = $("shapeName");
   var shapesOpacitySlider = $("shapesOpacitySlider");
   var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
   var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch"), bgOneSwitch = $("bgOneSwitch");
@@ -164,7 +167,7 @@
     storeWarned = true;
   }
   function persistMeta(){
-    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes }).catch(storeFail);
+    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks }).catch(storeFail);
   }
   function persistBlob(key, blob){ return Store.set(key, blob).catch(storeFail); }
   function persistCanvas(key, canvas){
@@ -179,13 +182,13 @@
     // tabs and views
     Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
       b.classList.toggle("active", b.dataset.mode === m);
-      if(b.dataset.mode === "shapes") b.disabled = !hasRef;          // needs only the reference
+      if(isShapesMode(b.dataset.mode)) b.disabled = !hasRef;       // needs only the reference
       else if(b.dataset.mode !== "align") b.disabled = !hasAligned;
     });
     show(viewAlign, m === "align");
     show(viewCompare, m === "compare");
     show(viewSide, m === "side");
-    show(viewShapes, m === "shapes");
+    show(viewShapes, isShapesMode(m));
     grayBtn.hidden = (m === "align");
     grayBtn.classList.toggle("on", state.grayscale);
     grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
@@ -199,14 +202,16 @@
            : "check the points are on the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
+    } else if(m === "blocks"){
+      hint = state.shapesBusy && !state.shapesResult ? "blocking in…"
+           : (state.grayscale ? "value masses from a few mixtures" : "flat masses from a few mixtures") + " · tap one to read it";
     } else if(m === "shapes"){
       hint = state.shapesBusy && !state.shapesResult ? "finding the big shapes…"
            : (state.grayscale ? "big value shapes" : "big shapes by value and colour") + " · tap one to read it";
     } else {
       hint = "touch either image to read colours";
     }
-    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1)) hint += " · double-tap to reset zoom";
-    if(m === "shapes" && shapesZoom.z > 1) hint += " · double-tap to reset zoom";
+    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (isShapesMode(m) && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
     stepHint.textContent = hint;
 
     // ---- align ----
@@ -259,7 +264,7 @@
     compareZoom.apply(); sideZoom.apply();
 
     // ---- shapes ----
-    if(hasRef && m === "shapes") renderShapes();
+    if(hasRef && isShapesMode(m)) renderShapes();
 
     // colour card: one card, shown in whichever view is active
     var slot = (m === "side") ? sideCardSlot : compareCardSlot;
@@ -444,7 +449,7 @@
   // ---------------- mode ----------------
   function setMode(m){
     if((m === "compare" || m === "side") && !state.aligned) return;
-    if(m === "shapes" && !state.ref) return;
+    if(isShapesMode(m) && !state.ref) return;
     if(m !== state.mode){
       state.mode = m;
       state.reading = null;
@@ -931,11 +936,16 @@
     }, render);
   });
 
-  // ---------------- shapes: the reference's big shapes ----------------
-  // The analysis runs in shapes-worker.js (main-thread fallback). The
-  // reference is sent once; changing the number of shapes, values/colour or
-  // the background option only replays the stored merge order, so it's quick.
+  // ---------------- shapes / block-in: the reference broken down ----------------
+  // One view with two methods: Shapes (big areas merged by similarity) and
+  // Block-in (a limited palette of flat masses). The analysis runs in
+  // shapes-worker.js (main-thread fallback). The reference is sent once;
+  // changing a setting reuses what the worker already holds, so it's quick.
   var SHAPES_DIM = 640;     // analysis resolution (long edge)
+  function isShapesMode(m){ return m === "shapes" || m === "blocks"; }
+  function method(){ return state.mode === "blocks" ? "blocks" : "shapes"; }
+  function look(){ return method() === "blocks" ? state.blocks : state.shapes; }   // outlines and fill are per method
+  var shapesLast = {};      // the latest result of each method, so switching tabs is instant
   var callShapes = workerCaller("shapes-worker.js");
   var shapesToken = 0, workerShapesToken = -1, shapesSeq = 0, shapesTimer = null;
   var mainAnalyzer = null, mainAnalyzerToken = -1, shapesPendingKey = null;
@@ -946,7 +956,7 @@
     state.shapesResult = null;
     state.shapesPick = null;
     state.shapesPoint = null;
-    shapesPendingKey = null;
+    shapesPendingKey = null; shapesLast = {};
     enhancedKey = null; enhancePendingKey = null;
     shapesPhoto.hidden = true;
     shapesZoom.reset();
@@ -998,14 +1008,27 @@
       .catch(function(){ enhancePendingKey = null; });
   }
   function shapesWant(){
-    return { token: shapesToken, values: state.grayscale, count: state.shapes.count, bgOne: state.shapes.bgOne };
+    var w = { token: shapesToken, method: method(), values: state.grayscale };
+    if(w.method === "blocks") w.detail = state.blocks.detail;
+    else { w.count = state.shapes.count; w.bgOne = state.shapes.bgOne; }
+    return w;
   }
-  function shapesKey(w){ return [w.token, w.values ? "v" : "c", w.count, w.bgOne ? 1 : 0].join(":"); }
+  function shapesKey(w){
+    return [w.token, w.method, w.values ? "v" : "c", w.method === "blocks" ? w.detail : w.count + ":" + (w.bgOne ? 1 : 0)].join(":");
+  }
+  function useShapesResult(res){
+    state.shapesResult = res;
+    // shape numbers change with each result: re-pick at the tapped spot
+    state.shapesPick = state.shapesPoint ? labelAt(res, state.shapesPoint) : null;
+  }
 
   function requestShapes(delay){
     if(!state.ref) return;
     var want = shapesWant(), key = shapesKey(want);
-    if((state.shapesResult && state.shapesResult.key === key) || shapesPendingKey === key) return;
+    if(state.shapesResult && state.shapesResult.key === key) return;
+    var last = shapesLast[want.method];
+    if(last && last.key === key){ useShapesResult(last); return; }
+    if(shapesPendingKey === key) return;
     shapesPendingKey = key;
     clearTimeout(shapesTimer);
     shapesTimer = setTimeout(function(){ runShapes(want, key); }, delay || 0);
@@ -1015,7 +1038,7 @@
     state.shapesBusy = true;
     renderShapesStatus();
     function ask(withPixels){
-      var msg = { token: want.token, values: want.values, count: want.count, bgOne: want.bgOne }, transfer = [];
+      var msg = { token: want.token, method: want.method, values: want.values, count: want.count, bgOne: want.bgOne, detail: want.detail }, transfer = [];
       if(withPixels){
         var px = scaledPixels(state.ref, SHAPES_DIM);
         msg.pixels = { buf: px.data.buffer, w: px.w, h: px.h };
@@ -1036,44 +1059,46 @@
         mainAnalyzer = new Shapes.Analyzer(px.data, px.w, px.h);
         mainAnalyzerToken = want.token;
       }
-      return mainAnalyzer.compute(want.values, want.count, want.bgOne);
+      return want.method === "blocks" ? mainAnalyzer.blocks(want.values, want.detail/100) : mainAnalyzer.compute(want.values, want.count, want.bgOne);
     }
     ask(workerShapesToken !== want.token)
       .catch(function(){ return runHere(); })
       .then(function(res){
         if(seq !== shapesSeq || want.token !== shapesToken) return;   // superseded
-        res.key = key; res.values = want.values;
-        state.shapesResult = res;
+        res.key = key; res.values = want.values; res.method = want.method;
+        shapesLast[want.method] = res;
+        useShapesResult(res);
         state.shapesBusy = false;
         shapesPendingKey = null;
-        // shape numbers change with each result: re-pick at the tapped spot
-        state.shapesPick = state.shapesPoint ? labelAt(res, state.shapesPoint) : null;
         render();
       })
       .catch(function(){
         if(seq !== shapesSeq) return;
         state.shapesBusy = false; shapesPendingKey = null;
         render();
-        toast("The shapes couldn't be worked out for this photo.");
+        toast("The breakdown couldn't be worked out for this photo.");
       });
   }
 
   function renderShapesStatus(){
-    var R = state.shapesResult;
-    shapesCount.textContent = state.shapesBusy ? "· working…" : (R ? "· " + R.count : "");
+    var R = state.shapesResult, busy = state.shapesBusy ? "· working…" : "";
+    shapesCount.textContent = busy || (R && R.method === "shapes" ? "· " + R.count : "");
+    detailLabel.textContent = busy || (R && R.method === "blocks" ? "· " + R.paints + (R.values ? " values" : " colours") : "");
   }
 
   function linCss(c){ return "rgb(" + toSrgb(c[0]) + "," + toSrgb(c[1]) + "," + toSrgb(c[2]) + ")"; }
   function greyOf(r, g, b){ var y = 0.2126*r + 0.7152*g + 0.0722*b; return [y, y, y]; }
 
-  // Display colour of shape k (linear RGB): its average colour with the
+  // Display colour of paint g (linear RGB): its average colour with the
   // colour intensity applied (shapes.js, OKLab chroma scaling), or in
-  // values mode a grey of the same luminance.
-  function shapeLin(R, k){
-    var r = R.colors[k*3], g = R.colors[k*3+1], b = R.colors[k*3+2];
-    if(R.values) return greyOf(r, g, b);
-    return Shapes.boostChroma(r, g, b, state.shapes.chroma/100);
+  // values mode a grey of the same luminance. A shape shows its paint's
+  // colour (on the Shapes tab every shape is its own paint).
+  function paintLin(R, g){
+    var r = R.paintColors[g*3], gg = R.paintColors[g*3+1], b = R.paintColors[g*3+2];
+    if(R.values) return greyOf(r, gg, b);
+    return Shapes.boostChroma(r, gg, b, state.shapes.chroma/100);
   }
+  function shapeLin(R, k){ return paintLin(R, R.paint[k]); }
   function shapeCss(R, k){ return linCss(shapeLin(R, k)); }
 
   // The photo's own colour at a tapped spot, as shown: enhanced when the
@@ -1102,7 +1127,10 @@
   function renderShapes(){
     setSrc(shapesRef, state.ref);
     shapesRef.classList.toggle("gray", state.grayscale);
+    var blocks = method() === "blocks";
+    countRow.hidden = blocks; bgOneRow.hidden = blocks; detailRow.hidden = !blocks;
     if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
+    if(detailSlider.value != state.blocks.detail) detailSlider.value = state.blocks.detail;
     if(shapesOpacitySlider.value != state.shapes.opacity) shapesOpacitySlider.value = state.shapes.opacity;
     if(chromaSlider.value != state.shapes.chroma) chromaSlider.value = state.shapes.chroma;
     chromaSlider.disabled = state.grayscale;             // greys have no chroma
@@ -1110,8 +1138,8 @@
     chromaLabel.textContent = "· ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "");
     // the shapes layer (outlines and fill) over the reference photo
     shapesCanvas.style.opacity = String(state.shapes.opacity/100);
-    outlinesSwitch.classList.toggle("on", state.shapes.outlines);
-    fillSwitch.classList.toggle("on", state.shapes.fill);
+    outlinesSwitch.classList.toggle("on", look().outlines);
+    fillSwitch.classList.toggle("on", look().fill);
     bgOneSwitch.classList.toggle("on", state.shapes.bgOne);
     enhanceSwitch.classList.toggle("on", state.shapes.enhancePhoto);
     enhanceSwitch.disabled = state.grayscale;
@@ -1121,7 +1149,37 @@
     requestEnhanced(120);
     renderShapesStatus();
     drawShapes();
+    renderPalette();
     renderShapeReadout();
+  }
+
+  // block-in: the palette as swatches, biggest coverage first; tap one to
+  // see where that mixture goes
+  var paletteKey = null;
+  function renderPalette(){
+    var R = state.shapesResult, on = method() === "blocks" && !!R && R.method === "blocks";
+    paletteRow.hidden = !on;
+    if(!on){ paletteKey = null; return; }
+    var picked = state.shapesPick === null ? -1 : R.paint[state.shapesPick];
+    var key = R.key + ":" + state.shapes.chroma + ":" + picked;
+    if(key === paletteKey) return;
+    paletteKey = key;
+    var order = []; for(var g=0;g<R.paints;g++) order.push(g);
+    order.sort(function(a, b){ return R.paintSizes[b] - R.paintSizes[a]; });
+    paletteRow.innerHTML = "";
+    order.forEach(function(g){
+      var sw = document.createElement("button");
+      sw.className = "palette-sw" + (g === picked ? " on" : "");
+      sw.style.background = linCss(paintLin(R, g));
+      sw.title = Math.max(1, Math.round(R.paintSizes[g]/(R.w*R.h)*100)) + "% of the picture";
+      sw.addEventListener("click", function(){
+        var k = Array.prototype.indexOf.call(R.paint, g);   // any shape of this paint
+        state.shapesPick = (g === picked) ? null : k;
+        state.shapesPoint = null;
+        drawShapes(); renderPalette(); renderShapeReadout();
+      });
+      paletteRow.appendChild(sw);
+    });
   }
 
   // the photo and shapes layers sit where the letterboxed photo goes
@@ -1150,13 +1208,13 @@
       }
       ctx.closePath();
     }
-    if(state.shapes.fill){
+    if(look().fill){
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
       R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
     }
     ctx.lineJoin = "round"; ctx.lineCap = "round";
-    if(state.shapes.outlines){
+    if(look().outlines){
       ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 3.2*dpr;
       R.polys.forEach(function(poly){ path(poly); ctx.stroke(); });
       ctx.strokeStyle = "rgba(240,236,228,0.92)"; ctx.lineWidth = 1.6*dpr;
@@ -1164,7 +1222,8 @@
     }
     if(state.shapesPick !== null){
       ctx.strokeStyle = "#E39A4C"; ctx.lineWidth = 3*dpr;
-      R.polys.forEach(function(poly){ if(poly.id === state.shapesPick){ path(poly); ctx.stroke(); } });
+      var g = R.paint[state.shapesPick];   // every shape of the picked paint
+      R.polys.forEach(function(poly){ if(R.paint[poly.id] === g){ path(poly); ctx.stroke(); } });
     }
   }
 
@@ -1173,16 +1232,18 @@
   // colour right there (enhanced if the intensity is shown on the photo).
   function renderShapeReadout(){
     var R = state.shapesResult, k = state.shapesPick, pt = state.shapesPoint;
-    var has = !!R && k !== null && k !== undefined && !!pt;
-    shapePrompt.hidden = has; shapeReadout.hidden = !has; photoReadout.hidden = !has; shapesMarker.hidden = !has;
+    var has = !!R && k !== null && k !== undefined && k < R.count, blocks = !!R && R.method === "blocks";
+    shapePrompt.hidden = has; shapeReadout.hidden = !has; photoReadout.hidden = !(has && pt); shapesMarker.hidden = !(has && pt);
     if(!has){
-      shapePrompt.textContent = "Tap a shape to read its " + (state.grayscale ? "value" : "colour");
+      shapePrompt.textContent = "Tap a " + (blocks ? "mass or a swatch" : "shape") + " to read its " + (state.grayscale ? "value" : "colour");
       return;
     }
-    var pct = Math.max(1, Math.round(R.sizes[k]/(R.w*R.h)*100));
+    var pct = Math.max(1, Math.round(R.paintSizes[R.paint[k]]/(R.w*R.h)*100));
     var s = shapeLin(R, k), ms = Munsell.fromLinearRGB(s[0], s[1], s[2]);
+    shapeName.textContent = blocks ? "Paint" : "Shape";
     shapeSwatch.style.background = linCss(s);
     shapeText.innerHTML = (R.values ? "Value <b>" + ms.value.toFixed(1) + "</b>" : "<b>" + ms.notation + "</b>") + " · about " + pct + "% of the picture";
+    if(!pt) return;   // picked from the palette: no spot on the photo to read
 
     var p = photoLin(pt), mp = Munsell.fromLinearRGB(p[0], p[1], p[2]);
     photoSwatch.style.background = linCss(p);
@@ -1212,6 +1273,12 @@
     renderShapesStatus();
   });
   shapesSlider.addEventListener("change", persistMeta);
+  detailSlider.addEventListener("input", function(){
+    state.blocks.detail = Number(detailSlider.value);
+    requestShapes(120);
+    renderShapesStatus();
+  });
+  detailSlider.addEventListener("change", persistMeta);
   shapesOpacitySlider.addEventListener("input", function(){
     state.shapes.opacity = Number(shapesOpacitySlider.value);
     shapesCanvas.style.opacity = String(state.shapes.opacity/100);
@@ -1220,13 +1287,14 @@
   chromaSlider.addEventListener("input", function(){
     state.shapes.chroma = Number(chromaSlider.value);
     // make the change visible: fill the shapes unless it's already shown somewhere
-    if(!state.shapes.fill && !state.shapes.enhancePhoto) state.shapes.fill = true;
+    if(!look().fill && !state.shapes.enhancePhoto) look().fill = true;
     render();
   });
   chromaSlider.addEventListener("change", persistMeta);
   function toggleShapesOption(name){
     return function(){
-      state.shapes[name] = !state.shapes[name];
+      var o = (name === "outlines" || name === "fill") ? look() : state.shapes;
+      o[name] = !o[name];
       render();
       persistMeta();
     };
@@ -1235,7 +1303,7 @@
   fillSwitch.addEventListener("click", toggleShapesOption("fill"));
   bgOneSwitch.addEventListener("click", toggleShapesOption("bgOne"));
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
-  if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "shapes"){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
+  if(window.ResizeObserver) new ResizeObserver(function(){ if(isShapesMode(state.mode)){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
 
   // ---------------- restart ----------------
   var confirmAction = null;
@@ -1260,7 +1328,7 @@
   function showRecipe(targetLin, what){
     var res = Mix.recipe(targetLin), best = res.best;
     mixTitle.textContent = "Mix " + what;
-    mixTargetSw.style.background = "rgb(" + toSrgb(targetLin[0]) + "," + toSrgb(targetLin[1]) + "," + toSrgb(targetLin[2]) + ")";
+    mixTargetSw.style.background = linCss(targetLin);
     mixResultSw.style.background = best.css;
     function notation(lin){ return Munsell.fromLinearRGB(lin[0], lin[1], lin[2]).notation; }
     mixTargetMun.textContent = notation(targetLin);
@@ -1301,7 +1369,7 @@
   // the tapped shape's colour as shown (including any colour intensity)
   shapeMixBtn.addEventListener("click", function(){
     var R = state.shapesResult, k = state.shapesPick;
-    if(R && k !== null) showRecipe(shapeLin(R, k), state.grayscale ? "the shape's value" : "the shape's colour");
+    if(R && k !== null) showRecipe(shapeLin(R, k), state.grayscale ? "the shape's value" : R.method === "blocks" ? "this paint" : "the shape's colour");
   });
   // the photo's own colour at the tapped spot, as shown
   photoMixBtn.addEventListener("click", function(){
@@ -1358,6 +1426,10 @@
           chroma: clamp(Number(s.chroma) || 100, 100, 300),
           enhancePhoto: !!s.enhancePhoto
         };
+      }
+      if(meta.blocks && typeof meta.blocks === "object"){
+        var b = meta.blocks;
+        state.blocks = { detail: b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100), outlines: !!b.outlines, fill: b.fill !== false };
       }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
         state.ref = ref;

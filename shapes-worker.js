@@ -20,6 +20,6 @@ self.onmessage = function(e){
     token = m.token;
   }
   if(!analyzer || token !== m.token){ self.postMessage({ id: m.id, needPixels: true }); return; }
-  var r = analyzer.compute(m.values, m.count, m.bgOne);
+  var r = m.method === "blocks" ? analyzer.blocks(m.values, m.detail/100) : analyzer.compute(m.values, m.count, m.bgOne);
   self.postMessage({ id: m.id, result: r });
 };
