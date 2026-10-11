@@ -582,7 +582,10 @@
   // are smoothed less, keep their smaller masses and finer edges; the
   // out-of-focus parts get the full coarse treatment. A painter's crisp
   // subject on a soft background.
-  Analyzer.prototype.blocks = function(values, detail){
+  // colours: palette size (exact, accents included). detail 0..1: broad
+  // to fine, through the smoothing scale and the smallest mass kept (the
+  // stroke size follows it in the app).
+  Analyzer.prototype.blocks = function(values, colours, detail){
     var im = this.im, w = im.w, h = im.h, n = w*h, t = Math.max(0, Math.min(1, detail)), long = Math.max(w, h);
     var self = this;
     this.smooth = this.smooth || {};
@@ -590,7 +593,7 @@
     var focus = new Float32Array(n), p;
     for(p=0;p<n;p++){ var f = (this.sharp[p] - 0.12)/0.25; focus[p] = f < 0 ? 0 : f > 1 ? 1 : f; }
 
-    var k = Math.round(6*Math.pow(40/6, t));
+    var k = Math.max(3, Math.round(colours));
     var rH = Math.max(2, Math.round(long/160*lerp(3.5, 0.6, t))), rL = Math.max(2, Math.round(rH/3));
     var smH = smoothAt(rH), sm = smH;
     if(rL < rH){
@@ -615,8 +618,17 @@
     var fBoost = boost(inFocus/n, 0.6, 4) - 1, cBoost = boost(strong/n, 0.3, 9) - 1;
     var weight = new Float32Array(n);
     for(p=0;p<n;p++){ c = chroma[p]; weight[p] = (1 + cBoost*c*c)*(1 + fBoost*focus[p]); }
-    var pal = palette(sm, im, n, k, values ? 0 : 1, weight, accent), lab = pal.lab;
-    var K = pal.chroma.length;      // may be a few more: the accents
+    // the accents come on top of the base count; take them out of the
+    // base so the total is the number asked for (a few tries, since the
+    // accents found can change with the base)
+    var pal, base = k;
+    for(var tries=0; tries<3; tries++){
+      pal = palette(sm, im, n, base, values ? 0 : 1, weight, accent);
+      var total = pal.chroma.length;
+      if(total === k || k - (total - base) < 3) break;
+      base = k - (total - base);
+    }
+    var lab = pal.lab, K = pal.chroma.length;
     // The subject's silhouette is a line no mass crosses: inside it the
     // palette colours are separate masses (ids K..2K-1) from the same
     // colours outside, through the rounding and the speck absorption. A

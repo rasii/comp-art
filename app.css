@@ -67,8 +67,11 @@ header p{
 .icon-btn.on{ color: var(--sienna); border-color: var(--sienna); }
 .header-btns{ display:flex; gap:8px; flex:0 0 auto; align-self:center; align-items:center; }
 .version{ font-size:11px; color: var(--ink-dim); margin-right:4px; white-space:nowrap; }
-.opacity-row input[type=range]{ flex:1; min-width:0; }
-.opacity-row .ctrl-label{ flex:0 0 auto; }
+/* the slider keeps a fixed share of the row, so a changing label
+   ("· working…", "· flat masses", "· ×1.5") never nudges it */
+.opacity-row input[type=range]{ flex:0 0 44%; min-width:0; }
+.opacity-row .ctrl-label{ flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; }
+.opacity-row .shapes-count{ flex:0 0 auto; }
 
 /* ---------- layout ---------- */
 main{

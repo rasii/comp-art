@@ -234,7 +234,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
             Detail <span class="shapes-count" id="detailLabel"></span>
           </div>
-          <input type="range" id="detailSlider" min="0" max="100" value="50" aria-label="Less to more detail">
+          <input type="range" id="detailSlider" min="0" max="100" value="50" aria-label="Broad to fine: flat masses, then brush strokes from big to small">
         </div>
         <div class="ctrl-row opacity-row">
           <div class="ctrl-label">
@@ -246,7 +246,7 @@
         <div class="ctrl-row opacity-row" id="chromaRow">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9H12Z" fill="currentColor" stroke="none"/></svg>
-            Colour intensity <span class="shapes-count" id="chromaLabel"></span>
+            Intensity <span class="shapes-count" id="chromaLabel"></span>
           </div>
           <input type="range" id="chromaSlider" min="100" max="300" step="5" value="100" aria-label="Colour intensity">
         </div>
@@ -261,10 +261,6 @@
           <div class="ctrl-label">Average colour</div>
           <button class="switch" id="fillSwitch" aria-label="Fill shapes with their average colour"></button>
         </div>
-        <div class="ctrl-row" id="strokesRow" hidden>
-          <div class="ctrl-label">Brush strokes</div>
-          <button class="switch on" id="strokesSwitch" aria-label="Paint the masses as brush strokes along the fur"></button>
-        </div>
         <div class="ctrl-row" id="bgOneRow">
           <div class="ctrl-label">Background as one shape</div>
           <button class="switch on" id="bgOneSwitch" aria-label="Treat the out-of-focus background as one shape"></button>
@@ -276,6 +272,13 @@
 
         <div class="divider"></div>
 
+        <div class="ctrl-row opacity-row" id="coloursRow" hidden>
+          <div class="ctrl-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5c0-1 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.5-4-8-9-8Z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>
+            Colours <span class="shapes-count" id="coloursLabel"></span>
+          </div>
+          <input type="range" id="coloursSlider" min="6" max="40" value="12" aria-label="Number of colours on the palette">
+        </div>
         <div class="palette" id="paletteRow" hidden></div>
         <p class="sr-prompt" id="shapePrompt">Tap a shape to read its colour</p>
         <div class="shape-readout" id="shapeReadout" hidden>

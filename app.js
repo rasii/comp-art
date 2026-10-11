@@ -35,7 +35,7 @@
     // chroma: colour intensity, % of the photo's own chroma; enhancePhoto:
     // apply it to the reference photo too, not just the shapes' colours
     shapes: { count: 30, outlines: true, fill: false, bgOne: true, opacity: 100, chroma: 100, enhancePhoto: false },
-    blocks: { detail: 50, outlines: false, fill: true, strokes: true },   // the Block-in tab's own settings; the rest is shared with Shapes
+    blocks: { colours: 12, detail: 50, outlines: false, fill: true },   // the Block-in tab's own settings; the rest is shared with Shapes
     shapesResult: null, // latest analysis (labels, average colours, outlines)
     shapesBusy: false,
     shapesPick: null,   // id of the tapped shape
@@ -76,7 +76,7 @@
   var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
   var countRow = $("countRow"), detailRow = $("detailRow"), detailSlider = $("detailSlider"), detailLabel = $("detailLabel");
   var bgOneRow = $("bgOneRow"), paletteRow = $("paletteRow"), shapeName = $("shapeName");
-  var strokesRow = $("strokesRow"), strokesSwitch = $("strokesSwitch");
+  var coloursRow = $("coloursRow"), coloursSlider = $("coloursSlider"), coloursLabel = $("coloursLabel");
   var shapesOpacitySlider = $("shapesOpacitySlider");
   var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
   var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch"), bgOneSwitch = $("bgOneSwitch");
@@ -1010,12 +1010,12 @@
   }
   function shapesWant(){
     var w = { token: shapesToken, method: method(), values: state.grayscale };
-    if(w.method === "blocks") w.detail = state.blocks.detail;
+    if(w.method === "blocks"){ w.colours = state.blocks.colours; w.detail = state.blocks.detail; }
     else { w.count = state.shapes.count; w.bgOne = state.shapes.bgOne; }
     return w;
   }
   function shapesKey(w){
-    return [w.token, w.method, w.values ? "v" : "c", w.method === "blocks" ? w.detail : w.count + ":" + (w.bgOne ? 1 : 0)].join(":");
+    return [w.token, w.method, w.values ? "v" : "c", w.method === "blocks" ? w.colours + ":" + w.detail : w.count + ":" + (w.bgOne ? 1 : 0)].join(":");
   }
   function useShapesResult(res){
     state.shapesResult = res;
@@ -1039,7 +1039,7 @@
     state.shapesBusy = true;
     renderShapesStatus();
     function ask(withPixels){
-      var msg = { token: want.token, method: want.method, values: want.values, count: want.count, bgOne: want.bgOne, detail: want.detail }, transfer = [];
+      var msg = { token: want.token, method: want.method, values: want.values, count: want.count, bgOne: want.bgOne, colours: want.colours, detail: want.detail }, transfer = [];
       if(withPixels){
         var px = scaledPixels(state.ref, SHAPES_DIM);
         msg.pixels = { buf: px.data.buffer, w: px.w, h: px.h };
@@ -1060,7 +1060,7 @@
         mainAnalyzer = new Shapes.Analyzer(px.data, px.w, px.h);
         mainAnalyzerToken = want.token;
       }
-      return want.method === "blocks" ? mainAnalyzer.blocks(want.values, want.detail/100) : mainAnalyzer.compute(want.values, want.count, want.bgOne);
+      return want.method === "blocks" ? mainAnalyzer.blocks(want.values, want.colours, want.detail/100) : mainAnalyzer.compute(want.values, want.count, want.bgOne);
     }
     ask(workerShapesToken !== want.token)
       .catch(function(){ return runHere(); })
@@ -1084,7 +1084,8 @@
   function renderShapesStatus(){
     var R = state.shapesResult, busy = state.shapesBusy ? "· working…" : "";
     shapesCount.textContent = busy || (R && R.method === "shapes" ? "· " + R.count : "");
-    detailLabel.textContent = busy || (R && R.method === "blocks" ? "· " + R.paints + (R.values ? " values" : " colours") : "");
+    detailLabel.textContent = busy || (state.blocks.detail === 0 ? "· flat masses" : "");
+    coloursLabel.textContent = busy || (R && R.method === "blocks" ? "· " + R.paints + (R.values ? " values" : "") : "");
   }
 
   function linCss(c){ return "rgb(" + toSrgb(c[0]) + "," + toSrgb(c[1]) + "," + toSrgb(c[2]) + ")"; }
@@ -1139,6 +1140,7 @@
     var css = []; for(var g=0;g<R.paints;g++) css.push(linCss(paintLin(R, g)));
     var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail || 50)/100;
     var big = Math.max(w, h)/(36 + 74*t), small = big/3;    // stroke width, analysis px
+    var fineShare = Math.max(0, Math.min(1, (t - 0.15)/0.5));   // the photo-led fine strokes come in from a quarter up
     var seed = 1;
     function rnd(){ seed = (seed*1664525 + 1013904223) >>> 0; return seed/4294967296; }
     ctx.lineCap = "round";
@@ -1165,7 +1167,8 @@
     var d = Math.max(1, Math.round(big)), lab = R.labels, paint = R.paint, near = R.near;
     layer(small, 3, function(p){
       var x = p % w, y = (p / w) | 0, l = lab[p];
-      return near[p] !== paint[l] || (x >= d && lab[p-d] !== l) || (x < w-d && lab[p+d] !== l) || (y >= d && lab[p-d*w] !== l) || (y < h-d && lab[p+d*w] !== l);
+      if((x >= d && lab[p-d] !== l) || (x < w-d && lab[p+d] !== l) || (y >= d && lab[p-d*w] !== l) || (y < h-d && lab[p+d*w] !== l)) return true;
+      return near[p] !== paint[l] && rnd() < fineShare;
     }, true);
     ctx.globalAlpha = 1;
     R.strokeKey = key;
@@ -1176,8 +1179,8 @@
     setSrc(shapesRef, state.ref);
     shapesRef.classList.toggle("gray", state.grayscale);
     var blocks = method() === "blocks";
-    countRow.hidden = blocks; bgOneRow.hidden = blocks; detailRow.hidden = !blocks; strokesRow.hidden = !blocks;
-    strokesSwitch.classList.toggle("on", state.blocks.strokes);
+    countRow.hidden = blocks; bgOneRow.hidden = blocks; detailRow.hidden = !blocks; coloursRow.hidden = !blocks;
+    if(coloursSlider.value != state.blocks.colours) coloursSlider.value = state.blocks.colours;
     if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
     if(detailSlider.value != state.blocks.detail) detailSlider.value = state.blocks.detail;
     if(shapesOpacitySlider.value != state.shapes.opacity) shapesOpacitySlider.value = state.shapes.opacity;
@@ -1259,7 +1262,7 @@
     }
     if(look().fill){
       ctx.imageSmoothingEnabled = true;
-      if(R.method === "blocks" && state.blocks.strokes && R.angle){
+      if(R.method === "blocks" && R.detail > 0 && R.angle){   // detail 0 is flat masses
         ctx.drawImage(strokesImage(R, W, H), 0, 0);
       } else {
         ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
@@ -1332,6 +1335,12 @@
     renderShapesStatus();
   });
   detailSlider.addEventListener("change", persistMeta);
+  coloursSlider.addEventListener("input", function(){
+    state.blocks.colours = Number(coloursSlider.value);
+    requestShapes(120);
+    renderShapesStatus();
+  });
+  coloursSlider.addEventListener("change", persistMeta);
   shapesOpacitySlider.addEventListener("input", function(){
     state.shapes.opacity = Number(shapesOpacitySlider.value);
     shapesCanvas.style.opacity = String(state.shapes.opacity/100);
@@ -1346,7 +1355,7 @@
   chromaSlider.addEventListener("change", persistMeta);
   function toggleShapesOption(name){
     return function(){
-      var o = (name === "outlines" || name === "fill") ? look() : name === "strokes" ? state.blocks : state.shapes;
+      var o = (name === "outlines" || name === "fill") ? look() : state.shapes;
       o[name] = !o[name];
       render();
       persistMeta();
@@ -1356,7 +1365,6 @@
   fillSwitch.addEventListener("click", toggleShapesOption("fill"));
   bgOneSwitch.addEventListener("click", toggleShapesOption("bgOne"));
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
-  strokesSwitch.addEventListener("click", toggleShapesOption("strokes"));
   if(window.ResizeObserver) new ResizeObserver(function(){ if(isShapesMode(state.mode)){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
 
   // ---------------- restart ----------------
@@ -1483,7 +1491,10 @@
       }
       if(meta.blocks && typeof meta.blocks === "object"){
         var b = meta.blocks;
-        state.blocks = { detail: b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100), outlines: !!b.outlines, fill: b.fill !== false, strokes: b.strokes !== false };
+        var detail = b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100);
+        // before v2.14 one slider set both: derive the colours it implied
+        var colours = b.colours === undefined ? Math.round(6*Math.pow(40/6, detail/100)) : Number(b.colours);
+        state.blocks = { colours: clamp(colours || 12, 6, 40), detail: detail, outlines: !!b.outlines, fill: b.fill !== false };
       }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
         state.ref = ref;
