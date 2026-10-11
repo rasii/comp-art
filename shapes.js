@@ -318,6 +318,8 @@
     });
     var paintColors = new Float32Array(psum.length*3), paintSizes = new Uint32Array(psum.length);
     psum.forEach(function(q, j){ paintColors[j*3] = q[0]/q[3]; paintColors[j*3+1] = q[1]/q[3]; paintColors[j*3+2] = q[2]/q[3]; paintSizes[j] = q[3]; });
+    var gmax = -1; gids.forEach(function(_, g){ if(g > gmax) gmax = g; });
+    var gpaint = new Int32Array(gmax + 1).fill(-1); gids.forEach(function(j, g){ gpaint[g] = j; });
 
     var eps = Math.max(1.5, Math.max(w, h)/260*straight), seen = new Uint8Array(n), polys = [], st = new Int32Array(n);
     for(p=0;p<n;p++){
@@ -335,7 +337,7 @@
       if(pts.length >= 6) polys.push({ id: id, pts: new Float32Array(pts) });
     }
     return { w: w, h: h, labels: out, colors: colors, sizes: sizes, count: stats.length, polys: polys,
-             paint: paint, paints: psum.length, paintColors: paintColors, paintSizes: paintSizes };
+             paint: paint, paints: psum.length, paintColors: paintColors, paintSizes: paintSizes, gpaint: gpaint };
   }
 
   // ---------------- block-in: flat masses from a limited palette ----------------
@@ -429,7 +431,17 @@
     }
     var chroma = new Float32Array(K);
     for(c=0;c<K;c++) chroma[c] = Math.hypot(C[c][1], C[c][2]);
-    return { lab: out, chroma: chroma, base: k };
+    // nearest palette colour for every pixel of another colour map
+    function assign(P){
+      var o = new Int32Array(n);
+      for(var i=0;i<n;i++){
+        var l = P.L[i], a = P.A[i]*cw, b2 = P.B[i]*cw, bd = Infinity, bc = 0;
+        for(var c=0;c<K;c++){ var cc = C[c], dl = l-cc[0], da = a-cc[1], db = b2-cc[2], d = dl*dl + da*da + db*db; if(d < bd){ bd = d; bc = c; } }
+        o[i] = bc;
+      }
+      return o;
+    }
+    return { lab: out, chroma: chroma, base: k, assign: assign };
   }
   // Majority filter for a map with few labels (window 2r+1): one box-count
   // pass per label, so the radius costs nothing extra. With a subject mask,
@@ -482,6 +494,38 @@
     return lab;
   }
   function lerp(a, b, t){ return a + (b - a)*t; }
+
+  // ---- stroke direction ----
+  // The direction along which the picture changes least at each pixel
+  // (the structure tensor's edge direction, averaged over radius r): along
+  // the fur, along an edge. 0..255 for 0..π.
+  function boxMean(a, w, h, r){
+    var W1 = w + 1, I = new Float64Array(W1*(h+1)), out = new Float32Array(w*h);
+    for(var y=0;y<h;y++){ var s = 0; for(var x=0;x<w;x++){ s += a[y*w + x]; I[(y+1)*W1 + x + 1] = I[y*W1 + x + 1] + s; } }
+    for(y=0;y<h;y++){
+      var y0 = Math.max(0, y-r), y1 = Math.min(h-1, y+r);
+      for(x=0;x<w;x++){
+        var x0 = Math.max(0, x-r), x1 = Math.min(w-1, x+r);
+        out[y*w + x] = (I[(y1+1)*W1 + x1 + 1] - I[y0*W1 + x1 + 1] - I[(y1+1)*W1 + x0] + I[y0*W1 + x0])/((x1-x0+1)*(y1-y0+1));
+      }
+    }
+    return out;
+  }
+  function orientation(L, w, h, r){
+    var n = w*h, xx = new Float32Array(n), yy = new Float32Array(n), xy = new Float32Array(n);
+    for(var y=1;y<h-1;y++) for(var x=1;x<w-1;x++){
+      var p = y*w + x, gx = L[p+1] - L[p-1], gy = L[p+w] - L[p-w];
+      xx[p] = gx*gx; yy[p] = gy*gy; xy[p] = gx*gy;
+    }
+    xx = boxMean(xx, w, h, r); yy = boxMean(yy, w, h, r); xy = boxMean(xy, w, h, r);
+    var out = new Uint8Array(n);
+    for(p=0;p<n;p++){
+      var a = 0.5*Math.atan2(2*xy[p], xx[p] - yy[p]) + Math.PI/2;   // across the gradient
+      a = ((a % Math.PI) + Math.PI) % Math.PI;
+      out[p] = Math.round(a/Math.PI*255);
+    }
+    return out;
+  }
 
   // ---- the subject's silhouette, from the focus map ----
   // Box dilate (any set pixel within r) or erode (all set), via an integral image.
@@ -554,16 +598,23 @@
       sm = { L: new Float32Array(n), A: new Float32Array(n), B: new Float32Array(n) };
       for(p=0;p<n;p++){ f = focus[p]; sm.L[p] = smH.L[p] + (smL.L[p] - smH.L[p])*f; sm.A[p] = smH.A[p] + (smL.A[p] - smH.A[p])*f; sm.B[p] = smH.B[p] + (smL.B[p] - smH.B[p])*f; }
     }
-    // Choosing the palette, an in-focus pixel counts 4x a blurry one, so
-    // most of the colours go to the subject and the background makes do
-    // with a few general ones. In colour mode strongly coloured pixels
-    // count up to 9x on top, and the strongest mark accents.
-    var weight = new Float32Array(n), accent = values ? null : new Uint8Array(n);
+    // Choosing the palette, in-focus pixels and (in colour mode) strongly
+    // coloured ones count extra, so a small subject or a small accent like
+    // a bird's orange face gets its own colours instead of being outvoted
+    // by the background. The boosts are self-limiting: they bring that
+    // group up to about 60% / 30% of the total weight and no further, so
+    // an orange fox filling the frame isn't handed every colour while its
+    // white chest and the snow share one muddy grey.
+    var chroma = new Float32Array(n), accent = values ? null : new Uint8Array(n), inFocus = 0, strong = 0;
     for(p=0;p<n;p++){
       var c = values ? 0 : Math.min(1, Math.hypot(im.A[p], im.B[p])/40);
-      weight[p] = (1 + 8*c*c)*(1 + 3*focus[p]);
+      chroma[p] = c; if(c >= 0.7) strong++; if(focus[p] > 0.5) inFocus++;
       if(accent) accent[p] = c >= 0.7 ? 1 : 0;
     }
+    function boost(share, target, max){ return share <= 0 ? 1 : Math.max(1, Math.min(max, target/(1-target)*(1-share)/share)); }
+    var fBoost = boost(inFocus/n, 0.6, 4) - 1, cBoost = boost(strong/n, 0.3, 9) - 1;
+    var weight = new Float32Array(n);
+    for(p=0;p<n;p++){ c = chroma[p]; weight[p] = (1 + cBoost*c*c)*(1 + fBoost*focus[p]); }
     var pal = palette(sm, im, n, k, values ? 0 : 1, weight, accent), lab = pal.lab;
     var K = pal.chroma.length;      // may be a few more: the accents
     // The subject's silhouette is a line no mass crosses: inside it the
@@ -588,7 +639,18 @@
       minSize[c] = base*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
     }
     absorbSpecks(lab, w, h, minSize, focus, mask);
-    return finish(im, lab, 1, group);
+    var R = finish(im, lab, 1, group);
+    // for the brush strokes: the fur direction, and, in focus, the paint
+    // nearest the photo's own colour at each pixel (lightly smoothed), so
+    // the fine strokes can put back detail the mass clean-up took out
+    R.angle = orientation(im.L, w, h, Math.max(2, Math.round(long/160)));
+    var nearRaw = pal.assign(smoothAt(2)), near = new Uint16Array(n);
+    for(p=0;p<n;p++){
+      var j = focus[p] > 0.5 ? R.gpaint[nearRaw[p]] : -1;
+      near[p] = j >= 0 ? j : R.paint[R.labels[p]];
+    }
+    R.near = near;
+    return R;
   };
 
   // ---------------- colour intensity (OKLab chroma scaling) ----------------

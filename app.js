@@ -35,7 +35,7 @@
     // chroma: colour intensity, % of the photo's own chroma; enhancePhoto:
     // apply it to the reference photo too, not just the shapes' colours
     shapes: { count: 30, outlines: true, fill: false, bgOne: true, opacity: 100, chroma: 100, enhancePhoto: false },
-    blocks: { detail: 50, outlines: false, fill: true },   // the Block-in tab's own settings; the rest is shared with Shapes
+    blocks: { detail: 50, outlines: false, fill: true, strokes: true },   // the Block-in tab's own settings; the rest is shared with Shapes
     shapesResult: null, // latest analysis (labels, average colours, outlines)
     shapesBusy: false,
     shapesPick: null,   // id of the tapped shape
@@ -76,6 +76,7 @@
   var shapesRef = $("shapesRef"), shapesCanvas = $("shapesCanvas"), shapesSlider = $("shapesSlider"), shapesCount = $("shapesCount");
   var countRow = $("countRow"), detailRow = $("detailRow"), detailSlider = $("detailSlider"), detailLabel = $("detailLabel");
   var bgOneRow = $("bgOneRow"), paletteRow = $("paletteRow"), shapeName = $("shapeName");
+  var strokesRow = $("strokesRow"), strokesSwitch = $("strokesSwitch");
   var shapesOpacitySlider = $("shapesOpacitySlider");
   var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
   var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch"), bgOneSwitch = $("bgOneSwitch");
@@ -1065,7 +1066,7 @@
       .catch(function(){ return runHere(); })
       .then(function(res){
         if(seq !== shapesSeq || want.token !== shapesToken) return;   // superseded
-        res.key = key; res.values = want.values; res.method = want.method;
+        res.key = key; res.values = want.values; res.method = want.method; res.detail = want.detail;
         shapesLast[want.method] = res;
         useShapesResult(res);
         state.shapesBusy = false;
@@ -1124,11 +1125,59 @@
     return (R.fillImage = c);
   }
 
+  // The masses painted as brush strokes along the fur (the direction field
+  // from shapes.js), in their paint colours: big strokes everywhere, then
+  // fine ones wherever the masses change within a big stroke's reach, so
+  // flat areas stay broad and detail gets detail. Rebuilt when the result,
+  // the intensity or the canvas size changes.
+  function strokesImage(R, W, H){
+    var key = (R.values ? "v" : state.shapes.chroma) + ":" + W + "x" + H;
+    if(R.strokeImage && R.strokeKey === key) return R.strokeImage;
+    var c = R.strokeImage || document.createElement("canvas"); c.width = W; c.height = H;
+    var ctx = c.getContext("2d");
+    ctx.drawImage(shapesFillImage(R), 0, 0, W, H);          // underneath, so no gaps show
+    var css = []; for(var g=0;g<R.paints;g++) css.push(linCss(paintLin(R, g)));
+    var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail || 50)/100;
+    var big = Math.max(w, h)/(36 + 74*t), small = big/3;    // stroke width, analysis px
+    var seed = 1;
+    function rnd(){ seed = (seed*1664525 + 1013904223) >>> 0; return seed/4294967296; }
+    ctx.lineCap = "round";
+    function layer(s, lenMul, where, fine){
+      var step = s*0.9, pts = [];
+      for(var y=step/2; y<h; y+=step) for(var x=step/2; x<w; x+=step) pts.push(x + (rnd()-0.5)*step, y + (rnd()-0.5)*step);
+      var order = []; for(var i=0;i<pts.length/2;i++) order.push(i);
+      for(i=order.length-1;i>0;i--){ var j = Math.floor(rnd()*(i+1)), tmp = order[i]; order[i] = order[j]; order[j] = tmp; }
+      ctx.lineWidth = s*(sx + sy)/2;
+      order.forEach(function(i){
+        var x = pts[i*2], y = pts[i*2+1];
+        var px = Math.min(w-1, Math.max(0, Math.round(x))), py = Math.min(h-1, Math.max(0, Math.round(y))), p = py*w + px;
+        if(where && !where(p)) return;
+        var a = R.angle[p]/255*Math.PI, L = s*lenMul*(0.7 + 0.6*rnd());
+        var dx = Math.cos(a)*L/2, dy = Math.sin(a)*L/2;
+        ctx.strokeStyle = css[fine ? R.near[p] : R.paint[R.labels[p]]];
+        ctx.globalAlpha = 0.85 + 0.15*rnd();
+        ctx.beginPath(); ctx.moveTo((x-dx)*sx, (y-dy)*sy); ctx.lineTo((x+dx)*sx, (y+dy)*sy); ctx.stroke();
+      });
+    }
+    layer(big, 2.5, null, false);
+    // fine strokes where the masses change within a big stroke's reach, or
+    // where the photo's own colour (in focus) wants a different paint
+    var d = Math.max(1, Math.round(big)), lab = R.labels, paint = R.paint, near = R.near;
+    layer(small, 3, function(p){
+      var x = p % w, y = (p / w) | 0, l = lab[p];
+      return near[p] !== paint[l] || (x >= d && lab[p-d] !== l) || (x < w-d && lab[p+d] !== l) || (y >= d && lab[p-d*w] !== l) || (y < h-d && lab[p+d*w] !== l);
+    }, true);
+    ctx.globalAlpha = 1;
+    R.strokeKey = key;
+    return (R.strokeImage = c);
+  }
+
   function renderShapes(){
     setSrc(shapesRef, state.ref);
     shapesRef.classList.toggle("gray", state.grayscale);
     var blocks = method() === "blocks";
-    countRow.hidden = blocks; bgOneRow.hidden = blocks; detailRow.hidden = !blocks;
+    countRow.hidden = blocks; bgOneRow.hidden = blocks; detailRow.hidden = !blocks; strokesRow.hidden = !blocks;
+    strokesSwitch.classList.toggle("on", state.blocks.strokes);
     if(shapesSlider.value != state.shapes.count) shapesSlider.value = state.shapes.count;
     if(detailSlider.value != state.blocks.detail) detailSlider.value = state.blocks.detail;
     if(shapesOpacitySlider.value != state.shapes.opacity) shapesOpacitySlider.value = state.shapes.opacity;
@@ -1210,8 +1259,12 @@
     }
     if(look().fill){
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
-      R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
+      if(R.method === "blocks" && state.blocks.strokes && R.angle){
+        ctx.drawImage(strokesImage(R, W, H), 0, 0);
+      } else {
+        ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
+        R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
+      }
     }
     ctx.lineJoin = "round"; ctx.lineCap = "round";
     if(look().outlines){
@@ -1293,7 +1346,7 @@
   chromaSlider.addEventListener("change", persistMeta);
   function toggleShapesOption(name){
     return function(){
-      var o = (name === "outlines" || name === "fill") ? look() : state.shapes;
+      var o = (name === "outlines" || name === "fill") ? look() : name === "strokes" ? state.blocks : state.shapes;
       o[name] = !o[name];
       render();
       persistMeta();
@@ -1303,6 +1356,7 @@
   fillSwitch.addEventListener("click", toggleShapesOption("fill"));
   bgOneSwitch.addEventListener("click", toggleShapesOption("bgOne"));
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
+  strokesSwitch.addEventListener("click", toggleShapesOption("strokes"));
   if(window.ResizeObserver) new ResizeObserver(function(){ if(isShapesMode(state.mode)){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
 
   // ---------------- restart ----------------
@@ -1429,7 +1483,7 @@
       }
       if(meta.blocks && typeof meta.blocks === "object"){
         var b = meta.blocks;
-        state.blocks = { detail: b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100), outlines: !!b.outlines, fill: b.fill !== false };
+        state.blocks = { detail: b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100), outlines: !!b.outlines, fill: b.fill !== false, strokes: b.strokes !== false };
       }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
         state.ref = ref;
