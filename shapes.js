@@ -13,8 +13,8 @@
 //      to straight segments
 //
 // Block-in (Analyzer.blocks) is the other breakdown: the photo covered with
-// a limited palette of flat masses, from a single less-to-more detail
-// setting.
+// a limited palette, as flat masses or (in the app) brush strokes along the
+// fur, from a colour count and a broad-to-fine detail setting.
 //
 // Plain functions on RGBA buffers: runs in shapes-worker.js or the page.
 (function(root){
@@ -248,17 +248,27 @@
   // that fur patches join into the head's big planes)
   function Analyzer(rgba, w, h, smoothing){
     this.im = toLab(rgba, w, h);
-    this.sm = kuwahara(this.im, Math.max(2, Math.round(Math.max(w, h)/160*(smoothing || 2.5))));
+    this.r0 = Math.max(2, Math.round(Math.max(w, h)/160*(smoothing || 2.5)));   // the Shapes tab's smoothing radius
     this.sharp = sharpness(this.im, Math.max(3, Math.round(Math.max(w, h)/100)));
     this.hier = {};
+    this.smooth = [];    // the last few Kuwahara results, by radius (each is ~3 floats per pixel)
   }
+  Analyzer.prototype.smoothAt = function(r){
+    for(var i=0;i<this.smooth.length;i++){
+      if(this.smooth[i].r === r){ var hit = this.smooth.splice(i, 1)[0]; this.smooth.push(hit); return hit.sm; }
+    }
+    var sm = kuwahara(this.im, r);
+    this.smooth.push({ r: r, sm: sm });
+    if(this.smooth.length > 4) this.smooth.shift();
+    return sm;
+  };
   // values: group by value only. count: number of shapes. bgOne: merge
   // everything out of focus into one background shape. opts (optional):
   // smooth = majority passes, straight = outline simplification factor.
   Analyzer.prototype.compute = function(values, count, bgOne, opts){
     opts = opts || {};
     var im = this.im, w = im.w, h = im.h, n = w*h, key = values ? "v" : "c";
-    var H = this.hier[key] || (this.hier[key] = buildHierarchy(im, this.sm, this.sharp, values));
+    var H = this.hier[key] || (this.hier[key] = buildHierarchy(im, this.smoothAt(this.r0), this.sharp, values));
     // replay merges down to `count` areas
     var parent = new Int32Array(H.initial);
     for(var i=0;i<H.initial;i++) parent[i] = i;
@@ -578,6 +588,42 @@
     return (on < 0.005*n || on > 0.8*n) ? null : m;
   }
 
+  // What the block-in needs from the photo alone, computed once and reused
+  // for every setting: the in-focus map (0..1), the subject silhouette,
+  // the stroke directions, and the palette weights and accent marks.
+  //
+  // Choosing the palette, in-focus pixels and (in colour mode) strongly
+  // coloured ones count extra, so a small subject or a small accent like a
+  // bird's orange face gets its own colours instead of being outvoted by
+  // the background. The boosts are self-limiting: they bring that group up
+  // to about 60% / 30% of the total weight and no further, so an orange
+  // fox filling the frame isn't handed every colour while its white chest
+  // and the snow share one muddy grey.
+  Analyzer.prototype.subject = function(values){
+    var key = values ? "v" : "c";
+    this.subj = this.subj || {};
+    if(this.subj[key]) return this.subj[key];
+    var im = this.im, w = im.w, h = im.h, n = w*h, p;
+    if(!this.focus){
+      var focus = new Float32Array(n);
+      for(p=0;p<n;p++){ var f = (this.sharp[p] - 0.12)/0.25; focus[p] = f < 0 ? 0 : f > 1 ? 1 : f; }
+      this.focus = focus;
+      this.mask = subjectMask(focus, w, h);
+      this.angle = orientation(im.L, w, h, Math.max(2, Math.round(Math.max(w, h)/160)));
+    }
+    var chroma = new Float32Array(n), accent = values ? null : new Uint8Array(n), inFocus = 0, strong = 0;
+    for(p=0;p<n;p++){
+      var c = values ? 0 : Math.min(1, Math.hypot(im.A[p], im.B[p])/40);
+      chroma[p] = c; if(c >= 0.7) strong++; if(this.focus[p] > 0.5) inFocus++;
+      if(accent) accent[p] = c >= 0.7 ? 1 : 0;
+    }
+    function boost(share, target, max){ return share <= 0 ? 1 : Math.max(1, Math.min(max, target/(1-target)*(1-share)/share)); }
+    var fBoost = boost(inFocus/n, 0.6, 4) - 1, cBoost = boost(strong/n, 0.3, 9) - 1;
+    var weight = new Float32Array(n);
+    for(p=0;p<n;p++){ c = chroma[p]; weight[p] = (1 + cBoost*c*c)*(1 + fBoost*this.focus[p]); }
+    return (this.subj[key] = { focus: this.focus, mask: this.mask, angle: this.angle, weight: weight, accent: accent });
+  };
+
   // Detail where it's in focus: the sharp parts of the photo (the subject)
   // are smoothed less, keep their smaller masses and finer edges; the
   // out-of-focus parts get the full coarse treatment. A painter's crisp
@@ -586,44 +632,23 @@
   // to fine, through the smoothing scale and the smallest mass kept (the
   // stroke size follows it in the app).
   Analyzer.prototype.blocks = function(values, colours, detail){
-    var im = this.im, w = im.w, h = im.h, n = w*h, t = Math.max(0, Math.min(1, detail)), long = Math.max(w, h);
-    var self = this;
-    this.smooth = this.smooth || {};
-    function smoothAt(r){ return self.smooth[r] || (self.smooth[r] = kuwahara(im, r)); }
-    var focus = new Float32Array(n), p;
-    for(p=0;p<n;p++){ var f = (this.sharp[p] - 0.12)/0.25; focus[p] = f < 0 ? 0 : f > 1 ? 1 : f; }
+    var im = this.im, w = im.w, h = im.h, n = w*h, t = Math.max(0, Math.min(1, detail)), long = Math.max(w, h), p;
+    var S = this.subject(values), focus = S.focus, mask = S.mask;
 
     var k = Math.max(3, Math.round(colours));
     var rH = Math.max(2, Math.round(long/160*lerp(3.5, 0.6, t))), rL = Math.max(2, Math.round(rH/3));
-    var smH = smoothAt(rH), sm = smH;
+    var smH = this.smoothAt(rH), sm = smH;
     if(rL < rH){
-      var smL = smoothAt(rL);
+      var smL = this.smoothAt(rL);
       sm = { L: new Float32Array(n), A: new Float32Array(n), B: new Float32Array(n) };
-      for(p=0;p<n;p++){ f = focus[p]; sm.L[p] = smH.L[p] + (smL.L[p] - smH.L[p])*f; sm.A[p] = smH.A[p] + (smL.A[p] - smH.A[p])*f; sm.B[p] = smH.B[p] + (smL.B[p] - smH.B[p])*f; }
+      for(p=0;p<n;p++){ var f = focus[p]; sm.L[p] = smH.L[p] + (smL.L[p] - smH.L[p])*f; sm.A[p] = smH.A[p] + (smL.A[p] - smH.A[p])*f; sm.B[p] = smH.B[p] + (smL.B[p] - smH.B[p])*f; }
     }
-    // Choosing the palette, in-focus pixels and (in colour mode) strongly
-    // coloured ones count extra, so a small subject or a small accent like
-    // a bird's orange face gets its own colours instead of being outvoted
-    // by the background. The boosts are self-limiting: they bring that
-    // group up to about 60% / 30% of the total weight and no further, so
-    // an orange fox filling the frame isn't handed every colour while its
-    // white chest and the snow share one muddy grey.
-    var chroma = new Float32Array(n), accent = values ? null : new Uint8Array(n), inFocus = 0, strong = 0;
-    for(p=0;p<n;p++){
-      var c = values ? 0 : Math.min(1, Math.hypot(im.A[p], im.B[p])/40);
-      chroma[p] = c; if(c >= 0.7) strong++; if(focus[p] > 0.5) inFocus++;
-      if(accent) accent[p] = c >= 0.7 ? 1 : 0;
-    }
-    function boost(share, target, max){ return share <= 0 ? 1 : Math.max(1, Math.min(max, target/(1-target)*(1-share)/share)); }
-    var fBoost = boost(inFocus/n, 0.6, 4) - 1, cBoost = boost(strong/n, 0.3, 9) - 1;
-    var weight = new Float32Array(n);
-    for(p=0;p<n;p++){ c = chroma[p]; weight[p] = (1 + cBoost*c*c)*(1 + fBoost*focus[p]); }
     // the accents come on top of the base count; take them out of the
     // base so the total is the number asked for (a few tries, since the
     // accents found can change with the base)
     var pal, base = k;
     for(var tries=0; tries<3; tries++){
-      pal = palette(sm, im, n, base, values ? 0 : 1, weight, accent);
+      pal = palette(sm, im, n, base, values ? 0 : 1, S.weight, S.accent);
       var total = pal.chroma.length;
       if(total === k || k - (total - base) < 3) break;
       base = k - (total - base);
@@ -633,7 +658,6 @@
     // palette colours are separate masses (ids K..2K-1) from the same
     // colours outside, through the rounding and the speck absorption. A
     // beak the colour of the snow behind it still keeps its edge.
-    var mask = subjectMask(focus, w, h);
     k = mask ? 2*K : K;
     if(mask) for(p=0;p<n;p++) if(mask[p]) lab[p] += K;
     var mr = Math.max(1, Math.round(long/320*lerp(3.5, 0.5, t))), mrL = Math.max(1, Math.round(mr/3));
@@ -645,18 +669,18 @@
     lab = labH;
     // an accent is kept at a sixth the size of a neutral mass, and any
     // strongly coloured mass at a quarter
-    var minSize = new Float32Array(k), group = new Int32Array(k), base = n*lerp(0.005, 0.0002, t);
-    for(c=0;c<k;c++){
+    var minSize = new Float32Array(k), group = new Int32Array(k), unit = n*lerp(0.005, 0.0002, t);
+    for(var c=0;c<k;c++){
       var g = c % K; group[c] = g;
-      minSize[c] = base*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
+      minSize[c] = unit*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
     }
     absorbSpecks(lab, w, h, minSize, focus, mask);
     var R = finish(im, lab, 1, group);
     // for the brush strokes: the fur direction, and, in focus, the paint
     // nearest the photo's own colour at each pixel (lightly smoothed), so
     // the fine strokes can put back detail the mass clean-up took out
-    R.angle = orientation(im.L, w, h, Math.max(2, Math.round(long/160)));
-    var nearRaw = pal.assign(smoothAt(2)), near = new Uint16Array(n);
+    R.angle = S.angle;
+    var nearRaw = pal.assign(this.smoothAt(2)), near = new Uint16Array(n);
     for(p=0;p<n;p++){
       var j = focus[p] > 0.5 ? R.gpaint[nearRaw[p]] : -1;
       near[p] = j >= 0 ? j : R.paint[R.labels[p]];

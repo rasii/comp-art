@@ -155,8 +155,9 @@
     return im.url;
   }
   function setSrc(img, im){
-    var url = urlOf(im);
-    if(img.getAttribute("src") !== url) img.src = url;
+    if(img._im === im) return;     // already showing this image
+    img._im = im;
+    img.src = urlOf(im);
   }
 
   // ---------------- persistence (IndexedDB) ----------------
@@ -205,7 +206,7 @@
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
     } else if(m === "blocks"){
       hint = state.shapesBusy && !state.shapesResult ? "blocking in…"
-           : (state.grayscale ? "value masses from a few mixtures" : "flat masses from a few mixtures") + " · tap one to read it";
+           : (state.blocks.detail === 0 ? "flat masses" : "brush strokes") + " from a few " + (state.grayscale ? "values" : "mixtures") + " · tap one to read it";
     } else if(m === "shapes"){
       hint = state.shapesBusy && !state.shapesResult ? "finding the big shapes…"
            : (state.grayscale ? "big value shapes" : "big shapes by value and colour") + " · tap one to read it";
@@ -948,7 +949,7 @@
   function look(){ return method() === "blocks" ? state.blocks : state.shapes; }   // outlines and fill are per method
   var shapesLast = {};      // the latest result of each method, so switching tabs is instant
   var callShapes = workerCaller("shapes-worker.js");
-  var shapesToken = 0, workerShapesToken = -1, shapesSeq = 0, shapesTimer = null;
+  var shapesToken = 0, workerShapesToken = -1, shapesTimer = null;
   var mainAnalyzer = null, mainAnalyzerToken = -1, shapesPendingKey = null;
 
   // a new reference: forget the analysis
@@ -1023,20 +1024,28 @@
     state.shapesPick = state.shapesPoint ? labelAt(res, state.shapesPoint) : null;
   }
 
+  // Asks for the breakdown the settings want now. A result already in hand
+  // (or the last one for this method) is used at once and any pending
+  // request dropped; otherwise a run is scheduled after `delay` ms (sliders
+  // ask with a small delay, so a drag only runs once it settles).
   function requestShapes(delay){
     if(!state.ref) return;
     var want = shapesWant(), key = shapesKey(want);
-    if(state.shapesResult && state.shapesResult.key === key) return;
+    if(state.shapesResult && state.shapesResult.key === key){ settleShapes(); return; }
     var last = shapesLast[want.method];
-    if(last && last.key === key){ useShapesResult(last); return; }
+    if(last && last.key === key){ settleShapes(); useShapesResult(last); return; }
     if(shapesPendingKey === key) return;
     shapesPendingKey = key;
+    state.shapesBusy = true;
     clearTimeout(shapesTimer);
     shapesTimer = setTimeout(function(){ runShapes(want, key); }, delay || 0);
   }
+  // nothing is wanted beyond what's shown: forget any pending request
+  function settleShapes(){
+    clearTimeout(shapesTimer);
+    if(shapesPendingKey !== null){ shapesPendingKey = null; state.shapesBusy = false; renderShapesStatus(); }
+  }
   function runShapes(want, key){
-    var seq = ++shapesSeq;
-    state.shapesBusy = true;
     renderShapesStatus();
     function ask(withPixels){
       var msg = { token: want.token, method: want.method, values: want.values, count: want.count, bgOne: want.bgOne, colours: want.colours, detail: want.detail }, transfer = [];
@@ -1065,16 +1074,15 @@
     ask(workerShapesToken !== want.token)
       .catch(function(){ return runHere(); })
       .then(function(res){
-        if(seq !== shapesSeq || want.token !== shapesToken) return;   // superseded
+        if(want.token !== shapesToken) return;                   // a different reference by now
         res.key = key; res.values = want.values; res.method = want.method; res.detail = want.detail;
-        shapesLast[want.method] = res;
-        useShapesResult(res);
-        state.shapesBusy = false;
-        shapesPendingKey = null;
+        shapesLast[want.method] = res;                           // kept even if no longer wanted
+        if(shapesPendingKey === key){ shapesPendingKey = null; state.shapesBusy = false; }
+        if(shapesKey(shapesWant()) === key) useShapesResult(res);
         render();
       })
       .catch(function(){
-        if(seq !== shapesSeq) return;
+        if(want.token !== shapesToken || shapesPendingKey !== key) return;
         state.shapesBusy = false; shapesPendingKey = null;
         render();
         toast("The breakdown couldn't be worked out for this photo.");
@@ -1138,7 +1146,7 @@
     var ctx = c.getContext("2d");
     ctx.drawImage(shapesFillImage(R), 0, 0, W, H);          // underneath, so no gaps show
     var css = []; for(var g=0;g<R.paints;g++) css.push(linCss(paintLin(R, g)));
-    var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail || 50)/100;
+    var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail == null ? 50 : R.detail)/100;
     var big = Math.max(w, h)/(36 + 74*t), small = big/3;    // stroke width, analysis px
     var fineShare = Math.max(0, Math.min(1, (t - 0.15)/0.5));   // the photo-led fine strokes come in from a quarter up
     var seed = 1;
@@ -1319,6 +1327,7 @@
     state.shapesPoint = { u: u, v: v, pointerType: e.pointerType };
     state.shapesPick = labelAt(R, state.shapesPoint);
     drawShapes();
+    renderPalette();
     renderShapeReadout();
   }
   attachGestures(shapesFrame, shapesZoom, { start: pickShape, move: pickShape }, render);
