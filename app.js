@@ -195,26 +195,7 @@
     grayBtn.classList.toggle("on", state.grayscale);
     grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
 
-    // header hint
-    var hint;
-    if(m === "align"){
-      hint = !hasRef ? "reference → painting → compare"
-           : !hasPhoto ? "now photograph your painting"
-           : state.detecting ? "finding the canvas edges…"
-           : "check the points are on the canvas corners · double-tap to zoom in";
-    } else if(m === "compare"){
-      hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
-    } else if(m === "blocks"){
-      hint = state.shapesBusy && !state.shapesResult ? "blocking in…"
-           : (state.blocks.detail === 0 ? "flat masses" : "brush strokes") + " from a few " + (state.grayscale ? "values" : "mixtures") + " · tap one to read it";
-    } else if(m === "shapes"){
-      hint = state.shapesBusy && !state.shapesResult ? "finding the big shapes…"
-           : (state.grayscale ? "big value shapes" : "big shapes by value and colour") + " · tap one to read it";
-    } else {
-      hint = "touch either image to read colours";
-    }
-    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (isShapesMode(m) && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
-    stepHint.textContent = hint;
+    renderHint();
 
     // ---- align ----
     show(emptyStage, !hasRef, "flex");
@@ -275,6 +256,30 @@
     renderReading();
   }
 
+  // header hint for the current tab
+  function renderHint(){
+    var m = state.mode, hasRef = !!state.ref, hasPhoto = !!state.photo;
+    var hint;
+    if(m === "align"){
+      hint = !hasRef ? "reference → painting → compare"
+           : !hasPhoto ? "now photograph your painting"
+           : state.detecting ? "finding the canvas edges…"
+           : "check the points are on the canvas corners · double-tap to zoom in";
+    } else if(m === "compare"){
+      hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
+    } else if(m === "blocks"){
+      hint = state.shapesBusy && !state.shapesResult ? "blocking in…"
+           : (state.blocks.detail === 0 ? "flat masses" : "brush strokes") + " from a few " + (state.grayscale ? "values" : "mixtures") + " · tap one to read it";
+    } else if(m === "shapes"){
+      hint = state.shapesBusy && !state.shapesResult ? "finding the big shapes…"
+           : (state.grayscale ? "big value shapes" : "big shapes by value and colour") + " · tap one to read it";
+    } else {
+      hint = "touch either image to read colours";
+    }
+    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (isShapesMode(m) && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
+    stepHint.textContent = hint;
+  }
+
   function renderReading(){
     var rd = state.reading, m = state.mode;
     var showCompare = rd && m === "compare", showSide = rd && m === "side";
@@ -311,6 +316,10 @@
   // keeps its size whatever the view zoom. For touch, the ring sits above
   // the fingertip (or below it near the top edge).
   function placeMarker(mk, frame, view, rd, fill){
+    positionMarker(mk, frame, view, rd);
+    mk.querySelector(".pm-ring").style.background = fill;
+  }
+  function positionMarker(mk, frame, view, rd){
     var fr = frame.getBoundingClientRect(), vr = view.getBoundingClientRect(), c = imageRect(frame);
     var x = vr.left - (fr.left + frame.clientLeft) + (c.x + rd.u*c.w)*vr.width;
     var y = vr.top  - (fr.top  + frame.clientTop)  + (c.y + rd.v*c.h)*vr.height;
@@ -319,7 +328,6 @@
     mk.classList.toggle("below", touch && y < 96);
     mk.style.left = x + "px";
     mk.style.top = y + "px";
-    mk.querySelector(".pm-ring").style.background = fill;
   }
 
   // Where the reference sits in a frame that letterboxes it (object-fit:
@@ -949,7 +957,7 @@
   function look(){ return method() === "blocks" ? state.blocks : state.shapes; }   // outlines and fill are per method
   var shapesLast = {};      // the latest result of each method, so switching tabs is instant
   var callShapes = workerCaller("shapes-worker.js");
-  var shapesToken = 0, workerShapesToken = -1, shapesTimer = null;
+  var shapesToken = 0, workerShapesToken = -1, shapesTimer = null, shapesRunning = false;
   var mainAnalyzer = null, mainAnalyzerToken = -1, shapesPendingKey = null;
 
   // a new reference: forget the analysis
@@ -1038,7 +1046,20 @@
     shapesPendingKey = key;
     state.shapesBusy = true;
     clearTimeout(shapesTimer);
-    shapesTimer = setTimeout(function(){ runShapes(want, key); }, delay || 0);
+    shapesTimer = setTimeout(kickShapes, delay || 0);
+  }
+  // Starts the wanted breakdown unless one is already running; when that
+  // finishes it starts whatever is wanted by then, so a slider drag never
+  // queues up a backlog of runs in the worker.
+  function kickShapes(){
+    if(shapesRunning || shapesPendingKey === null || !state.ref) return;
+    var want = shapesWant(), key = shapesKey(want);
+    shapesPendingKey = key;
+    runShapes(want, key);
+  }
+  function shapesDone(key){
+    shapesRunning = false;
+    if(shapesPendingKey !== null && shapesPendingKey !== key) kickShapes();
   }
   // nothing is wanted beyond what's shown: forget any pending request
   function settleShapes(){
@@ -1046,6 +1067,7 @@
     if(shapesPendingKey !== null){ shapesPendingKey = null; state.shapesBusy = false; renderShapesStatus(); }
   }
   function runShapes(want, key){
+    shapesRunning = true;
     renderShapesStatus();
     function ask(withPixels){
       var msg = { token: want.token, method: want.method, values: want.values, count: want.count, bgOne: want.bgOne, colours: want.colours, detail: want.detail }, transfer = [];
@@ -1074,6 +1096,7 @@
     ask(workerShapesToken !== want.token)
       .catch(function(){ return runHere(); })
       .then(function(res){
+        shapesDone(key);
         if(want.token !== shapesToken) return;                   // a different reference by now
         res.key = key; res.values = want.values; res.method = want.method; res.detail = want.detail;
         shapesLast[want.method] = res;                           // kept even if no longer wanted
@@ -1082,6 +1105,7 @@
         render();
       })
       .catch(function(){
+        if(shapesRunning) shapesDone(key);
         if(want.token !== shapesToken || shapesPendingKey !== key) return;
         state.shapesBusy = false; shapesPendingKey = null;
         render();
@@ -1145,6 +1169,17 @@
     var c = R.strokeImage || document.createElement("canvas"); c.width = W; c.height = H;
     var ctx = c.getContext("2d");
     ctx.drawImage(shapesFillImage(R), 0, 0, W, H);          // underneath, so no gaps show
+    // With a subject silhouette, the subject's strokes go on a layer of
+    // their own that's cut to the silhouette and laid on top, so neither
+    // side's strokes spill across the edge: a crisp subject on a soft
+    // background.
+    var inner = null, ictx = ctx;
+    if(R.mask){
+      inner = document.createElement("canvas"); inner.width = W; inner.height = H;
+      ictx = inner.getContext("2d");
+      ictx.drawImage(shapesFillImage(R), 0, 0, W, H);
+      ictx.lineCap = "round";
+    }
     var css = []; for(var g=0;g<R.paints;g++) css.push(linCss(paintLin(R, g)));
     var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail == null ? 50 : R.detail)/100;
     var big = Math.max(w, h)/(36 + 74*t), small = big/3;    // stroke width, analysis px
@@ -1157,16 +1192,17 @@
       for(var y=step/2; y<h; y+=step) for(var x=step/2; x<w; x+=step) pts.push(x + (rnd()-0.5)*step, y + (rnd()-0.5)*step);
       var order = []; for(var i=0;i<pts.length/2;i++) order.push(i);
       for(i=order.length-1;i>0;i--){ var j = Math.floor(rnd()*(i+1)), tmp = order[i]; order[i] = order[j]; order[j] = tmp; }
-      ctx.lineWidth = s*(sx + sy)/2;
+      ctx.lineWidth = ictx.lineWidth = s*(sx + sy)/2;
       order.forEach(function(i){
         var x = pts[i*2], y = pts[i*2+1];
         var px = Math.min(w-1, Math.max(0, Math.round(x))), py = Math.min(h-1, Math.max(0, Math.round(y))), p = py*w + px;
         if(where && !where(p)) return;
         var a = R.angle[p]/255*Math.PI, L = s*lenMul*(0.7 + 0.6*rnd());
         var dx = Math.cos(a)*L/2, dy = Math.sin(a)*L/2;
-        ctx.strokeStyle = css[fine ? R.near[p] : R.paint[R.labels[p]]];
-        ctx.globalAlpha = 0.85 + 0.15*rnd();
-        ctx.beginPath(); ctx.moveTo((x-dx)*sx, (y-dy)*sy); ctx.lineTo((x+dx)*sx, (y+dy)*sy); ctx.stroke();
+        var g = (R.mask && R.mask[p]) ? ictx : ctx;
+        g.strokeStyle = css[fine ? R.near[p] : R.paint[R.labels[p]]];
+        g.globalAlpha = 0.85 + 0.15*rnd();
+        g.beginPath(); g.moveTo((x-dx)*sx, (y-dy)*sy); g.lineTo((x+dx)*sx, (y+dy)*sy); g.stroke();
       });
     }
     layer(big, 2.5, null, false);
@@ -1179,8 +1215,25 @@
       return near[p] !== paint[l] && rnd() < fineShare;
     }, true);
     ctx.globalAlpha = 1;
-    R.strokeKey = key;
+    if(inner){
+      ictx.globalAlpha = 1;
+      ictx.globalCompositeOperation = "destination-in";
+      ictx.imageSmoothingEnabled = true;
+      ictx.drawImage(maskImage(R), 0, 0, W, H);
+      ctx.drawImage(inner, 0, 0);
+    }
+    R.strokeKey = key; R.strokeChroma = state.shapes.chroma; R.strokeSize = W + "x" + H;
     return (R.strokeImage = c);
+  }
+
+  // the silhouette as an alpha image (opaque inside), at analysis size
+  function maskImage(R){
+    if(R.maskImage) return R.maskImage;
+    var c = document.createElement("canvas"); c.width = R.w; c.height = R.h;
+    var ctx = c.getContext("2d"), img = ctx.createImageData(R.w, R.h), d = img.data;
+    for(var p=0;p<R.w*R.h;p++){ d[p*4+3] = R.mask[p] ? 255 : 0; }
+    ctx.putImageData(img, 0, 0);
+    return (R.maskImage = c);
   }
 
   function renderShapes(){
@@ -1258,7 +1311,7 @@
     // the previous result stays up while a new one is worked out, so the
     // picture doesn't flash as the slider moves
     if(!R) return;
-    var sx = W/R.w, sy = H/R.h;
+    var sx = W/R.w, sy = H/R.h, preview = "";
     function path(poly){
       var pts = poly.pts;
       ctx.beginPath();
@@ -1271,7 +1324,12 @@
     if(look().fill){
       ctx.imageSmoothingEnabled = true;
       if(R.method === "blocks" && R.detail > 0 && R.angle){   // detail 0 is flat masses
-        ctx.drawImage(strokesImage(R, W, H), 0, 0);
+        if(chromaDragging && R.strokeImage && R.strokeSize === W + "x" + H && !R.values){
+          ctx.drawImage(R.strokeImage, 0, 0);
+          preview = "saturate(" + (state.shapes.chroma/R.strokeChroma).toFixed(3) + ")";
+        } else {
+          ctx.drawImage(strokesImage(R, W, H), 0, 0);
+        }
       } else {
         ctx.drawImage(shapesFillImage(R), 0, 0, W, H);
         R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
@@ -1289,6 +1347,7 @@
       var g = R.paint[state.shapesPick];   // every shape of the picked paint
       R.polys.forEach(function(poly){ if(R.paint[poly.id] === g){ path(poly); ctx.stroke(); } });
     }
+    if(shapesCanvas.style.filter !== preview) shapesCanvas.style.filter = preview;
   }
 
   // Two readings for the tapped spot, each with its own Mix button: the
@@ -1330,7 +1389,14 @@
     renderPalette();
     renderShapeReadout();
   }
-  attachGestures(shapesFrame, shapesZoom, { start: pickShape, move: pickShape }, render);
+  // Zooming only moves the picture (and the marker); the shapes are drawn
+  // once and scaled, not redrawn for every finger movement.
+  function shapesZoomed(){
+    shapesZoom.apply();
+    if(!shapesMarker.hidden && state.shapesPoint) positionMarker(shapesMarker, shapesFrame, shapesView, state.shapesPoint);
+    renderHint();
+  }
+  attachGestures(shapesFrame, shapesZoom, { start: pickShape, move: pickShape }, shapesZoomed);
 
   shapesSlider.addEventListener("input", function(){
     state.shapes.count = Number(shapesSlider.value);
@@ -1355,13 +1421,21 @@
     shapesCanvas.style.opacity = String(state.shapes.opacity/100);
   });
   shapesOpacitySlider.addEventListener("change", persistMeta);
+  // dragging: the brush strokes (slow to paint) are previewed with a
+  // saturation filter, and painted for real when the slider is let go
+  var chromaDragging = false;
   chromaSlider.addEventListener("input", function(){
+    chromaDragging = true;
     state.shapes.chroma = Number(chromaSlider.value);
     // make the change visible: fill the shapes unless it's already shown somewhere
     if(!look().fill && !state.shapes.enhancePhoto) look().fill = true;
     render();
   });
-  chromaSlider.addEventListener("change", persistMeta);
+  chromaSlider.addEventListener("change", function(){
+    chromaDragging = false;
+    render();
+    persistMeta();
+  });
   function toggleShapesOption(name){
     return function(){
       var o = (name === "outlines" || name === "fill") ? look() : state.shapes;
@@ -1459,7 +1533,14 @@
     try{ localStorage.removeItem(LEGACY_KEY); }catch(e){}
   }
   restartBtn.addEventListener("click", function(){
-    askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", restart);
+    // Straight on to choosing the new reference. The picker has to open
+    // within the tap on "Start new" (iOS only allows it from a user
+    // gesture), and it does: the confirm button runs this synchronously.
+    // Cancelling it leaves the usual "Add reference photo" screen.
+    askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", function(){
+      restart();
+      refInput.click();
+    });
   });
 
   // ---------------- boot ----------------

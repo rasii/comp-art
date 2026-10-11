@@ -521,16 +521,38 @@
     }
     return out;
   }
+  //
+  // Where there's no clear direction nearby (snow, sky, a soft background)
+  // the local one is just noise and the strokes would point every which
+  // way, so it gives way to the direction over a wider area, and where
+  // even that is unclear, to the picture's overall direction: broad, calm
+  // strokes instead of scattered dabs. Each scale's tensor is normalised
+  // and weighted by how clear (coherent) and how strong it is.
   function orientation(L, w, h, r){
     var n = w*h, xx = new Float32Array(n), yy = new Float32Array(n), xy = new Float32Array(n);
+    var Gxx = 0, Gyy = 0, Gxy = 0;
     for(var y=1;y<h-1;y++) for(var x=1;x<w-1;x++){
       var p = y*w + x, gx = L[p+1] - L[p-1], gy = L[p+w] - L[p-w];
       xx[p] = gx*gx; yy[p] = gy*gy; xy[p] = gx*gy;
+      Gxx += xx[p]; Gyy += yy[p]; Gxy += xy[p];
     }
-    xx = boxMean(xx, w, h, r); yy = boxMean(yy, w, h, r); xy = boxMean(xy, w, h, r);
+    var tG = (Gxx + Gyy) || 1, gxx = Gxx/tG, gyy = Gyy/tG, gxy = Gxy/tG, meanT = tG/n;
+    var Sxx = boxMean(xx, w, h, r), Syy = boxMean(yy, w, h, r), Sxy = boxMean(xy, w, h, r);
+    var R2 = 4*r, Bxx = boxMean(xx, w, h, R2), Byy = boxMean(yy, w, h, R2), Bxy = boxMean(xy, w, h, R2);
+    // how much to trust a tensor: clear direction (coherence) and enough
+    // contrast to mean anything
+    function trust(txx, tyy, txy, lo, span){
+      var t = txx + tyy; if(t <= 1e-9) return 0;
+      var coh = Math.sqrt((txx - tyy)*(txx - tyy) + 4*txy*txy)/t;
+      return clamp01((coh - lo)/span)*clamp01(t/(0.25*meanT));
+    }
     var out = new Uint8Array(n);
     for(p=0;p<n;p++){
-      var a = 0.5*Math.atan2(2*xy[p], xx[p] - yy[p]) + Math.PI/2;   // across the gradient
+      var tS = (Sxx[p] + Syy[p]) || 1e-9, tB = (Bxx[p] + Byy[p]) || 1e-9;
+      var wS = trust(Sxx[p], Syy[p], Sxy[p], 0.15, 0.35), wB = trust(Bxx[p], Byy[p], Bxy[p], 0.1, 0.3);
+      var oxx = wB*Bxx[p]/tB + (1 - wB)*gxx, oyy = wB*Byy[p]/tB + (1 - wB)*gyy, oxy = wB*Bxy[p]/tB + (1 - wB)*gxy;
+      var exx = wS*Sxx[p]/tS + (1 - wS)*oxx, eyy = wS*Syy[p]/tS + (1 - wS)*oyy, exy = wS*Sxy[p]/tS + (1 - wS)*oxy;
+      var a = 0.5*Math.atan2(2*exy, exx - eyy) + Math.PI/2;   // across the gradient
       a = ((a % Math.PI) + Math.PI) % Math.PI;
       out[p] = Math.round(a/Math.PI*255);
     }
@@ -680,6 +702,7 @@
     // nearest the photo's own colour at each pixel (lightly smoothed), so
     // the fine strokes can put back detail the mass clean-up took out
     R.angle = S.angle;
+    R.mask = mask;                  // the subject's silhouette (or null): strokes stay on their side of it
     var nearRaw = pal.assign(this.smoothAt(2)), near = new Uint16Array(n);
     for(p=0;p<n;p++){
       var j = focus[p] > 0.5 ? R.gpaint[nearRaw[p]] : -1;
