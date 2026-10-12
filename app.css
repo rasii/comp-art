@@ -33,6 +33,11 @@ body{
            env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
 }
 img{ -webkit-user-drag:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+/* No double-tap zoom anywhere: with page zoom switched off, iOS answers a
+   double tap by scrolling the page instead. Scrolling and the app's own
+   pinch-zoom still work; the image frames set touch-action:none themselves
+   (more specific, so it wins). */
+*{ touch-action: manipulation; }
 
 /* ---------- header ---------- */
 header{

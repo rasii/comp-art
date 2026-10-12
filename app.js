@@ -102,6 +102,8 @@
   // everywhere, so holding on an image never pops up browser actions.
   document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
   document.addEventListener("selectstart", function(e){ e.preventDefault(); });
+  // and a double tap never zooms or scrolls the page (see app.css)
+  document.addEventListener("dblclick", function(e){ e.preventDefault(); }, { passive: false });
 
   // ---------------- helpers ----------------
   function toast(msg){
@@ -276,7 +278,8 @@
     } else {
       hint = "touch either image to read colours";
     }
-    if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (isShapesMode(m) && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
+    if(isShapesMode(m) && state.shapesPick !== null && state.shapesResult) hint += " · double-tap to clear";
+    else if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (isShapesMode(m) && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
     stepHint.textContent = hint;
   }
 
@@ -1289,7 +1292,7 @@
         var k = Array.prototype.indexOf.call(R.paint, g);   // any shape of this paint
         state.shapesPick = (g === picked) ? null : k;
         state.shapesPoint = null;
-        drawShapes(); renderPalette(); renderShapeReadout();
+        drawShapes(); renderPalette(); renderShapeReadout(); renderHint();
       });
       paletteRow.appendChild(sw);
     });
@@ -1388,6 +1391,7 @@
     drawShapes();
     renderPalette();
     renderShapeReadout();
+    renderHint();
   }
   // Zooming only moves the picture (and the marker); the shapes are drawn
   // once and scaled, not redrawn for every finger movement.
@@ -1396,7 +1400,25 @@
     if(!shapesMarker.hidden && state.shapesPoint) positionMarker(shapesMarker, shapesFrame, shapesView, state.shapesPoint);
     renderHint();
   }
-  attachGestures(shapesFrame, shapesZoom, { start: pickShape, move: pickShape }, shapesZoomed);
+  // Double tap: clears the selected shape or paint. The first tap of the
+  // pair has already picked whatever it landed on, so what was selected
+  // *before* it decides: something was selected → just clear it; nothing
+  // was → it's the usual double-tap to reset the zoom (and the first
+  // tap's pick is cleared too).
+  var pickBeforeTap = null;
+  function clearShapesPick(){
+    state.shapesPick = null; state.shapesPoint = null;
+    drawShapes(); renderPalette(); renderShapeReadout();
+  }
+  attachGestures(shapesFrame, shapesZoom, {
+    start: function(e){ pickBeforeTap = state.shapesPick; pickShape(e); },
+    move: pickShape,
+    doubleTap: function(){
+      if(pickBeforeTap === null) shapesZoom.reset();
+      clearShapesPick();
+      shapesZoomed();
+    }
+  }, shapesZoomed);
 
   shapesSlider.addEventListener("input", function(){
     state.shapes.count = Number(shapesSlider.value);
