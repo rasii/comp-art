@@ -28,6 +28,9 @@
   </div>
   <div class="header-btns">
   <span class="version" id="versionLabel" title="App version"></span>
+  <button class="icon-btn" id="saveBtn" title="Save images" aria-label="Save images" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+  </button>
   <button class="icon-btn" id="grayBtn" title="Check values (black &amp; white)" aria-label="Check values in black and white" aria-pressed="false" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
   </button>
@@ -307,6 +310,17 @@
       <button class="btn" id="confirmCancel">Cancel</button>
       <button class="btn primary" id="confirmOk">OK</button>
     </div>
+  </div>
+</div>
+
+<!-- save the aligned painting, or reference + painting in one image -->
+<div class="modal" id="saveModal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
+  <div class="modal-box">
+    <p class="mix-title" id="saveTitle">Save</p>
+    <button class="btn primary full" id="savePaintingBtn">Painting photo</button>
+    <button class="btn full" id="saveSideBtn">Reference and painting side by side</button>
+    <p class="mix-note" id="saveNote"></p>
+    <div class="row stretch"><button class="btn ghost" id="saveCancel">Cancel</button></div>
   </div>
 </div>
 

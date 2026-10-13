@@ -45,7 +45,9 @@
   // ---------------- element refs ----------------
   var $ = function(id){ return document.getElementById(id); };
   var tabs = $("tabs"), stepHint = $("stepHint");
-  var grayBtn = $("grayBtn"), restartBtn = $("restartBtn");
+  var grayBtn = $("grayBtn"), restartBtn = $("restartBtn"), saveBtn = $("saveBtn");
+  var saveModal = $("saveModal"), savePaintingBtn = $("savePaintingBtn"), saveSideBtn = $("saveSideBtn");
+  var saveNote = $("saveNote"), saveCancel = $("saveCancel");
 
   var emptyStage = $("emptyStage"), setupPanel = $("setupPanel");
   var refRow = $("refRow"), curRow = $("curRow"), changeRefRow = $("changeRefRow");
@@ -194,6 +196,7 @@
     show(viewSide, m === "side");
     show(viewShapes, isShapesMode(m));
     grayBtn.hidden = (m === "align");
+    saveBtn.hidden = !(hasAligned && (m === "compare" || m === "side"));
     grayBtn.classList.toggle("on", state.grayscale);
     grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
 
@@ -1488,6 +1491,7 @@
     if(e.key !== "Escape") return;
     if(confirmModal.classList.contains("show")) closeConfirm();
     if(mixModal.classList.contains("show")) closeMix();
+    if(saveModal.classList.contains("show")) closeSave();
   });
 
   // ---------------- paint recipes (mix.js) ----------------
@@ -1542,6 +1546,101 @@
   photoMixBtn.addEventListener("click", function(){
     if(state.shapesPoint) showRecipe(photoLin(state.shapesPoint), state.grayscale ? "the photo's value here" : "the photo's colour here");
   });
+
+  // ---------------- saving images ----------------
+  // The aligned painting on its own, or reference and painting in one image
+  // (side by side for an upright or square reference, one above the other
+  // for a wide one), at working resolution, in black & white when values
+  // mode is on. The JPEGs are made when the dialog opens, so the share
+  // sheet can open straight from the tap that chooses one (iOS only allows
+  // it within a tap).
+  var saveFiles = null, saveSeq = 0;
+  function grayCopy(im){
+    var c = document.createElement("canvas"); c.width = im.w; c.height = im.h;
+    var ctx = c.getContext("2d");
+    ctx.drawImage(im.canvas, 0, 0);
+    if(state.grayscale){
+      var img = ctx.getImageData(0, 0, im.w, im.h), d = img.data;
+      for(var i=0;i<d.length;i+=4){ var y = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]; d[i] = d[i+1] = d[i+2] = y; }
+      ctx.putImageData(img, 0, 0);
+    }
+    return c;
+  }
+  function paintingCanvas(){
+    var c = grayCopy(state.aligned), ctx = c.getContext("2d");
+    // the warp leaves any area outside the photo transparent: JPEG would
+    // make it black, so it goes on the app's background colour instead
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
+    return c;
+  }
+  function sideBySideCanvas(){
+    var w = state.ref.w, h = state.ref.h, row = w <= h, gap = Math.round(0.02*Math.max(w, h));
+    var c = document.createElement("canvas");
+    c.width = row ? 2*w + gap : w; c.height = row ? h : 2*h + gap;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(grayCopy(state.ref), 0, 0);
+    ctx.drawImage(paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap);
+    return c;
+  }
+  function fileStamp(){
+    var d = new Date(), p = function(n){ return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
+  }
+  function openSave(){
+    if(!state.ref || !state.aligned) return;
+    var seq = ++saveSeq;
+    saveFiles = null;
+    savePaintingBtn.disabled = saveSideBtn.disabled = true;
+    savePaintingBtn.textContent = saveSideBtn.textContent = "Preparing…";
+    saveNote.textContent = state.grayscale ? "In black & white, since values mode is on." : "";
+    saveModal.classList.add("show");
+    var stamp = fileStamp();
+    // let the dialog draw before the (brief) work of making the images
+    requestAnimationFrame(function(){ setTimeout(function(){
+      if(seq !== saveSeq) return;
+      Promise.all([
+        canvasToBlob(paintingCanvas(), "image/jpeg", 0.92),
+        canvasToBlob(sideBySideCanvas(), "image/jpeg", 0.92)
+      ]).then(function(b){
+        if(seq !== saveSeq) return;
+        saveFiles = {
+          painting: new File([b[0]], "comp-art-painting-" + stamp + ".jpg", { type: "image/jpeg" }),
+          side: new File([b[1]], "comp-art-side-by-side-" + stamp + ".jpg", { type: "image/jpeg" })
+        };
+        savePaintingBtn.textContent = "Painting photo";
+        saveSideBtn.textContent = "Reference and painting side by side";
+        savePaintingBtn.disabled = saveSideBtn.disabled = false;
+      }).catch(function(){
+        if(seq !== saveSeq) return;
+        closeSave();
+        toast("The images couldn't be made. Try again.");
+      });
+    }, 0); });
+  }
+  function closeSave(){ saveSeq++; saveModal.classList.remove("show"); }
+  // iPad (and other touch devices): the share sheet, with "Save Image" for
+  // Photos. Elsewhere, or if sharing isn't possible: a download.
+  function deliver(file){
+    var touch = navigator.maxTouchPoints > 0;
+    if(touch && navigator.canShare && navigator.canShare({ files: [file] })){
+      navigator.share({ files: [file] }).catch(function(e){ if(!e || e.name !== "AbortError") download(file); });
+    } else {
+      download(file);
+    }
+  }
+  function download(file){
+    var url = URL.createObjectURL(file), a = document.createElement("a");
+    a.href = url; a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+  saveBtn.addEventListener("click", openSave);
+  savePaintingBtn.addEventListener("click", function(){ if(saveFiles){ var f = saveFiles.painting; closeSave(); deliver(f); } });
+  saveSideBtn.addEventListener("click", function(){ if(saveFiles){ var f = saveFiles.side; closeSave(); deliver(f); } });
+  saveCancel.addEventListener("click", closeSave);
+  saveModal.addEventListener("click", function(e){ if(e.target === saveModal) closeSave(); });
 
   function restart(){
     state.ref = null; state.photo = null; state.aligned = null;
