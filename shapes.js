@@ -203,9 +203,10 @@
   // Accents are then handled on the photo's own colours, since heavy
   // smoothing has already mixed a small orange face into the grey head: a
   // strongly coloured patch far from every palette colour gets one of its
-  // own (up to two), and strongly coloured pixels are placed by their own
-  // colour rather than the smoothed one.
-  function palette(sm, im, n, k, cw, weight, accent){
+  // own (up to maxAcc), and strongly coloured pixels are placed by their
+  // own colour rather than the smoothed one. The photo's lightest and
+  // darkest values are always on the palette (see below).
+  function palette(sm, im, n, k, cw, weight, accent, maxAcc){
     var stride = Math.max(1, Math.ceil(n/60000)), m = Math.ceil(n/stride);
     var X = new Float32Array(m*3), Xo = new Float32Array(m*3), Wt = new Float32Array(m), Ac = new Uint8Array(m);
     for(var j=0, i=0; j<m; j++, i+=stride){
@@ -232,11 +233,12 @@
       }
       for(c=0;c<k;c++) if(S[c][3]) C[c] = [S[c][0]/S[c][3], S[c][1]/S[c][3], S[c][2]/S[c][3]];
     }
+    var pop = S.map(function(s){ return s[3]; });   // weight each colour covers
     // accents (judged and placed on the photo's own colours): among the
     // strongly coloured pixels far from every palette colour, the densest
     // cluster becomes a colour of its own
     var FAR = 400, NEAR = 225, few = 0.001*m;   // ΔE 20 and 15
-    for(var extra=0; extra<2; extra++){
+    for(var extra=0; extra<maxAcc; extra++){
       var far = [];
       for(j=0;j<m;j++){
         if(!Ac[j]) continue;
@@ -255,19 +257,49 @@
       for(v=0;v<far.length;v++) if(d2(Xo, far[v], cb) < NEAR){ acc[0] += Xo[far[v]*3]; acc[1] += Xo[far[v]*3+1]; acc[2] += Xo[far[v]*3+2]; acc[3]++; }
       C.push([acc[0]/acc[3], acc[1]/acc[3], acc[2]/acc[3]]);
     }
-    // the darkest darks and lightest lights: anything of some size beyond
-    // the palette's range of value gets its own colour, since a painter
-    // wants those on the palette before anything else
-    var lo = Infinity, hi = -Infinity;
-    for(c=0;c<C.length;c++){ lo = Math.min(lo, C[c][0]); hi = Math.max(hi, C[c][0]); }
-    [[-1, lo - 12], [1, hi + 12]].forEach(function(edge){
-      var acc = [0,0,0,0];
-      for(var j=0;j<m;j++){ var L = X[j*3]; if(edge[0] < 0 ? L < edge[1] : L > edge[1]){ acc[0] += L; acc[1] += X[j*3+1]; acc[2] += X[j*3+2]; acc[3]++; } }
-      if(acc[3] >= few) C.push([acc[0]/acc[3], acc[1]/acc[3], acc[2]/acc[3]]);
+    var special = new Array(C.length).fill(0);
+    for(c=k;c<C.length;c++){ special[c] = 1; pop[c] = Infinity; }   // colour accents
+    // The lightest and darkest values in the photo are always on the
+    // palette, whatever the number of colours (a painter puts them out
+    // first): the average of the photo's own darkest and lightest 0.2% of
+    // pixels, unsmoothed, so a pupil or a highlight isn't averaged away.
+    // A palette colour already close to one (ΔE 6) becomes it; otherwise
+    // it's added.
+    var Ls = new Float32Array(m); for(j=0;j<m;j++) Ls[j] = Xo[j*3];
+    Ls.sort();
+    var q = Math.max(1, Math.round(0.002*m)), darkThr = Ls[q-1], lightThr = Ls[m-q];
+    var extremeLin = new Array(C.length).fill(null);   // per palette colour: the extreme's own colour (linear RGB)
+    [true, false].forEach(function(dark){
+      var acc = [0,0,0,0], lin = [0,0,0];
+      for(var j=0;j<m;j++){
+        var L = Xo[j*3];
+        if(dark ? L <= darkThr : L >= lightThr){
+          acc[0] += L; acc[1] += Xo[j*3+1]; acc[2] += Xo[j*3+2]; acc[3]++;
+          var i = j*stride; lin[0] += im.lr[i]; lin[1] += im.lg[i]; lin[2] += im.lb[i];
+        }
+      }
+      var E = [acc[0]/acc[3], acc[1]/acc[3], acc[2]/acc[3]], near = -1, nd = 36;
+      for(var c=0;c<C.length;c++){
+        if(special[c] === 2) continue;
+        var dl = C[c][0]-E[0], da = C[c][1]-E[1], db = C[c][2]-E[2], d = dl*dl + da*da + db*db;
+        if(d < nd){ nd = d; near = c; }
+      }
+      if(near < 0){ C.push(E); special.push(0); pop.push(0); extremeLin.push(null); near = C.length - 1; }
+      C[near] = E; special[near] = 2; pop[near] = Infinity;
+      extremeLin[near] = [lin[0]/acc[3], lin[1]/acc[3], lin[2]/acc[3]];
     });
+    // back to the number asked for: the least-used ordinary colours make
+    // way for the accents and extremes
+    while(C.length > k){
+      var worst = -1, wp = Infinity;
+      for(c=0;c<C.length;c++) if(!special[c] && pop[c] < wp){ wp = pop[c]; worst = c; }
+      if(worst < 0) break;
+      C.splice(worst, 1); special.splice(worst, 1); pop.splice(worst, 1); extremeLin.splice(worst, 1);
+    }
     var out = new Int32Array(n), K = C.length;
     for(i=0;i<n;i++){
-      var own = accent && accent[i], P = own ? im : sm;
+      // strong colours and the photo's extremes go by their own colour
+      var own = (accent && accent[i]) || im.L[i] <= darkThr || im.L[i] >= lightThr, P = own ? im : sm;
       var l = P.L[i], a = P.A[i]*cw, b2 = P.B[i]*cw; bd = Infinity; bc = 0;
       for(c=0;c<K;c++){ var cc = C[c], dl = l-cc[0], da = a-cc[1], db = b2-cc[2]; d = dl*dl + da*da + db*db; if(d < bd){ bd = d; bc = c; } }
       out[i] = bc;
@@ -284,7 +316,7 @@
       }
       return o;
     }
-    return { lab: out, chroma: chroma, base: k, assign: assign };
+    return { lab: out, chroma: chroma, special: special, extremeLin: extremeLin, assign: assign };
   }
   // Majority filter for a map with few labels (window 2r+1): one box-count
   // pass per label, so the radius costs nothing extra. With a subject mask,
@@ -500,16 +532,10 @@
       sm = { L: new Float32Array(n), A: new Float32Array(n), B: new Float32Array(n) };
       for(p=0;p<n;p++){ var f = focus[p]; sm.L[p] = smH.L[p] + (smL.L[p] - smH.L[p])*f; sm.A[p] = smH.A[p] + (smL.A[p] - smH.A[p])*f; sm.B[p] = smH.B[p] + (smL.B[p] - smH.B[p])*f; }
     }
-    // the accents come on top of the base count; take them out of the
-    // base so the total is the number asked for (a few tries, since the
-    // accents found can change with the base)
-    var pal, base = k;
-    for(var tries=0; tries<3; tries++){
-      pal = palette(sm, im, n, base, values ? 0 : 1, S.weight, S.accent);
-      var total = pal.chroma.length;
-      if(total === k || k - (total - base) < 3) break;
-      base = k - (total - base);
-    }
+    // exactly k colours, the accents and the two extremes among them;
+    // colour accents are limited so at least three ordinary colours remain
+    var maxAcc = Math.max(0, Math.min(2, k - 5));
+    var pal = palette(sm, im, n, k, values ? 0 : 1, S.weight, S.accent, maxAcc);
     var lab = pal.lab, K = pal.chroma.length;
     // The subject's silhouette is a line no mass crosses: inside it the
     // palette colours are separate masses (ids K..2K-1) from the same
@@ -517,6 +543,7 @@
     // beak the colour of the snow behind it still keeps its edge.
     k = mask ? 2*K : K;
     if(mask) for(p=0;p<n;p++) if(mask[p]) lab[p] += K;
+    var lab0 = lab.slice();         // before the clean-up, to bring back an extreme it erased
     var mr = Math.max(1, Math.round(long/320*lerp(2, 0.5, t))), mrL = Math.max(1, Math.round(mr/3));
     var labH = majorityK(w, h, majorityK(w, h, lab, k, mr, mask, K), k, mr, mask, K);
     if(mrL < mr){
@@ -524,15 +551,31 @@
       for(p=0;p<n;p++) labH[p] = focus[p] > 0.5 ? labL[p] : labH[p];
     }
     lab = labH;
-    // an accent is kept at a sixth the size of a neutral mass, and any
-    // strongly coloured mass at a quarter
+    // an accent is kept at a sixth the size of a neutral mass, the lightest
+    // and darkest at a twentieth, and any strongly coloured mass at a quarter
     var minSize = new Float32Array(k), group = new Int32Array(k), unit = n*0.0026*Math.pow(0.00008/0.0026, t);   // smallest mass: geometric, so each step matters
     for(var c=0;c<k;c++){
-      var g = c % K; group[c] = g;
-      minSize[c] = unit*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
+      var g = c % K, sp = pal.special[g]; group[c] = g;
+      minSize[c] = unit*(sp === 2 ? 1/20 : sp === 1 ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);
     }
     absorbSpecks(lab, w, h, minSize, focus, mask);
+    // every paint stays on the palette even if the clean-up erased all of
+    // its masses (the count asked for is exact): its own pixels come back
+    var seen = new Uint8Array(K);
+    for(p=0;p<n;p++) seen[lab[p] % K] = 1;
+    for(g=0;g<K;g++){
+      if(seen[g]) continue;
+      for(p=0;p<n;p++) if(lab0[p] % K === g) lab[p] = lab0[p];
+    }
     var R = finish(im, lab, 1, group);
+    // The lightest and darkest paints show the photo's own extremes, not
+    // the average of their masses (which the clean-up merges with lighter
+    // or darker neighbours).
+    pal.extremeLin.forEach(function(e, g){
+      var j = R.gpaint[g];
+      if(!e || j === undefined || j < 0) return;
+      R.paintColors[j*3] = e[0]; R.paintColors[j*3+1] = e[1]; R.paintColors[j*3+2] = e[2];
+    });
     // for the brush strokes: the fur direction, and, in focus, the paint
     // nearest the photo's own colour at each pixel (lightly smoothed), so
     // the fine strokes can put back detail the mass clean-up took out

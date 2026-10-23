@@ -281,7 +281,7 @@ input[type=file]{ display:none; }
 #shapesPhoto.gray{ filter: grayscale(1) contrast(1.03); }
 #enhanceRow.disabled{ opacity:0.4; }
 .ctrl-row[hidden]{ display:none; }
-/* block-in: the palette as swatches, biggest coverage first */
+/* block-in: the palette as swatches, lightest to darkest */
 .palette{ display:flex; flex-wrap:wrap; gap:5px; }
 .palette[hidden]{ display:none; }
 .palette-sw{ width:26px; height:26px; padding:0; border:1px solid var(--line); border-radius:6px; }

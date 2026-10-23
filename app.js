@@ -1257,8 +1257,8 @@
     renderShapeReadout();
   }
 
-  // block-in: the palette as swatches, biggest coverage first; tap one to
-  // see where that mixture goes
+  // block-in: the palette as swatches, lightest to darkest; tap one to see
+  // where that mixture goes
   var paletteKey = null;
   function renderPalette(){
     var R = state.shapesResult, on = !!R;
@@ -1269,7 +1269,8 @@
     if(key === paletteKey) return;
     paletteKey = key;
     var order = []; for(var g=0;g<R.paints;g++) order.push(g);
-    order.sort(function(a, b){ return R.paintSizes[b] - R.paintSizes[a]; });
+    function lum(g){ return 0.2126*R.paintColors[g*3] + 0.7152*R.paintColors[g*3+1] + 0.0722*R.paintColors[g*3+2]; }
+    order.sort(function(a, b){ return lum(b) - lum(a); });
     paletteRow.innerHTML = "";
     order.forEach(function(g){
       var sw = document.createElement("button");
