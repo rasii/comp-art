@@ -3,8 +3,7 @@
 A small web app for painters: photograph your painting, line it up with the
 reference photo, then compare the two — overlay with peek and opacity, side by
 side, black & white for values, and a Munsell colour readout at any spot.
-The Shapes tab breaks the reference into its big shapes (by value, or value
-and colour); the Block-in tab paints it with a limited palette, as flat
+The Block-in tab paints the reference with a limited palette, as flat
 masses or brush strokes along the fur, with more detail where the photo is
 in focus. "Mix" suggests a recipe from your own paints for any colour you
 read.
@@ -23,8 +22,8 @@ saved to the home screen, but works on any modern browser.
 | `warp-worker.js` | Runs the warp off the main thread |
 | `detect.js` | Finds the canvas in the painting photo (whole-photo guess, and snapping rough points to the edges) |
 | `detect-worker.js` | Runs detection off the main thread |
-| `shapes.js` | The Shapes breakdown (big areas merged by similarity) and the Block-in one (a limited palette, focus-aware, with the subject's silhouette kept); also the colour-intensity scaling |
-| `shapes-worker.js` | Runs both breakdowns off the main thread |
+| `shapes.js` | The Block-in breakdown (a limited palette, focus-aware, with the subject's silhouette kept); also the colour-intensity scaling |
+| `shapes-worker.js` | Runs the breakdown off the main thread |
 | `mix.js` | Paint recipes: the palette, and the search for the mix of your paints closest to a colour |
 | `mixbox.js` | [Mixbox](https://github.com/scrtwpns/mixbox) pigment-mixing model by Secret Weapons (Šárka Sochorová, Ondřej Jamriška), used unmodified under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — non-commercial use only |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |

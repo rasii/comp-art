@@ -1,22 +1,19 @@
-// Big-shape analysis of a photo: groups it into a chosen number of large
-// areas of similar value (and, in colour mode, colour), the way a painter
-// blocks in a subject before any detail.
+// Block-in analysis of a photo: the reference covered with a limited
+// palette, the way a painter blocks in a subject before any detail.
 //
 //   1. Lab colour, smoothed with a Kuwahara filter (removes fur/grass
-//      texture but keeps edges)
-//   2. k-means into fine colour/value groups, split into connected areas
-//   3. areas merged step by step, most similar first (Ward cost, weighted
-//      toward value; specks and blurry areas merge sooner). The full merge
-//      order is recorded once, so any number of shapes is a quick replay.
-//   4. per result: boundary clean-up, optional "background as one shape"
-//      (everything out of focus), average colours, and outlines simplified
-//      to straight segments
+//      texture but keeps edges), less where the photo is in focus
+//   2. a palette of the chosen size (weighted k-means, with accents for a
+//      strong colour, the darkest dark and the lightest light)
+//   3. every pixel takes its nearest paint; the subject's silhouette (from
+//      the focus map) is a line no mass crosses; edges are rounded and
+//      specks absorbed
+//   4. per result: each mass's colour and outline, plus the stroke
+//      directions for the app's brush strokes
 //
-// Block-in (Analyzer.blocks) is the other breakdown: the photo covered with
-// a limited palette, as flat masses or (in the app) brush strokes along the
-// fur, from a colour count and a broad-to-fine detail setting.
-//
-// Plain functions on RGBA buffers: runs in shapes-worker.js or the page.
+// Also the colour-intensity scaling (OKLab chroma) for the masses and the
+// photo. Plain functions on RGBA buffers: runs in shapes-worker.js or the
+// page.
 (function(root){
   "use strict";
 
@@ -87,125 +84,7 @@
     return out;
   }
 
-  // ---------------- k-means (cw = weight of colour vs value) ----------------
-  function kmeans(sm, n, k, cw){
-    var order = new Uint32Array(n); for(var i=0;i<n;i++) order[i] = i;
-    var Ls = sm.L;
-    order.sort(function(a, b){ return Ls[a] - Ls[b]; });
-    var C = [];
-    for(var j=0;j<k;j++){ var q = order[Math.floor((j+0.5)/k*n)]; C.push([sm.L[q], sm.A[q]*cw, sm.B[q]*cw]); }
-    var lbl = new Uint8Array(n);
-    for(var it=0; it<12; it++){
-      var S = []; for(j=0;j<k;j++) S.push([0,0,0,0]);
-      for(i=0;i<n;i++){
-        var l = sm.L[i], a = sm.A[i]*cw, b = sm.B[i]*cw, bd = Infinity, bj = 0;
-        for(j=0;j<k;j++){ var c = C[j], d = (l-c[0])*(l-c[0]) + (a-c[1])*(a-c[1]) + (b-c[2])*(b-c[2]); if(d < bd){ bd = d; bj = j; } }
-        lbl[i] = bj; var s = S[bj]; s[0] += l; s[1] += a; s[2] += b; s[3]++;
-      }
-      for(j=0;j<k;j++) if(S[j][3]) C[j] = [S[j][0]/S[j][3], S[j][1]/S[j][3], S[j][2]/S[j][3]];
-    }
-    return lbl;
-  }
-
-  // ---------------- a small binary heap ----------------
-  function Heap(){ this.a = []; }
-  Heap.prototype.push = function(e){
-    var a = this.a; a.push(e); var i = a.length - 1;
-    while(i > 0){ var pi = (i-1) >> 1; if(a[pi].c <= e.c) break; a[i] = a[pi]; i = pi; }
-    a[i] = e;
-  };
-  Heap.prototype.pop = function(){
-    var a = this.a, top = a[0], last = a.pop();
-    if(a.length){
-      var i = 0, n = a.length;
-      while(true){
-        var l = 2*i + 1, r = l + 1, m = -1, mc = last.c;
-        if(l < n && a[l].c < mc){ m = l; mc = a[l].c; }
-        if(r < n && a[r].c < mc){ m = r; }
-        if(m < 0) break;
-        a[i] = a[m]; i = m;
-      }
-      a[i] = last;
-    }
-    return top;
-  };
-
-  // ---------------- the merge order ----------------
-  // Connected areas of the k-means groups, then repeatedly the cheapest
-  // adjacent pair is merged and recorded, down to two areas.
-  function buildHierarchy(im, sm, sharp, values){
-    var w = im.w, h = im.h, n = w*h;
-    var cw = values ? 0 : 0.6;                   // colour counts, but value counts more
-    var lbl = kmeans(sm, n, 16, cw);
-    var comp = new Int32Array(n).fill(-1), R = [], stack = new Int32Array(n);
-    for(var s=0;s<n;s++){
-      if(comp[s] >= 0) continue;
-      var id = R.length, sp = 0; stack[sp++] = s; comp[s] = id;
-      var r = { size: 0, sL: 0, sA: 0, sB: 0, sS: 0, adj: new Map(), alive: true, ver: 0 };
-      while(sp){
-        var p = stack[--sp], x = p % w, y = (p / w) | 0;
-        r.size++; r.sL += sm.L[p]; r.sA += sm.A[p]; r.sB += sm.B[p]; r.sS += sharp[p];
-        if(x > 0 && comp[p-1] < 0 && lbl[p-1] === lbl[s]){ comp[p-1] = id; stack[sp++] = p-1; }
-        if(x < w-1 && comp[p+1] < 0 && lbl[p+1] === lbl[s]){ comp[p+1] = id; stack[sp++] = p+1; }
-        if(y > 0 && comp[p-w] < 0 && lbl[p-w] === lbl[s]){ comp[p-w] = id; stack[sp++] = p-w; }
-        if(y < h-1 && comp[p+w] < 0 && lbl[p+w] === lbl[s]){ comp[p+w] = id; stack[sp++] = p+w; }
-      }
-      R.push(r);
-    }
-    for(p=0;p<n;p++){
-      x = p % w;
-      if(x < w-1){ var a = comp[p], b = comp[p+1]; if(a !== b){ R[a].adj.set(b, 1); R[b].adj.set(a, 1); } }
-      if(p + w < n){ a = comp[p]; b = comp[p+w]; if(a !== b){ R[a].adj.set(b, 1); R[b].adj.set(a, 1); } }
-    }
-    var tiny = 0.0015*n;
-    function cost(i, j){
-      var A = R[i], Bq = R[j];
-      var dL = A.sL/A.size - Bq.sL/Bq.size, dA = (A.sA/A.size - Bq.sA/Bq.size)*cw, dB = (A.sB/A.size - Bq.sB/Bq.size)*cw;
-      var c = (dL*dL + dA*dA + dB*dB)*A.size*Bq.size/(A.size + Bq.size);
-      var sh = Math.max(A.sS/A.size, Bq.sS/Bq.size);
-      c *= Math.pow(Math.min(1, sh/0.35), 2);      // blurry areas merge sooner
-      if(A.size < tiny || Bq.size < tiny) c *= 0.05; // specks first
-      return c;
-    }
-    var heap = new Heap();
-    for(i=0;i<R.length;i++) R[i].adj.forEach(function(_, j){ if(j > i) heap.push({ c: cost(i, j), a: i, b: j, va: 0, vb: 0 }); });
-    var merges = [], alive = R.length;
-    while(alive > 2 && heap.a.length){
-      var e = heap.pop(), A = R[e.a], Bq = R[e.b];
-      if(!A.alive || !Bq.alive || A.ver !== e.va || Bq.ver !== e.vb) continue;
-      // merge b into a
-      A.size += Bq.size; A.sL += Bq.sL; A.sA += Bq.sA; A.sB += Bq.sB; A.sS += Bq.sS;
-      Bq.alive = false; A.ver++;
-      Bq.adj.forEach(function(_, q){ if(q !== e.a){ A.adj.set(q, 1); R[q].adj.delete(e.b); R[q].adj.set(e.a, 1); } });
-      A.adj.delete(e.b);
-      merges.push(e.a, e.b); alive--;
-      A.adj.forEach(function(_, q){ if(R[q].alive) heap.push({ c: cost(e.a, q), a: e.a, b: q, va: A.ver, vb: R[q].ver }); });
-    }
-    return { comp: comp, initial: R.length, merges: merges };
-  }
-
-  // ---------------- per-result helpers ----------------
-  // Majority filter on the region map (window 2r+1): each pixel joins the
-  // shape most of its neighbours belong to, which tidies ragged boundaries
-  // (fur, grass) into clean ones.
-  function majority(w, h, lab, r){
-    var out = new Int32Array(w*h), ids = new Int32Array((2*r+1)*(2*r+1)), cnts = new Int32Array(ids.length);
-    for(var y=0;y<h;y++) for(var x=0;x<w;x++){
-      var n = 0;
-      for(var dy=-r;dy<=r;dy++){ var yy = y+dy; if(yy < 0 || yy >= h) continue;
-        for(var dx=-r;dx<=r;dx++){ var xx = x+dx; if(xx < 0 || xx >= w) continue;
-          var v = lab[yy*w + xx], j = 0;
-          while(j < n && ids[j] !== v) j++;
-          if(j === n){ ids[n] = v; cnts[n] = 0; n++; }
-          cnts[j]++;
-        } }
-      var c0 = lab[y*w + x], best = c0, bc = 0;
-      for(var i=0;i<n;i++) if(cnts[i] > bc || (cnts[i] === bc && ids[i] === c0)){ bc = cnts[i]; best = ids[i]; }
-      out[y*w + x] = best;
-    }
-    return out;
-  }
-
+  // ---------------- outlines ----------------
   // Outline of one connected piece of a region (Moore neighbour tracing),
   // starting from its top-left pixel.
   var DX = [1,1,0,-1,-1,-1,0,1], DY = [0,1,1,1,0,-1,-1,-1];
@@ -243,14 +122,9 @@
   }
 
   // ---------------- the analyser ----------------
-  // smoothing: strength of the texture-flattening step (default 2.5, tuned
-  // against an artist's own shape breakdown of an elk photo: strong enough
-  // that fur patches join into the head's big planes)
-  function Analyzer(rgba, w, h, smoothing){
+  function Analyzer(rgba, w, h){
     this.im = toLab(rgba, w, h);
-    this.r0 = Math.max(2, Math.round(Math.max(w, h)/160*(smoothing || 2.5)));   // the Shapes tab's smoothing radius
     this.sharp = sharpness(this.im, Math.max(3, Math.round(Math.max(w, h)/100)));
-    this.hier = {};
     this.smooth = [];    // the last few Kuwahara results, by radius (each is ~3 floats per pixel)
   }
   Analyzer.prototype.smoothAt = function(r){
@@ -262,47 +136,6 @@
     if(this.smooth.length > 4) this.smooth.shift();
     return sm;
   };
-  // values: group by value only. count: number of shapes. bgOne: merge
-  // everything out of focus into one background shape. opts (optional):
-  // smooth = majority passes, straight = outline simplification factor.
-  Analyzer.prototype.compute = function(values, count, bgOne, opts){
-    opts = opts || {};
-    var im = this.im, w = im.w, h = im.h, n = w*h, key = values ? "v" : "c";
-    var H = this.hier[key] || (this.hier[key] = buildHierarchy(im, this.smoothAt(this.r0), this.sharp, values));
-    // replay merges down to `count` areas
-    var parent = new Int32Array(H.initial);
-    for(var i=0;i<H.initial;i++) parent[i] = i;
-    function find(i){ while(parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; }
-    var steps = Math.max(0, Math.min(H.merges.length/2, H.initial - count));
-    for(i=0;i<steps;i++) parent[H.merges[i*2+1]] = H.merges[i*2];
-    var lab = new Int32Array(n);
-    for(var p=0;p<n;p++) lab[p] = find(H.comp[p]);
-    var mr = Math.max(1, Math.round(Math.max(w, h)/320)), passes = opts.smooth || 3;
-    for(var pass=0; pass<passes; pass++) lab = majority(w, h, lab, mr);
-
-    // Background as one shape: the largest out-of-focus area, joined by the
-    // other out-of-focus areas that are close to it in value. (A blurry
-    // backdrop of dark foliage and a slightly lighter trunk becomes one
-    // shape; a smooth bright sky and a darker sea stay separate.)
-    if(bgOne){
-      var sum = new Map(), sumL = new Map(), cnt = new Map();
-      for(p=0;p<n;p++){
-        var r = lab[p];
-        sum.set(r, (sum.get(r) || 0) + this.sharp[p]); sumL.set(r, (sumL.get(r) || 0) + im.L[p]); cnt.set(r, (cnt.get(r) || 0) + 1);
-      }
-      var blurry = [];
-      cnt.forEach(function(c, r){ if(sum.get(r)/c < 0.18 && c > 0.01*n) blurry.push({ r: r, size: c, L: sumL.get(r)/c }); });
-      if(blurry.length > 1){
-        blurry.sort(function(a, b){ return b.size - a.size; });
-        var anchor = blurry[0], isBg = new Set();
-        blurry.forEach(function(b){ if(Math.abs(b.L - anchor.L) <= 28) isBg.add(b.r); });
-        if(isBg.size > 1) for(p=0;p<n;p++) if(isBg.has(lab[p])) lab[p] = anchor.r;
-      }
-    }
-
-    return finish(im, lab, opts.straight || 2);
-  };
-
   // A result from a region map: ids compacted, each region's average colour
   // (from the original photo, linear RGB) and size, and the outline of every
   // connected piece straightened to segments within `straight` of the edge.

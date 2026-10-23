@@ -46,7 +46,6 @@
     <button data-mode="align" class="active">Align</button>
     <button data-mode="compare" disabled>Compare</button>
     <button data-mode="side" disabled>Side by side</button>
-    <button data-mode="shapes" disabled>Shapes</button>
     <button data-mode="blocks" disabled>Block-in</button>
   </nav>
 
@@ -207,8 +206,8 @@
   </section>
 
   <!-- ===================== SHAPES VIEW ===================== -->
-  <!-- the reference broken down: big shapes (Shapes tab) or a limited
-       palette of flat masses (Block-in tab). One view, two methods. -->
+  <!-- the reference blocked in with a limited palette: flat masses, or
+       brush strokes along the fur -->
   <section id="view-shapes" style="display:none;">
    <div class="step">
     <div class="fit">
@@ -225,14 +224,7 @@
     </div>
     <div class="controls">
       <div class="panel">
-        <div class="ctrl-row opacity-row" id="countRow">
-          <div class="ctrl-label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
-            Shapes <span class="shapes-count" id="shapesCount"></span>
-          </div>
-          <input type="range" id="shapesSlider" min="8" max="80" value="30" aria-label="Number of shapes">
-        </div>
-        <div class="ctrl-row opacity-row" id="detailRow" hidden>
+        <div class="ctrl-row opacity-row" id="detailRow">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M3 4h8v7H3zM13 4h8v4h-8zM13 10h8v10h-8zM3 13h8v7H3z"/></svg>
             Detail <span class="shapes-count" id="detailLabel"></span>
@@ -242,9 +234,9 @@
         <div class="ctrl-row opacity-row">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
-            Shapes opacity
+            Block-in opacity
           </div>
-          <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Shapes opacity">
+          <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Block-in opacity over the photo">
         </div>
         <div class="ctrl-row opacity-row" id="chromaRow">
           <div class="ctrl-label">
@@ -258,15 +250,11 @@
 
         <div class="ctrl-row">
           <div class="ctrl-label">Outlines</div>
-          <button class="switch on" id="outlinesSwitch" aria-label="Show outlines"></button>
+          <button class="switch" id="outlinesSwitch" aria-label="Show outlines"></button>
         </div>
         <div class="ctrl-row">
           <div class="ctrl-label">Average colour</div>
-          <button class="switch" id="fillSwitch" aria-label="Fill shapes with their average colour"></button>
-        </div>
-        <div class="ctrl-row" id="bgOneRow">
-          <div class="ctrl-label">Background as one shape</div>
-          <button class="switch on" id="bgOneSwitch" aria-label="Treat the out-of-focus background as one shape"></button>
+          <button class="switch on" id="fillSwitch" aria-label="Fill the masses with their paint colour"></button>
         </div>
         <div class="ctrl-row" id="enhanceRow">
           <div class="ctrl-label">Show colour intensity on the photo</div>
@@ -275,7 +263,7 @@
 
         <div class="divider"></div>
 
-        <div class="ctrl-row opacity-row" id="coloursRow" hidden>
+        <div class="ctrl-row opacity-row" id="coloursRow">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2s-1-1.5-1-2.5c0-1 1-1.5 2-1.5h2a4 4 0 0 0 4-4c0-4.5-4-8-9-8Z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="10.5" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15.5" cy="7" r="1.2" fill="currentColor" stroke="none"/></svg>
             Colours <span class="shapes-count" id="coloursLabel"></span>
@@ -283,11 +271,11 @@
           <input type="range" id="coloursSlider" min="6" max="40" value="12" aria-label="Number of colours on the palette">
         </div>
         <div class="palette" id="paletteRow" hidden></div>
-        <p class="sr-prompt" id="shapePrompt">Tap a shape to read its colour</p>
+        <p class="sr-prompt" id="shapePrompt">Tap a mass or a swatch to read its colour</p>
         <div class="shape-readout" id="shapeReadout" hidden>
           <span class="sr-swatch" id="shapeSwatch"></span>
-          <span class="sr-text"><span class="sr-name" id="shapeName">Shape</span> <span id="shapeText"></span></span>
-          <button class="mix-btn" id="shapeMixBtn" title="Recipe for this shape's colour from your paints">Mix</button>
+          <span class="sr-text"><span class="sr-name">Paint</span> <span id="shapeText"></span></span>
+          <button class="mix-btn" id="shapeMixBtn" title="Recipe for this paint from your paints">Mix</button>
         </div>
         <div class="shape-readout" id="photoReadout" hidden>
           <span class="sr-swatch" id="photoSwatch"></span>

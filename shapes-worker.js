@@ -1,6 +1,6 @@
-// Runs the big-shape analysis and the photo colour enhancement off the main
+// Runs the block-in analysis and the photo colour enhancement off the main
 // thread. Images are sent once per reference (tagged with a token); later
-// requests (number of shapes, values/colour, background, intensity) reuse them.
+// requests (colours, detail, values/colour, intensity) reuse them.
 importScripts("shapes.js");
 
 var analyzer = null, token = null;     // analysis copy of the reference
@@ -20,6 +20,6 @@ self.onmessage = function(e){
     token = m.token;
   }
   if(!analyzer || token !== m.token){ self.postMessage({ id: m.id, needPixels: true }); return; }
-  var r = m.method === "blocks" ? analyzer.blocks(m.values, m.colours, m.detail/100) : analyzer.compute(m.values, m.count, m.bgOne);
+  var r = analyzer.blocks(m.values, m.colours, m.detail/100);
   self.postMessage({ id: m.id, result: r });
 };
