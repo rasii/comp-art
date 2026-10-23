@@ -485,13 +485,15 @@
   // subject on a soft background.
   // colours: palette size (exact, accents included). detail 0..1: broad
   // to fine, through the smoothing scale and the smallest mass kept (the
-  // stroke size follows it in the app).
+  // stroke size follows it in the app). Since v2.21 the range starts where
+  // its middle used to be and goes past the old finest setting: smoothing
+  // down to a 1-pixel radius, masses down to about 20 pixels at 640.
   Analyzer.prototype.blocks = function(values, colours, detail){
     var im = this.im, w = im.w, h = im.h, n = w*h, t = Math.max(0, Math.min(1, detail)), long = Math.max(w, h), p;
     var S = this.subject(values), focus = S.focus, mask = S.mask;
 
     var k = Math.max(3, Math.round(colours));
-    var rH = Math.max(2, Math.round(long/160*lerp(3.5, 0.6, t))), rL = Math.max(2, Math.round(rH/3));
+    var rH = Math.max(1, Math.round(long/160*lerp(2.05, 0.35, t))), rL = Math.max(1, Math.round(rH/3));
     var smH = this.smoothAt(rH), sm = smH;
     if(rL < rH){
       var smL = this.smoothAt(rL);
@@ -515,7 +517,7 @@
     // beak the colour of the snow behind it still keeps its edge.
     k = mask ? 2*K : K;
     if(mask) for(p=0;p<n;p++) if(mask[p]) lab[p] += K;
-    var mr = Math.max(1, Math.round(long/320*lerp(3.5, 0.5, t))), mrL = Math.max(1, Math.round(mr/3));
+    var mr = Math.max(1, Math.round(long/320*lerp(2, 0.5, t))), mrL = Math.max(1, Math.round(mr/3));
     var labH = majorityK(w, h, majorityK(w, h, lab, k, mr, mask, K), k, mr, mask, K);
     if(mrL < mr){
       var labL = majorityK(w, h, majorityK(w, h, lab, k, mrL, mask, K), k, mrL, mask, K);
@@ -524,7 +526,7 @@
     lab = labH;
     // an accent is kept at a sixth the size of a neutral mass, and any
     // strongly coloured mass at a quarter
-    var minSize = new Float32Array(k), group = new Int32Array(k), unit = n*lerp(0.005, 0.0002, t);
+    var minSize = new Float32Array(k), group = new Int32Array(k), unit = n*0.0026*Math.pow(0.00008/0.0026, t);   // smallest mass: geometric, so each step matters
     for(var c=0;c<k;c++){
       var g = c % K; group[c] = g;
       minSize[c] = unit*(g >= pal.base ? 1/6 : pal.chroma[g] > 28 ? 0.25 : 1);

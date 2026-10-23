@@ -1177,8 +1177,8 @@
     }
     var css = []; for(var g=0;g<R.paints;g++) css.push(linCss(paintLin(R, g)));
     var w = R.w, h = R.h, sx = W/w, sy = H/h, t = (R.detail == null ? 50 : R.detail)/100;
-    var big = Math.max(w, h)/(36 + 74*t), small = big/3;    // stroke width, analysis px
-    var fineShare = Math.max(0, Math.min(1, (t - 0.15)/0.5));   // the photo-led fine strokes come in from a quarter up
+    var big = Math.max(w, h)/(73 + 67*t), small = big/3;    // stroke width, analysis px
+    var fineShare = Math.min(1, 0.7 + 0.6*t);              // share of the photo-led fine strokes: full from halfway up
     var seed = 1;
     function rnd(){ seed = (seed*1664525 + 1013904223) >>> 0; return seed/4294967296; }
     ctx.lineCap = "round";
@@ -1677,10 +1677,10 @@
       }
       if(meta.blocks && typeof meta.blocks === "object"){
         var b = meta.blocks;
-        var detail = b.detail === undefined ? 50 : clamp(Number(b.detail) || 0, 0, 100);
+        var detail = b.detail === undefined ? 50 : clamp(Math.round((Number(b.detail) || 0)/10)*10, 0, 100);   // steps of 10
         // before v2.14 one slider set both: derive the colours it implied
         var colours = b.colours === undefined ? Math.round(6*Math.pow(40/6, detail/100)) : Number(b.colours);
-        state.blocks = { colours: clamp(colours || 12, 6, 40), detail: detail, outlines: !!b.outlines, fill: b.fill !== false };
+        state.blocks = { colours: clamp(Math.round((colours || 12)/2)*2, 6, 40), detail: detail, outlines: !!b.outlines, fill: b.fill !== false };   // steps of 2
       }
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
         state.ref = ref;
