@@ -56,23 +56,23 @@
     var Hinv = invert3x3(computeHomography(srcCornersPx, dstCorners));
     var oData = new Uint8ClampedArray(dstW*dstH*4);
 
+    var h0=Hinv[0], h1=Hinv[1], h2=Hinv[2], h3=Hinv[3], h4=Hinv[4], h5=Hinv[5], h6=Hinv[6], h7=Hinv[7], h8=Hinv[8];
+    var maxX = sW-1, maxY = sH-1, row = sW*4;
     for(var j=0;j<dstH;j++){
-      var Y = j + 0.5;
-      for(var i=0;i<dstW;i++){
-        var X = i + 0.5;
-        var w = Hinv[6]*X + Hinv[7]*Y + Hinv[8];
-        var sx = (Hinv[0]*X + Hinv[1]*Y + Hinv[2]) / w;
-        var sy = (Hinv[3]*X + Hinv[4]*Y + Hinv[5]) / w;
-        if(sx >= 0 && sx < sW-1 && sy >= 0 && sy < sH-1){
-          var x0 = sx|0, y0 = sy|0;
-          var fx = sx-x0, fy = sy-y0;
-          var i00=(y0*sW+x0)*4, i10=i00+4, i01=i00+sW*4, i11=i01+4;
-          var idx = (j*dstW + i) * 4;
-          for(var c=0;c<4;c++){
-            var top = sData[i00+c] + (sData[i10+c]-sData[i00+c])*fx;
-            var bot = sData[i01+c] + (sData[i11+c]-sData[i01+c])*fx;
-            oData[idx+c] = top + (bot-top)*fy;
-          }
+      // the parts that only change per row
+      var Y = j + 0.5, ay = h1*Y + h2, by = h4*Y + h5, wy = h7*Y + h8, idx = j*dstW*4;
+      for(var i=0;i<dstW;i++, idx+=4){
+        var X = i + 0.5, iw = 1/(h6*X + wy);
+        var sx = (h0*X + ay)*iw, sy = (h3*X + by)*iw;
+        if(sx >= 0 && sx < maxX && sy >= 0 && sy < maxY){
+          var x0 = sx|0, y0 = sy|0, fx = sx-x0, fy = sy-y0;
+          var w11 = fx*fy, w10 = fx-w11, w01 = fy-w11, w00 = 1-fx-fy+w11;
+          var i00=(y0*sW+x0)*4, i10=i00+4, i01=i00+row, i11=i01+4;
+          // the photo is opaque: the three colour channels, alpha set once
+          oData[idx]   = sData[i00]*w00   + sData[i10]*w10   + sData[i01]*w01   + sData[i11]*w11;
+          oData[idx+1] = sData[i00+1]*w00 + sData[i10+1]*w10 + sData[i01+1]*w01 + sData[i11+1]*w11;
+          oData[idx+2] = sData[i00+2]*w00 + sData[i10+2]*w10 + sData[i01+2]*w01 + sData[i11+2]*w11;
+          oData[idx+3] = 255;
         }
       }
     }

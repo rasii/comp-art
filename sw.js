@@ -1,7 +1,8 @@
-// Service worker: keeps a copy of the app so it opens offline (e.g. in the
-// studio without wifi). Same-origin requests go network-first so updates
-// arrive as soon as there's a connection, falling back to the cache.
-// Fonts are cached on first use.
+// Service worker: keeps a copy of the app so it opens at once, and offline
+// (e.g. in the studio without wifi). The app's files are served from the
+// cache; a new version (a new version.js makes this a new worker) is
+// fetched whole in the background and takes over on the next reload (the
+// page shows a "Reload" notice). Fonts are cached on first use.
 importScripts("version.js");
 var CACHE = "compart-" + self.APP_VERSION;
 var SHELL = [
@@ -10,7 +11,8 @@ var SHELL = [
 ];
 
 self.addEventListener("install", function(e){
-  e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL); }).then(function(){ return self.skipWaiting(); }));
+  // every file fresh from the network, so a new version can't mix in old files from the browser's cache
+  e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL.map(function(u){ return new Request(u, { cache: "reload" }); })); }).then(function(){ return self.skipWaiting(); }));
 });
 
 self.addEventListener("activate", function(e){
@@ -37,13 +39,8 @@ self.addEventListener("fetch", function(e){
     return;
   }
 
-  e.respondWith(fetch(req).then(function(res){
-    if(res && res.ok){
-      var copy = res.clone();
-      caches.open(CACHE).then(function(c){ c.put(req, copy); });
-    }
-    return res;
-  }).catch(function(){
-    return caches.match(req).then(function(hit){ return hit || caches.match("./"); });
+  e.respondWith(caches.match(req, { ignoreSearch: true }).then(function(hit){
+    if(hit) return hit;
+    return fetch(req).catch(function(){ return req.mode === "navigate" ? caches.match("./") : Response.error(); });
   }));
 });

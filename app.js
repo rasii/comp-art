@@ -159,24 +159,32 @@
   }
   function dataUrlToBlob(dataUrl){ return fetch(dataUrl).then(function(r){ return r.blob(); }); }
 
-  // Display URL for an image object, created on first use. The screen shows a
-  // high-quality JPEG of the canvas; colour readings come from the canvas itself.
-  function urlOf(im){
-    if(!im) return "";
-    if(!im.url){
-      im.url = im.canvas.toDataURL("image/jpeg", 0.95);
-    }
-    return im.url;
+  // Display URL for an image object, made once: a high-quality JPEG of the
+  // canvas, encoded without blocking the page (toBlob) and held as an object
+  // URL. Colour readings come from the canvas itself.
+  function imageUrl(im){
+    if(im.url) return Promise.resolve(im.url);
+    if(!im.urlPromise) im.urlPromise = canvasToBlob(im.canvas, "image/jpeg", 0.95).then(function(b){ im.url = URL.createObjectURL(b); return im.url; });
+    return im.urlPromise;
   }
   function setSrc(img, im){
     if(img._im === im) return;     // already showing this image
     img._im = im;
-    img.src = urlOf(im);
+    if(!im){ img.removeAttribute("src"); return; }
+    imageUrl(im).then(function(u){ if(img._im === im) img.src = u; }).catch(function(){});
+  }
+  // an image object that's no longer shown: its URL goes
+  function dropImage(im){
+    if(im && im.url){ URL.revokeObjectURL(im.url); im.url = null; }
+    if(im) im.urlPromise = null;
   }
 
   // ---------------- persistence (IndexedDB) ----------------
-  // Original photo files are stored as-is; the aligned result as PNG;
-  // corners and offsets as a small record. Failures never block the app.
+  // Original photo files are stored as-is; corners, offsets and settings as
+  // a small record. The aligned painting isn't stored: it's made again from
+  // the photo and corners when the project opens (the same pixels every
+  // time), which saves a slow PNG encode, 10 MB or more of storage and the
+  // same again in sync uploads. Failures never block the app.
   // PStore: the open project's data (Projects.scoped); palettes use Store.
   var PStore = null;
   var storeWarned = false;
@@ -187,12 +195,9 @@
   function persistMeta(){
     if(!PStore) return;
     Projects.touch(Projects.activeId());
-    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader }).catch(storeFail);
+    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader }).catch(storeFail);
   }
   function persistBlob(key, blob){ return PStore ? PStore.set(key, blob).catch(storeFail) : Promise.resolve(); }
-  function persistCanvas(key, canvas){
-    return canvasToBlob(canvas, "image/png").then(function(b){ return persistBlob(key, b); }).catch(storeFail);
-  }
 
   // ---------------- render ----------------
   // Derives every visible thing from state. Safe to call often.
@@ -500,7 +505,7 @@
     if((m === "compare" || m === "side") && !state.aligned) return;
     if(m === "blocks" && !state.ref) return;
     if(m === "progress" && !Progress.count()) return;
-    if(m === "progress" && m !== state.mode){ progIndex = Progress.count() - 1; prepareProgressFiles(); }
+    if(m === "progress" && m !== state.mode) progIndex = Progress.count() - 1;
     if(m === "compare" || m === "side") state.cmpView = m;
     if(m !== state.mode){
       state.mode = m;
@@ -548,6 +553,7 @@
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
   function useReference(f, im){
+      dropImage(state.ref); dropImage(state.photo); dropImage(state.aligned);
       state.ref = im;
       newShapesSource();
       clearProgress();
@@ -572,6 +578,7 @@
     decodeToCanvas(f, SRC_MAX).then(function(im){
       var reused = setPhoto(im, null);
       state.photoKey = Date.now().toString(36);    // a new painting photo: aligning it adds a stage
+      dropImage(state.aligned);
       state.aligned = null; state.reading = null;
       state.mode = "align";
       render();
@@ -589,6 +596,7 @@
   // else the last alignment's if the photo has the same shape (same camera,
   // same setup), else the extreme corners of the photo.
   function setPhoto(im, corners){
+    if(state.photo !== im) dropImage(state.photo);
     state.photo = im;
     var last = state.lastCorners;
     var sameShape = last && last.ar && Math.abs(last.ar - im.w/im.h) < 0.01;
@@ -885,6 +893,7 @@
     render();
     var cornersPx = cornersToPx(state.corners, state.photo.w, state.photo.h);
     warpAsync(state.photo, cornersPx, state.ref.w, state.ref.h).then(function(im){
+      dropImage(state.aligned);
       state.aligned = im;
       state.offU = 0; state.offV = 0;
       state.adjusting = false; state.opacityBeforeAdjust = null;
@@ -895,7 +904,7 @@
       state.mode = state.cmpView;
       render();
       persistMeta();
-      persistCanvas("aligned", im.canvas);
+      PStore.remove("aligned").catch(function(){});   // an older version's stored copy
       addStage(im);
     }).catch(function(){
       state.busy = false;
@@ -1765,11 +1774,14 @@
     return { when: when, since: since.trim() };
   }
 
-  // the lighting gains for every stage (small copies compared), cached
+  // the lighting gains for every stage (small copies compared: the stored
+  // thumbnails, so no full-size stage has to be decoded), cached
   function ensureGains(){
     var items = Progress.items(), key = items.map(function(it){ return it.id; }).join(",");
     if(progGains && progGainsKey === key) return Promise.resolve(progGains);
-    return Promise.all(items.map(function(it){ return Progress.blob(it.id).then(smallPixels); })).then(function(smalls){
+    return Promise.all(items.map(function(it){
+      return Progress.thumb(it.id).then(function(t){ return t ? smallPixels(t) : Progress.blob(it.id).then(smallPixels); });
+    })).then(function(smalls){
       progGains = Progress.gains(smalls); progGainsKey = key;
       return progGains;
     });
@@ -1887,8 +1899,7 @@
 
   // ---- saving: all the images, as photographed ----
   // The images have to be in hand before the tap (the share sheet only
-  // opens straight from a tap), so they're loaded whenever the tab or a
-  // "clear" question is shown.
+  // opens straight from a tap), so they're loaded when Share & export opens.
   // With "Include the reference", the reference comes too (at its
   // intensity when that switch is on, else the original file).
   var progFilesReady = false, progRefFile = null;
@@ -2670,6 +2681,7 @@
     Object.keys(progThumbs).forEach(function(id){ URL.revokeObjectURL(progThumbs[id]); });
     progUrls = {}; progThumbs = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
     progFilesReady = false; fullCache = null;
+    dropImage(state.ref); dropImage(state.photo); dropImage(state.aligned);
     state.ref = null; state.photo = null; state.aligned = null; state.photoKey = null;
     newShapesSource();
     state.corners = null; state.cornerSure = null; state.lastCorners = null;
@@ -2757,12 +2769,19 @@
         state.ref = ref;
         newShapesSource();
         var jobs = [];
+        var corners = validCorners(meta.corners) ? meta.corners : null, wasAligned = !!(meta.aligned || alignedBlob);
         if(photoBlob) jobs.push(decodeToCanvas(photoBlob, SRC_MAX).then(function(im){
           if(PStore !== ps) return;
-          setPhoto(im, validCorners(meta.corners) ? meta.corners : null);
+          setPhoto(im, corners);
           state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : state.photoKey;
+          // the aligned painting, made again from the photo and its corners
+          if(!corners || !wasAligned) return;
+          return warpAsync(im, cornersToPx(corners, im.w, im.h), ref.w, ref.h).then(function(al){
+            if(PStore === ps){ dropImage(state.aligned); state.aligned = al; }
+          });
         }).catch(function(){}));
-        if(alignedBlob) jobs.push(decodeToCanvas(alignedBlob, WORK_DIM).then(function(im){
+        // a project from before v2.37 without a usable photo: its stored copy
+        if(alignedBlob && !(photoBlob && corners)) jobs.push(decodeToCanvas(alignedBlob, WORK_DIM).then(function(im){
           if(PStore === ps) state.aligned = im;
         }).catch(function(){}));
         return Promise.all(jobs);
@@ -3216,9 +3235,21 @@
 
   // Offline support: cache the app files so the home-screen app opens
   // without a network connection.
+  // The app opens from the cache (fast, and offline); a new version is
+  // fetched in the background and offered with a "Reload" notice.
   if("serviceWorker" in navigator){
+    var updateBar = $("updateBar");
+    $("updateReload").addEventListener("click", function(){ location.reload(); });
     window.addEventListener("load", function(){
-      navigator.serviceWorker.register("sw.js").catch(function(){});
+      navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function(reg){
+        // a long-open home-screen app checks for a new version when it comes back
+        document.addEventListener("visibilitychange", function(){ if(!document.hidden) reg.update().catch(function(){}); });
+      }).catch(function(){});
+      var had = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener("controllerchange", function(){
+        if(had) updateBar.hidden = false;        // a new version has taken over: ready on reload
+        had = true;
+      });
     });
   }
 })();

@@ -41,8 +41,8 @@ screen, but works on any modern browser.
 | `mixbox.js` | [Mixbox](https://github.com/scrtwpns/mixbox) pigment-mixing model by Secret Weapons (Šárka Sochorová, Ondřej Jamriška), used unmodified under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — non-commercial use only |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
 | `munsell-data.js` | Munsell renotation chip data (RIT MCSL `real.dat`) |
-| `store.js` | IndexedDB key/value store for the photos, corners and offsets |
-| `sw.js` | Service worker so the app opens offline |
+| `store.js` | IndexedDB key/value store for the photos, corners, offsets and settings (the aligned painting isn't stored: it's made again from the photo and corners on opening) |
+| `sw.js` | Service worker: the app opens from its cache (at once, and offline); a new version installs in the background and a "Reload" notice appears |
 | `version.js` | Version string shown in the header; bump it on every release (it also names the offline cache) |
 | `apple-touch-icon.png` | Home-screen icon |
 
