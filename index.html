@@ -30,9 +30,6 @@
     <p id="stepHint">reference → painting → compare</p>
   </div>
   <div class="header-btns">
-  <button class="icon-btn" id="saveBtn" title="Save images" aria-label="Save images" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
-  </button>
   <button class="icon-btn" id="grayBtn" title="Check values (black &amp; white)" aria-label="Check values in black and white" aria-pressed="false" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
   </button>
@@ -436,20 +433,27 @@
   </div>
 </div>
 
-<!-- progress: share & export (video, contact sheet, all images) -->
+<!-- progress: share & export (this stage, with or without the reference;
+     video, contact sheet, all images) -->
 <div class="modal" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
-  <div class="modal-box">
+  <div class="modal-box export-box">
     <p class="mix-title" id="exportTitle">Share &amp; export</p>
+    <div class="ctrl-row">
+      <div class="ctrl-label">Header <span class="shapes-count">· on the saved stage and the contact sheet</span></div>
+      <button class="switch" id="progHeaderSwitch" aria-label="Put a header (the painting's name) on the saved stage and on the contact sheet"></button>
+    </div>
+    <label class="field" id="progHeaderField" hidden><span>Header</span><input type="text" id="progHeaderIn" maxlength="80" autocomplete="off" placeholder="The painting's name"></label>
+    <div class="ctrl-row">
+      <div class="ctrl-label">Include the reference</div>
+      <button class="switch" id="progRefSwitch" aria-label="Include the reference: beside the saved stage, at the end of the video and the contact sheet, and with all the images"></button>
+    </div>
+    <p class="mix-note" id="exportNote"></p>
+    <button class="btn primary full" id="progSaveStageBtn">Save this stage</button>
     <div class="ctrl-row opacity-row">
       <div class="ctrl-label">Time per photo <span class="shapes-count" id="progSpeedLabel"></span></div>
       <input type="range" id="progSpeed" min="0" max="7" step="1" value="4" aria-label="Time each photo is shown in the video">
     </div>
-    <div class="ctrl-row">
-      <div class="ctrl-label">Include the reference</div>
-      <button class="switch" id="progRefSwitch" aria-label="End the video and the contact sheet with the reference"></button>
-    </div>
-    <p class="mix-note" id="exportNote"></p>
-    <button class="btn primary full" id="progVideoBtn">Make timelapse video</button>
+    <button class="btn full" id="progVideoBtn">Make timelapse video</button>
     <button class="btn full" id="progSheetBtn">Make contact sheet</button>
     <button class="btn full" id="progSaveAllBtn">Save all images</button>
     <div class="row stretch"><button class="btn ghost" id="exportDone">Done</button></div>
@@ -469,17 +473,6 @@
       <button class="btn" id="videoClose">Cancel</button>
       <button class="btn primary" id="videoSave" disabled>Save video</button>
     </div>
-  </div>
-</div>
-
-<!-- save the aligned painting, or reference + painting in one image -->
-<div class="modal" id="saveModal" role="dialog" aria-modal="true" aria-labelledby="saveTitle">
-  <div class="modal-box">
-    <p class="mix-title" id="saveTitle">Save</p>
-    <button class="btn primary full" id="savePaintingBtn">Painting photo</button>
-    <button class="btn full" id="saveSideBtn">Reference and painting side by side</button>
-    <p class="mix-note" id="saveNote"></p>
-    <div class="row stretch"><button class="btn ghost" id="saveCancel">Cancel</button></div>
   </div>
 </div>
 

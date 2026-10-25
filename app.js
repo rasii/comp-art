@@ -50,13 +50,11 @@
   // ---------------- element refs ----------------
   var $ = function(id){ return document.getElementById(id); };
   var tabs = $("tabs"), stepHint = $("stepHint");
-  var grayBtn = $("grayBtn"), saveBtn = $("saveBtn"), menuBtn = $("menuBtn");
+  var grayBtn = $("grayBtn"), menuBtn = $("menuBtn");
   var projectBtn = $("projectBtn"), projectName = $("projectName");
   var projModal = $("projModal"), projList = $("projList"), projNewBtn = $("projNewBtn"), projDone = $("projDone");
   var nameModal = $("nameModal"), nameInput = $("nameInput"), nameOk = $("nameOk"), nameCancel = $("nameCancel"), nameTitle = $("nameTitle");
   var menuModal = $("menuModal"), menuProjects = $("menuProjects"), menuPalettes = $("menuPalettes"), menuSync = $("menuSync"), menuDone = $("menuDone");
-  var saveModal = $("saveModal"), savePaintingBtn = $("savePaintingBtn"), saveSideBtn = $("saveSideBtn");
-  var saveNote = $("saveNote"), saveCancel = $("saveCancel");
 
   var emptyStage = $("emptyStage"), setupPanel = $("setupPanel");
   var refRow = $("refRow"), curRow = $("curRow"), changeRefRow = $("changeRefRow");
@@ -189,7 +187,7 @@
   function persistMeta(){
     if(!PStore) return;
     Projects.touch(Projects.activeId());
-    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx }).catch(storeFail);
+    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader }).catch(storeFail);
   }
   function persistBlob(key, blob){ return PStore ? PStore.set(key, blob).catch(storeFail) : Promise.resolve(); }
   function persistCanvas(key, canvas){
@@ -223,7 +221,6 @@
     show(viewShapes, m === "blocks");
     show(viewProgress, m === "progress");
     grayBtn.hidden = (m === "align");
-    saveBtn.hidden = !(hasAligned && (m === "compare" || m === "side"));
     grayBtn.classList.toggle("on", state.grayscale);
     grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
 
@@ -528,19 +525,29 @@
   grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; state.shapesPick = null; render(); });
 
   // ---------------- loading photos ----------------
-  addRefBtn.addEventListener("click", function(){ refInput.click(); });
+  // forNew: the photo starts a new project, made only once a photo is picked
+  // (cancelling the picker leaves no empty project behind)
+  var refForNew = false;
+  function pickReference(forNew){ refForNew = !!forNew; refInput.click(); }
+  refInput.addEventListener("cancel", function(){ refForNew = false; });
+  addRefBtn.addEventListener("click", function(){ pickReference(false); });
   changeRefBtn.addEventListener("click", function(){
     var n = Progress.count();
-    if(!n){ refInput.click(); return; }
+    if(!n){ pickReference(false); return; }
     // the progress photos belong to this reference: a different one is a new painting
     askConfirm("This project has " + n + " progress photo" + (n > 1 ? "s" : "") + " of its reference. Start a new project with a different reference? This one is kept.",
-      "New project", function(){ newProject(true); });
+      "New project", function(){ pickReference(true); });
   });
   refInput.addEventListener("change", function(){
-    var f = refInput.files && refInput.files[0];
-    refInput.value = "";
+    var f = refInput.files && refInput.files[0], forNew = refForNew;
+    refInput.value = ""; refForNew = false;
     if(!f) return;
     decodeToCanvas(f, WORK_DIM).then(function(im){
+      if(!forNew){ useReference(f, im); return; }
+      return openProject(Projects.create()).then(function(){ persistMeta(); useReference(f, im); });
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+  function useReference(f, im){
       state.ref = im;
       newShapesSource();
       clearProgress();
@@ -554,8 +561,7 @@
       persistMeta();
       // the project's picture in the list, until it has progress photos
       thumbOf(f).then(function(t){ PStore.set("thumb", t); }).catch(function(){});
-    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
-  });
+  }
 
   addCurBtn.addEventListener("click", function(){ curInput.click(); });
   retakeBtn.addEventListener("click", function(){ curInput.click(); });
@@ -1649,7 +1655,7 @@
   var THUMB_DIM = 240;          // the thumbnail strip
   var progIndex = -1, progTimer = null, progUrls = {}, progThumbs = {}, progStripKey = null, progEven = false;
   // video / contact sheet options: time per photo (steps) and whether the reference comes last
-  var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false;
+  var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false, progHeader = false;
   function perPhoto(){ return SPEEDS[progSpeedIdx]; }
   function secs(x){ return String(x) + " s"; }
   var progGains = null, progGainsKey = null, progShownKey = null;
@@ -1857,7 +1863,10 @@
     progPlay.textContent = "Pause";
   });
   progEvenSwitch.addEventListener("click", function(){ progEven = !progEven; persistMeta(); renderProgress(); });
-  progRefSwitch.addEventListener("click", function(){ progRef = !progRef; persistMeta(); renderProgress(); });
+  progRefSwitch.addEventListener("click", function(){
+    progRef = !progRef; persistMeta(); renderProgress();
+    if(exportModal.classList.contains("show")) prepareStageFiles();
+  });
   progSpeed.addEventListener("input", function(){ progSpeedIdx = Number(progSpeed.value); renderProgress(); });
   progSpeed.addEventListener("change", persistMeta);
   progDeleteBtn.addEventListener("click", function(){
@@ -1880,8 +1889,28 @@
   // The images have to be in hand before the tap (the share sheet only
   // opens straight from a tap), so they're loaded whenever the tab or a
   // "clear" question is shown.
-  var progFilesReady = false;
-  function prepareProgressFiles(){ progFilesReady = false; return Progress.loadAll().then(function(){ progFilesReady = true; }).catch(function(){}); }
+  // With "Include the reference", the reference comes too (at its
+  // intensity when that switch is on, else the original file).
+  var progFilesReady = false, progRefFile = null;
+  function prepareProgressFiles(){
+    progFilesReady = false;
+    return Promise.all([Progress.loadAll(), referenceFile()]).then(function(r){ progRefFile = r[1]; progFilesReady = true; }).catch(function(){});
+  }
+  function referenceFile(){
+    if(!state.ref) return Promise.resolve(null);
+    var name = "comp-art-reference-" + fileStamp();
+    if(refIntensityOn()) return refForSaving().then(function(src){
+      var c = document.createElement("canvas"); c.width = state.ref.w; c.height = state.ref.h;
+      if(src.naturalWidth){ c.width = src.naturalWidth; c.height = src.naturalHeight; }
+      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+      return canvasToBlob(c, "image/jpeg", 0.92);
+    }).then(function(b){ return new File([b], name + ".jpg", { type: "image/jpeg" }); });
+    return PStore.get("ref").then(function(b){
+      if(!b) return null;
+      var ext = /png/.test(b.type) ? "png" : /heic|heif/.test(b.type) ? "heic" : /webp/.test(b.type) ? "webp" : "jpg";
+      return new File([b], name + "." + ext, { type: b.type || "image/jpeg" });
+    });
+  }
   function progressFiles(){
     var stamp = fileStamp();
     return Progress.items().map(function(it, i){
@@ -1892,6 +1921,7 @@
   function saveAllProgress(){
     var files = progressFiles();
     if(!progFilesReady || files.some(function(f){ return !f; })){ prepareProgressFiles(); toast("Getting the photos ready. Tap again in a moment."); return; }
+    if(progRef && progRefFile) files.push(progRefFile);
     deliverMany(files);
   }
   function deliverMany(files){
@@ -1907,11 +1937,112 @@
     stopPlay();
     prepareProgressFiles();
     var n = Progress.count();
-    exportNote.textContent = n + (n === 1 ? " stage" : " stages") + (progEven && n > 1 ? ", with the lighting evened out" : "") + (state.grayscale ? ", in black & white" : "") + ".";
+    var how = (progEven && n > 1 ? ", with the lighting evened out" : "") + (state.grayscale ? ", in black & white" : "");
+    exportNote.textContent = n + (n === 1 ? " stage" : " stages") + how + "." + (refNote() ? " " + refNote() : "");
+    var p = Projects.active();
+    progHeaderIn.value = p ? p.name : "";
+    renderHeaderOption();
     renderProgress();
     exportModal.classList.add("show");
+    prepareStageFiles();
   }
-  function closeExport(){ exportModal.classList.remove("show"); }
+  function closeExport(){ stageSeq++; clearTimeout(stageTimer); exportModal.classList.remove("show"); }
+
+  // ---- this stage: on its own or beside the reference, with the header ----
+  // Made as the dialog opens (and again when a switch or the header
+  // changes), so the share sheet can open straight from the tap that saves
+  // it. As shown: lighting evened out, black & white, the reference's intensity.
+  var progSaveStageBtn = $("progSaveStageBtn");
+  var progHeaderSwitch = $("progHeaderSwitch"), progHeaderField = $("progHeaderField"), progHeaderIn = $("progHeaderIn");
+  var stageFiles = null, stageSeq = 0, stageTimer = 0;
+  function headerText(){ return progHeader ? progHeaderIn.value.trim() : ""; }
+  function renderHeaderOption(){ progHeaderSwitch.classList.toggle("on", progHeader); progHeaderField.hidden = !progHeader; }
+  function stageButtons(ready){
+    var items = Progress.items(), it = items[progIndex];
+    progSaveStageBtn.disabled = !ready;
+    progSaveStageBtn.textContent = !ready ? "Preparing…" : "Save this stage" + (it ? " · " + (progIndex + 1) + " of " + items.length + ", " + new Date(it.t).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "");
+  }
+  function prepareStageFiles(){
+    var seq = ++stageSeq, items = Progress.items(), i = progIndex, it = items[i];
+    stageFiles = null; stageButtons(false);
+    if(!it || !state.ref) return;
+    var header = headerText(), withRef = progRef, gray = state.grayscale, stamp = fileStamp(), num = (i < 9 ? "0" : "") + (i + 1);
+    // let the dialog draw before the work of making the images
+    requestAnimationFrame(function(){ setTimeout(function(){
+      if(seq !== stageSeq) return;
+      Promise.all([progEven && items.length > 1 ? ensureGains() : null, Progress.blob(it.id), header ? headerFont() : null]).then(function(r){
+        var G = r[0] ? r[0][i] : null, blob = r[1];
+        if(!blob) throw new Error("missing");
+        return decodeBlob(blob).then(function(img){
+          if(seq !== stageSeq) throw new Error("closed");
+          var w = img.naturalWidth, h = img.naturalHeight, src = img;
+          if(G || gray){
+            src = document.createElement("canvas"); src.width = w; src.height = h;
+            src.getContext("2d").drawImage(img, 0, 0);
+            Progress.adjust(src, G, gray);
+          }
+          if(withRef) return referenceForSaving(w, h).then(function(ref){
+            if(seq !== stageSeq) throw new Error("closed");
+            return canvasToBlob(sideBySideCanvas(ref, { src: src, w: w, h: h }, header), "image/jpeg", 0.92);
+          });
+          if(header) return canvasToBlob(headedCanvas(src, w, h, header), "image/jpeg", 0.92);
+          // the stage's JPEG as is, unless it was changed
+          return src === img ? blob : canvasToBlob(src, "image/jpeg", 0.92);
+        });
+      }).then(function(b){
+        if(seq !== stageSeq) return;
+        stageFiles = { stage: new File([b], "comp-art-stage-" + num + (withRef ? "-with-reference-" : "-") + stamp + ".jpg", { type: "image/jpeg" }) };
+        stageButtons(true);
+      }).catch(function(){
+        if(seq !== stageSeq) return;
+        progSaveStageBtn.textContent = "Couldn't be made";
+      });
+    }, 0); });
+  }
+  progSaveStageBtn.addEventListener("click", function(){ if(stageFiles) deliver(stageFiles.stage); });
+  progHeaderSwitch.addEventListener("click", function(){
+    progHeader = !progHeader; persistMeta(); renderHeaderOption();
+    prepareStageFiles();
+    if(progHeader) setTimeout(function(){ progHeaderIn.focus(); progHeaderIn.select(); }, 50);
+  });
+  // typing: the image with the reference is made again once typing pauses
+  progHeaderIn.addEventListener("input", function(){
+    stageSeq++; stageFiles = null; stageButtons(false);
+    clearTimeout(stageTimer); stageTimer = setTimeout(prepareStageFiles, 500);
+  });
+  progHeaderIn.addEventListener("keydown", function(e){ if(e.key === "Enter") progHeaderIn.blur(); });
+
+  // The header band across the top of a saved image: its height and text
+  // size for an image W × H (sized by its area, so it reads the same on
+  // side by side, stacked and contact sheet images); drawHeader writes the text, centred, in the
+  // app's title font (smaller if it's too long for the width).
+  function headerBand(W, H){ var f = Math.max(22, Math.round(0.04*Math.sqrt(W*H))); return { font: f, h: Math.round(f*2.2) }; }
+  function drawHeader(ctx, W, band, text){
+    var f = band.font, face = "px Fraunces, Georgia, serif";
+    ctx.save();
+    ctx.fillStyle = "#EDE6D9"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = "600 " + f + face;
+    while(ctx.measureText(text).width > W*0.92 && f > 10){ f = Math.round(f*0.9); ctx.font = "600 " + f + face; }
+    ctx.fillText(text, W/2, band.h*0.54);
+    ctx.restore();
+  }
+  // a stage on its own with the header above it
+  function headedCanvas(src, w, h, header){
+    var s = Math.min(1, Math.sqrt(CANVAS_MAX/(w*(h + headerBand(w, h).h))));
+    w = Math.round(w*s); h = Math.round(h*s);
+    var band = headerBand(w, h), c = document.createElement("canvas");
+    c.width = w; c.height = h + band.h;
+    var ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
+    drawHeader(ctx, w, band, header);
+    ctx.drawImage(src, 0, band.h, w, h);
+    return c;
+  }
+  // the title font, loaded before a header is drawn (a canvas doesn't wait for it)
+  function headerFont(){
+    return (document.fonts && document.fonts.load) ? document.fonts.load("600 40px Fraunces").catch(function(){}) : Promise.resolve();
+  }
   progExportBtn.addEventListener("click", openExport);
   exportDone.addEventListener("click", closeExport);
   exportModal.addEventListener("click", function(e){ if(e.target === exportModal) closeExport(); });
@@ -1993,7 +2124,7 @@
     var items = Progress.items();
     if(!items.length || !state.ref) return;
     stopPlay();
-    var run = ++sheetRun, withRef = progRef, gray = state.grayscale, count = items.length + (withRef ? 1 : 0);
+    var run = ++sheetRun, withRef = progRef, gray = state.grayscale, count = items.length + (withRef ? 1 : 0), header = headerText();
     openResult("Making the contact sheet…", "");
     var ar = state.ref.w/state.ref.h, cols = 1, best = Infinity;
     for(var c=1; c<=count; c++){
@@ -2006,15 +2137,16 @@
     var W = cols*CW + (cols + 1)*gap, H = rowsN*(CH + cap) + (rowsN + 1)*gap;
     var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W*H)));          // within the iPad's largest canvas
     if(s < 1){ CW = Math.floor(CW*s); CH = Math.round(CW/ar); gap = Math.round(CW*0.05); cap = Math.round(Math.max(24, CW*0.1)); W = cols*CW + (cols + 1)*gap; H = rowsN*(CH + cap) + (rowsN + 1)*gap; }
-    var sheet = document.createElement("canvas"); sheet.width = W; sheet.height = H;
+    var band = header ? headerBand(W, H) : null, top = band ? band.h : 0;
+    var sheet = document.createElement("canvas"); sheet.width = W; sheet.height = H + top;
     var ctx = sheet.getContext("2d");
-    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H + top);
     ctx.textBaseline = "middle";
     var first = items[0].t;
     var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
     function cell(i, img, G, label, sub){
       var col = i % cols, row = Math.floor(i/cols);
-      var x = gap + col*(CW + gap), y = gap + row*(CH + cap + gap);
+      var x = gap + col*(CW + gap), y = top + gap + row*(CH + cap + gap);
       var c = document.createElement("canvas"); c.width = CW; c.height = CH;
       var cx = c.getContext("2d"); cx.imageSmoothingQuality = "high"; cx.drawImage(img, 0, 0, CW, CH);
       Progress.adjust(c, G, gray);
@@ -2027,7 +2159,9 @@
         ctx.fillText("  " + sub, x + lw, y + CH + cap*0.5);
       }
     }
-    gainsP.then(function(G){
+    Promise.all([gainsP, header ? headerFont() : null]).then(function(r){
+      var G = r[0];
+      if(header){ drawHeader(ctx, W, band, header); ctx.textAlign = "start"; ctx.textBaseline = "middle"; }
       // one stage at a time, so only one full-size photo is decoded at once
       var chain = Promise.resolve();
       items.forEach(function(it, i){
@@ -2051,7 +2185,7 @@
       if(run !== sheetRun) return;
       videoBar.style.width = "100%";
       showResult(new File([blob], "comp-art-contact-sheet-" + fileStamp() + ".jpg", { type: "image/jpeg" }), "Contact sheet",
-                 count + " pictures, " + W + " × " + H + " px.");
+                 count + " pictures, " + W + " × " + (H + top) + " px.");
       sheetPreview.src = videoUrl; sheetPreview.hidden = false;
     }).catch(function(e){
       if(run !== sheetRun || (e && e.message === "cancelled")) return;
@@ -2086,7 +2220,6 @@
     if(confirmModal.classList.contains("show")) closeConfirm();
     if(palModal.classList.contains("show")){ if(!palListView.hidden) closePalettes(); return; }
     if(mixModal.classList.contains("show")) closeMix();
-    if(saveModal.classList.contains("show")) closeSave();
     if(videoModal.classList.contains("show")) closeVideo();
     if(exportModal.classList.contains("show")) closeExport();
     if(nameModal.classList.contains("show")) closeName();
@@ -2460,13 +2593,8 @@
   });
 
   // ---------------- saving images ----------------
-  // The aligned painting on its own, or reference and painting in one image
-  // (side by side for an upright or square reference, one above the other
-  // for a wide one), at working resolution, in black & white when values
-  // mode is on. The JPEGs are made when the dialog opens, so the share
-  // sheet can open straight from the tap that chooses one (iOS only allows
-  // it within a tap).
-  var saveFiles = null, saveSeq = 0;
+  // (from Progress › Share & export: a stage on its own, or with the
+  // reference; see prepareStageFiles)
   function grayCopy(im, src){
     var c = document.createElement("canvas"); c.width = im.w; c.height = im.h;
     var ctx = c.getContext("2d");
@@ -2478,17 +2606,6 @@
     }
     return c;
   }
-  // the painting for saving: the full-detail version (fullPainting), or the
-  // aligned image as shown if that can't be made. Resolves to a drawable
-  // with its size {src, w, h, blob?} (blob: the JPEG, when it can be used as is).
-  function paintingForSaving(){
-    return fullPainting().then(function(r){
-      return decodeBlob(r.blob).then(function(img){ return { src: img, w: r.w, h: r.h, blob: r.blob }; });
-    }).catch(function(){
-      var c = paintingCanvas();
-      return { src: c, w: c.width, h: c.height, blob: null };
-    });
-  }
   // the reference for saving at size w × h: the boosted one if the switch
   // is on, else the original file, decoded at that size
   function referenceForSaving(w, h){
@@ -2498,74 +2615,32 @@
       return decodeToCanvas(b, Math.max(w, h)).then(function(im){ return im.canvas; });
     }).catch(function(){ return state.ref.canvas; });
   }
-  function paintingCanvas(){
-    var c = grayCopy(state.aligned), ctx = c.getContext("2d");
-    // the warp leaves any area outside the photo transparent: JPEG would
-    // make it black, so it goes on the app's background colour instead
-    ctx.globalCompositeOperation = "destination-over";
-    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
-    return c;
-  }
-  // (scaled down if needed to stay within iOS's largest canvas, 16.7 MP;
-  // the painting drawn at the reference's size, which an older, smaller
-  // aligned image may not match)
+  // The reference and a stage in one image: side by side for an upright or
+  // square reference, one above the other for a wide one, with the header
+  // (if any) across the top. Scaled down if needed to stay within iOS's
+  // largest canvas, 16.7 MP; the reference drawn at the stage's size.
   var CANVAS_MAX = 16000000;
-  function sideBySideCanvas(refSrc, paint){
-    var row = state.ref.w <= state.ref.h, pw = paint ? paint.w : state.ref.w, ph = paint ? paint.h : state.ref.h;
+  function sideBySideCanvas(refSrc, paint, header){
+    var row = state.ref.w <= state.ref.h, pw = paint.w, ph = paint.h;
     var W0 = row ? 2.02*pw : pw, H0 = row ? ph : 2.02*ph;
+    if(header) H0 += headerBand(W0, H0).h;
     var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W0*H0)));
     var w = Math.round(pw*s), h = Math.round(ph*s), gap = Math.round(0.02*Math.max(w, h));
+    var W = row ? 2*w + gap : w, H = row ? h : 2*h + gap, band = header ? headerBand(W, H) : null, top = band ? band.h : 0;
     var c = document.createElement("canvas");
-    c.width = row ? 2*w + gap : w; c.height = row ? h : 2*h + gap;
+    c.width = W; c.height = H + top;
     var ctx = c.getContext("2d");
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(grayCopy({ w: w, h: h }, refSrc || state.ref.canvas), 0, 0, w, h);
-    ctx.drawImage(paint ? grayCopy({ w: w, h: h }, paint.src) : paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap, w, h);
+    if(header) drawHeader(ctx, W, band, header);
+    ctx.drawImage(grayCopy({ w: w, h: h }, refSrc || state.ref.canvas), 0, top, w, h);
+    ctx.drawImage(grayCopy({ w: w, h: h }, paint.src), row ? w + gap : 0, row ? top : top + h + gap, w, h);
     return c;
   }
   function fileStamp(){
     var d = new Date(), p = function(n){ return (n < 10 ? "0" : "") + n; };
     return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
   }
-  function openSave(){
-    if(!state.ref || !state.aligned) return;
-    var seq = ++saveSeq;
-    saveFiles = null;
-    savePaintingBtn.disabled = saveSideBtn.disabled = true;
-    savePaintingBtn.textContent = saveSideBtn.textContent = "Preparing…";
-    saveNote.textContent = state.grayscale ? "In black & white, since values mode is on." : refNote();
-    saveModal.classList.add("show");
-    var stamp = fileStamp();
-    // let the dialog draw before the (brief) work of making the images
-    requestAnimationFrame(function(){ setTimeout(function(){
-      if(seq !== saveSeq) return;
-      paintingForSaving().then(function(paint){
-        if(seq !== saveSeq) throw new Error("closed");
-        return referenceForSaving(paint.w, paint.h).then(function(refSrc){
-          if(seq !== saveSeq) throw new Error("closed");
-          // the painting's JPEG as is, unless it has to be made black & white
-          var paintBlob = (paint.blob && !state.grayscale) ? Promise.resolve(paint.blob)
-                        : canvasToBlob(grayCopy({ w: paint.w, h: paint.h }, paint.src), "image/jpeg", 0.92);
-          return Promise.all([paintBlob, canvasToBlob(sideBySideCanvas(refSrc, paint), "image/jpeg", 0.92)]);
-        });
-      }).then(function(b){
-        if(seq !== saveSeq) return;
-        saveFiles = {
-          painting: new File([b[0]], "comp-art-painting-" + stamp + ".jpg", { type: "image/jpeg" }),
-          side: new File([b[1]], "comp-art-side-by-side-" + stamp + ".jpg", { type: "image/jpeg" })
-        };
-        savePaintingBtn.textContent = "Painting photo";
-        saveSideBtn.textContent = "Reference and painting side by side";
-        savePaintingBtn.disabled = saveSideBtn.disabled = false;
-      }).catch(function(){
-        if(seq !== saveSeq) return;
-        closeSave();
-        toast("The images couldn't be made. Try again.");
-      });
-    }, 0); });
-  }
-  function closeSave(){ saveSeq++; saveModal.classList.remove("show"); }
   // iPad (and other touch devices): the share sheet, with "Save Image" for
   // Photos. Elsewhere, or if sharing isn't possible: a download.
   function deliver(file){
@@ -2582,11 +2657,6 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
   }
-  saveBtn.addEventListener("click", openSave);
-  savePaintingBtn.addEventListener("click", function(){ if(saveFiles){ var f = saveFiles.painting; closeSave(); deliver(f); } });
-  saveSideBtn.addEventListener("click", function(){ if(saveFiles){ var f = saveFiles.side; closeSave(); deliver(f); } });
-  saveCancel.addEventListener("click", closeSave);
-  saveModal.addEventListener("click", function(e){ if(e.target === saveModal) closeSave(); });
 
   // ---------------- projects ----------------
   // The open project's data is read and written through PStore; switching
@@ -2619,10 +2689,11 @@
     render();
     return loadProject(id);
   }
-  function newProject(pickReference){
+  // an empty project (when the last one was deleted); "New project" waits
+  // for its reference instead (pickReference)
+  function newProject(){
     var id = Projects.create();
     openProject(id).then(function(){ persistMeta(); });
-    if(pickReference) refInput.click();
   }
   function loadProject(id){
     var ps = PStore;
@@ -2659,6 +2730,7 @@
       state.cmpView = meta.cmpView === "side" ? "side" : "compare";
       progEven = !!meta.progEven;
       progRef = !!meta.progRef;
+      progHeader = !!meta.progHeader;
       if(meta.progSpeed !== undefined) progSpeedIdx = clamp(Math.round(Number(meta.progSpeed) || 0), 0, SPEEDS.length - 1);
       if(meta.shapes && typeof meta.shapes === "object"){
         var s = meta.shapes;
@@ -2764,8 +2836,8 @@
   projectBtn.addEventListener("click", openProjects);
   projDone.addEventListener("click", closeProjects);
   projModal.addEventListener("click", function(e){ if(e.target === projModal) closeProjects(); });
-  // a new project goes straight on to choosing its reference
-  projNewBtn.addEventListener("click", function(){ closeProjects(); newProject(true); });
+  // a new project starts with choosing its reference, and is made once one is picked
+  projNewBtn.addEventListener("click", function(){ closeProjects(); pickReference(true); });
 
   var renaming = null;
   function askName(p){
@@ -2813,7 +2885,7 @@
     var wasOpen = id === Projects.activeId();
     if(projThumbUrls[id]){ URL.revokeObjectURL(projThumbUrls[id]); delete projThumbUrls[id]; }
     Projects.remove(id).then(function(){
-      if(!Projects.list().length){ newProject(false); }
+      if(!Projects.list().length){ newProject(); }
       else if(wasOpen){ openProject(Projects.activeId()); }
       if(projModal.classList.contains("show")) renderProjects();
       render();
@@ -2843,7 +2915,7 @@
       },
       projects: function(out){
         out.removed.concat(out.renamed).forEach(dropProjThumb);
-        if(!Projects.list().length) newProject(false);
+        if(!Projects.list().length) newProject();
         else if(!Projects.get(openId)) openProject(Projects.activeId());
         if(projModal.classList.contains("show")) renderProjects();
         render();
@@ -2864,7 +2936,7 @@
   function reloadOpenProject(){
     if(reloadWaiting) return;
     var busy = state.adjusting || videoModal.classList.contains("show") || exportModal.classList.contains("show") ||
-               saveModal.classList.contains("show") || mixModal.classList.contains("show") || confirmModal.classList.contains("show");
+               mixModal.classList.contains("show") || confirmModal.classList.contains("show");
     if(busy){ reloadWaiting = true; setTimeout(function(){ reloadWaiting = false; reloadOpenProject(); }, 4000); return; }
     var mode = state.mode;
     openProject(openId).then(function(){
