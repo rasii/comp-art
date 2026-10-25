@@ -2421,13 +2421,17 @@
         newShapesSource();
         var jobs = [];
         var corners = validCorners(meta.corners) ? meta.corners : null, wasAligned = !!(meta.aligned || alignedBlob);
+        var confirmed = meta.lastCorners && validCorners(meta.lastCorners.pts) ? meta.lastCorners : null;
         if(photoBlob) jobs.push(decodeToCanvas(photoBlob, SRC_MAX).then(function(im){
           if(PStore !== ps) return;
           setPhoto(im, corners);
           state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : state.photoKey;
-          // the aligned painting, made again from the photo and its corners
+          // the aligned painting, made again from the photo and the corners it
+          // was aligned with (the last Align: corners dragged since then
+          // without aligning again don't count; older projects: the corners)
           if(!corners || !wasAligned) return;
-          return warpAsync(im, cornersToPx(corners, im.w, im.h), ref.w, ref.h).then(function(al){
+          var at = (confirmed && Math.abs(confirmed.ar - im.w/im.h) < 0.01) ? confirmed.pts : corners;
+          return warpAsync(im, cornersToPx(at, im.w, im.h), ref.w, ref.h).then(function(al){
             if(PStore === ps){ dropImage(state.aligned); state.aligned = al; }
           });
         }).catch(function(){}));
@@ -2589,11 +2593,25 @@
   // app is put away or comes back, and nothing is in progress.
   if("serviceWorker" in navigator){
     var updateReady = false;
+    // A photo being picked or taken: the camera can hide the app, and a
+    // reload then would lose the photo. From the tap on a file input until
+    // its choice (or cancel) has had a few seconds to be stored.
+    var pickerOpen = 0, pickerQuietUntil = 0;
+    document.addEventListener("click", function(e){ if(e.target && e.target.type === "file") pickerOpen = Date.now(); }, true);
+    ["change", "cancel"].forEach(function(ev){
+      document.addEventListener(ev, function(e){
+        if(e.target && e.target.type === "file"){ pickerOpen = 0; pickerQuietUntil = Date.now() + 8000; }
+      }, true);
+    });
+    function picking(){
+      var now = Date.now();
+      return (pickerOpen && now - pickerOpen < 10*60*1000) || now < pickerQuietUntil;
+    }
     function busyNow(){
       return state.busy || state.adjusting || state.detecting || !!document.querySelector(".modal.show");
     }
     function applyUpdate(){
-      if(!updateReady) return;
+      if(!updateReady || picking()) return;
       if(document.hidden || !busyNow()){ updateReady = false; location.reload(); }
     }
     window.addEventListener("load", function(){
