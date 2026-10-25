@@ -30,7 +30,8 @@ window.Sync = (function(){
   var cfg = null, hooks = {}, gver = { palT: 0 };
   var vers = {}, versLoad = {};
   var running = null, again = false, timer = 0;
-  var st = { state: "off", last: 0, files: 0, done: 0, error: null, limited: [], info: null };
+  // limited: projects over the project limit; full: the storage cap was hit
+  var st = { state: "off", last: 0, files: 0, done: 0, error: null, limited: [], full: false, info: null };
 
   function clone(v){ return v == null ? v : JSON.parse(JSON.stringify(v)); }
   function err(code){ var e = new Error(code); e.code = code; return e; }
@@ -137,9 +138,10 @@ window.Sync = (function(){
   }
 
   function syncAll(){
-    var keySet = {}, idx = null, merged = null, limited = [];
+    var keySet = {}, idx = null, merged = null, limited = [], full = false, serverProjects = 0;
     return call("GET", "/me").then(function(r){
       status({ info: r && r.data });
+      serverProjects = (r && r.data && r.data.projects) || 0;
       return Store.keys();
     }).then(function(keys){
       keys.forEach(function(k){ keySet[k] = 1; });
@@ -164,15 +166,19 @@ window.Sync = (function(){
           return syncProject(id, keySet, 0).then(function(res){
             var p = Projects.get(id);
             if(res.limit){ if(p) limited.push(p.name); return; }
+            if(res.full){ full = true; return; }
             if(!p) return;
             merged.projects[id] = { name: p.name, nameT: p.nameT || 0, created: p.created, updated: Math.max(p.updated || 0, (merged.projects[id] || {}).updated || 0), photos: res.photos };
           });
         });
       }, Promise.resolve());
     }).then(function(){
-      status({ limited: limited });
-      // deleted projects: their files go from the server (once)
-      var gone = Object.keys(merged.deleted).filter(function(id){ return !merged.purged[id]; });
+      status({ limited: limited, full: full });
+      // deleted projects: their files go from the server (once; and again
+      // for all of them when the server holds more project folders than
+      // expected, which an upload racing a deletion can leave behind)
+      var recheck = serverProjects > Object.keys(merged.projects).length;
+      var gone = Object.keys(merged.deleted).filter(function(id){ return recheck || !merged.purged[id]; });
       return gone.reduce(function(chain, id){
         return chain.then(function(){
           return call("GET", "/list?prefix=" + encodeURIComponent("p/" + id + "/")).then(function(r){
@@ -182,7 +188,7 @@ window.Sync = (function(){
         });
       }, Promise.resolve());
     }).then(function(){
-      if(st.info) status({ info: { name: st.info.name, limit: st.info.limit, projects: Object.keys(merged.projects).length } });
+      if(st.info){ var info = clone(st.info); info.projects = Object.keys(merged.projects).length; status({ info: info }); }
       if(idx && JSON.stringify(idx.data) === JSON.stringify(merged)) return;
       return putDoc("index.json", merged, idx && idx.etag);
     });
@@ -225,31 +231,41 @@ window.Sync = (function(){
   }
 
   // ---- one project ----
+  // The version stamps are taken before any content is read, so what's
+  // uploaded is always at least as new as its stamp: a change made while
+  // this runs gets a newer stamp and goes up next time.
   function syncProject(id, keySet, tries){
-    var P = "p/" + id + "/";
-    return Promise.all([getJson(P + "doc.json"), loadVers(id), Store.get(P + "progress"), Store.get(P + "meta")]).then(function(r){
-      var cdoc = r[0] ? r[0].data : null, etag = r[0] ? r[0].etag : null, V = r[1], rec = r[2], lmeta = r[3];
+    var P = "p/" + id + "/", V, before = {};
+    return loadVers(id).then(function(v){
+      V = v;
+      SINGLE.forEach(function(k){ before[k] = V[k]; });
+      return Promise.all([getJson(P + "doc.json"), Store.get(P + "progress"), Store.get(P + "meta")]);
+    }).then(function(r){
+      var cdoc = r[0] ? r[0].data : null, etag = r[0] ? r[0].etag : null, rec = r[1], lmeta = r[2];
       var doc = cdoc ? clone(cdoc) : { v: 1, files: {}, meta: null, items: [], deleted: [] };
       doc.files = doc.files || {}; doc.items = doc.items || []; doc.deleted = doc.deleted || [];
       var ups = [], downs = [], gc = [], changed = { reload: false, stages: false };
 
       // the reference, painting photo, aligned image, thumbnail and settings
       SINGLE.forEach(function(k){
-        var before = V[k], lv = V[k] || (keySet[P + k] ? { t: 1 } : null), cv = doc.files[k] || null;
-        if(lv && !lv.gone && !keySet[P + k] && k !== "meta") lv = { t: lv.t, gone: true };
+        var lv = before[k] || (keySet[P + k] ? { t: 1 } : null), cv = doc.files[k] || null;
         var lt = lv ? lv.t : 0, ct = cv ? cv.t : 0;
         if(lt > ct){
-          if(cv && cv.k) gc.push(cv.k);
-          if(lv.gone){ doc.files[k] = { t: lt, gone: true }; if(k === "meta") doc.meta = null; return; }
-          if(k === "meta"){ doc.meta = clone(lmeta) || null; doc.files.meta = { t: lt }; return; }
+          if(lv.gone){ if(cv && cv.k) gc.push(cv.k); doc.files[k] = { t: lt, gone: true }; if(k === "meta") doc.meta = null; return; }
+          if(k === "meta"){ if(lmeta){ doc.meta = clone(lmeta); doc.files.meta = { t: lt }; } return; }
           var name = k + "-" + lt;
-          gc = gc.filter(function(g){ return g !== name; });
-          doc.files[k] = { t: lt, k: name };
-          ups.push(function(){ return Store.get(P + k).then(function(b){ if(b) return putBlob(P + name, b); }); });
+          ups.push(function(){
+            return Store.get(P + k).then(function(b){
+              if(!b) return;                           // nothing to upload after all: the cloud's entry stays
+              if(cv && cv.k && cv.k !== name) gc.push(cv.k);
+              doc.files[k] = { t: lt, k: name };
+              return putBlob(P + name, b);
+            });
+          });
         }
         else if(ct > lt){
           downs.push(function(){
-            if(V[k] !== before) return;              // changed here meanwhile: that wins next time
+            if(V[k] !== before[k]) return;           // changed here meanwhile: that wins next time
             if(cv.gone){
               V[k] = { t: ct, gone: true };
               changed.reload = true;
@@ -262,7 +278,7 @@ window.Sync = (function(){
             }
             return getBlob(P + cv.k).then(function(b){
               done(1);
-              if(!b || V[k] !== before) return;
+              if(!b || V[k] !== before[k]) return;
               V[k] = { t: ct };
               changed.reload = true;
               return Store.set(P + k, b);
@@ -353,6 +369,7 @@ window.Sync = (function(){
       });
     }).catch(function(e){
       if(e.code === "limit") return { limit: true };
+      if(e.code === "storage") return { full: true };
       if(e.code === "conflict" && tries < 3) return syncProject(id, keySet, tries + 1);
       throw e;
     });
@@ -360,7 +377,14 @@ window.Sync = (function(){
 
   // ---------------- turning it on and off ----------------
   function saveCfg(){ return cfg ? Store.set("sync", cfg) : Store.remove("sync"); }
-  function serverUrl(u){ u = String(u || DEFAULT_URL || "").trim(); if(u && !/^https?:\/\//.test(u)) u = "https://" + u; return u.replace(/\/+$/, ""); }
+  // (https, except for a local test server: the sync code travels with every request)
+  function serverUrl(u){
+    u = String(u || DEFAULT_URL || "").trim().replace(/\/+$/, "");
+    if(!u) return "";
+    if(!/^https?:\/\//.test(u)) u = "https://" + u;
+    if(/^http:\/\//.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(u)) u = u.replace(/^http:/, "https:");
+    return u;
+  }
   // a new account (needs the invite code)
   function signup(url, invite, name){
     url = serverUrl(url);
@@ -386,7 +410,7 @@ window.Sync = (function(){
     cfg = null;
     gver.joined = false;                       // joining again keeps both palettes again
     Store.set("syncg", gver).catch(function(){});
-    status({ state: "off", error: null, last: 0, limited: [], info: null });
+    status({ state: "off", error: null, last: 0, limited: [], full: false, info: null });
     return saveCfg();
   }
   function rotate(){

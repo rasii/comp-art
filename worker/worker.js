@@ -5,7 +5,11 @@
 // (opens the admin screen). Nothing else is needed.
 //
 // In the bucket:
-//   accounts/<acct>.json   {id, name, created, seen, disabled, codeHash}
+//   accounts/<acct>.json   {id, name, created, disabled, codeHash}
+//   seen/<acct>            when the account last synced (its own key, so a
+//                          sync never rewrites the account record)
+//   usage/<acct>           bytes stored, kept up to date by uploads and
+//                          deletes and recounted now and then
 //   codes/<sha256(code)>   the account id a sync code opens
 //   u/<acct>/...           that account's files, written by the app
 //                          (index.json, palettes.json, p/<project>/...)
@@ -15,9 +19,10 @@
 // enforces the limits below.
 
 const PROJECT_LIMIT = 10;                 // projects one account can sync
+const ACCOUNT_BYTES = 1024 * 1024 * 1024; // storage one account can use (1 GB)
 const MAX_FILE = 40 * 1024 * 1024;        // a single upload
 const ORIGINS = ["https://rasii.github.io"];
-const SEEN_EVERY = 10 * 60 * 1000;        // how often "last synced" is updated
+const SEEN_EVERY = 10 * 60 * 1000;        // how often "last synced" (and the recount) is updated
 
 export default {
   async fetch(req, env) {
@@ -25,7 +30,7 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     let res;
     try { res = await route(req, env); }
-    catch (e) { res = json({ error: e.code || "server", detail: e.code ? undefined : String(e && e.message || e) }, e.status || 500); }
+    catch (e) { res = json({ error: e.code || "server" }, e.status || 500); }
     res = new Response(res.body, res);              // headers may be immutable
     for (const k in cors) res.headers.set(k, cors[k]);
     return res;
@@ -68,7 +73,7 @@ async function route(req, env) {
     const key = cleanKey(decodeURIComponent(path.slice(3)));
     if (m === "GET") return getFile(env, "u/" + acct.id + "/" + key);
     if (m === "PUT") return putFile(req, env, acct, key);
-    if (m === "DELETE") { await env.BUCKET.delete("u/" + acct.id + "/" + key); return json({ ok: true }); }
+    if (m === "DELETE") { await deleteFile(env, acct, key); return json({ ok: true }); }
   }
   throw fail(404, "not-found");
 }
@@ -92,10 +97,13 @@ function writeJson(env, key, v) { return env.BUCKET.put(key, JSON.stringify(v), 
 
 async function newCode(env, acct) {
   const code = randomCode(20), h = await sha(code);
+  // the record as it is now (an admin may have changed it since it was read)
+  const cur = (await readJson(env, "accounts/" + acct.id + ".json")) || acct;
+  if (cur.disabled) throw fail(403, "disabled");
   await env.BUCKET.put("codes/" + h, acct.id);
-  if (acct.codeHash) await env.BUCKET.delete("codes/" + acct.codeHash);
-  acct.codeHash = h;
-  await writeJson(env, "accounts/" + acct.id + ".json", acct);
+  if (cur.codeHash) await env.BUCKET.delete("codes/" + cur.codeHash);
+  cur.codeHash = h;
+  await writeJson(env, "accounts/" + acct.id + ".json", cur);
   return pretty(code);
 }
 
@@ -105,8 +113,10 @@ async function signup(req, env) {
   if (!(await same(normal(body.invite), normal(env.INVITE_CODE)))) throw fail(403, "invite");
   const name = String(body.name || "").trim().slice(0, 60) || "Painter";
   const now = Date.now();
-  const acct = { id: "a" + randomCode(12).toLowerCase(), name, created: now, seen: now, disabled: false, codeHash: null };
+  const acct = { id: "a" + randomCode(12).toLowerCase(), name, created: now, disabled: false, codeHash: null };
+  await writeJson(env, "accounts/" + acct.id + ".json", acct);
   const code = await newCode(env, acct);
+  await env.BUCKET.put("seen/" + acct.id, String(now));
   return json({ code, name });
 }
 
@@ -133,10 +143,29 @@ async function projectIds(env, acctId) {
   return ids;
 }
 
+async function readText(env, key) { const o = await env.BUCKET.get(key); return o ? o.text() : null; }
+async function seenAt(env, id) { return Number(await readText(env, "seen/" + id)) || 0; }
+
+// bytes stored by an account: the running count, or a recount of its files
+async function usage(env, id) { return Number(await readText(env, "usage/" + id)) || 0; }
+function setUsage(env, id, bytes) { return env.BUCKET.put("usage/" + id, String(Math.max(0, bytes))); }
+async function recount(env, id) {
+  let bytes = 0, cursor;
+  do {
+    const r = await env.BUCKET.list({ prefix: "u/" + id + "/", cursor });
+    r.objects.forEach(o => { bytes += o.size; });
+    cursor = r.truncated ? r.cursor : undefined;
+  } while (cursor);
+  await setUsage(env, id, bytes);
+  return bytes;
+}
+
 async function me(env, acct) {
-  const now = Date.now();
-  if (!acct.seen || now - acct.seen > SEEN_EVERY) { acct.seen = now; await writeJson(env, "accounts/" + acct.id + ".json", acct); }
-  return json({ name: acct.name, projects: (await projectIds(env, acct.id)).length, limit: PROJECT_LIMIT });
+  const now = Date.now(), seen = await seenAt(env, acct.id);
+  let bytes;
+  if (now - seen > SEEN_EVERY) { await env.BUCKET.put("seen/" + acct.id, String(now)); bytes = await recount(env, acct.id); }
+  else bytes = await usage(env, acct.id);
+  return json({ name: acct.name, projects: (await projectIds(env, acct.id)).length, limit: PROJECT_LIMIT, bytes, cap: ACCOUNT_BYTES });
 }
 
 async function rotate(env, acct) { return json({ code: await newCode(env, acct) }); }
@@ -169,7 +198,13 @@ async function getFile(env, key) {
   } });
 }
 
+// Only the files the app writes can be stored: index.json, palettes.json,
+// and a project's doc.json and images (p/<id>/<name>-<time>). So every
+// upload is covered by the project limit and the byte cap.
+const FILE_SHAPES = [/^index\.json$/, /^palettes\.json$/, /^p\/[A-Za-z0-9_-]{1,40}\/doc\.json$/, /^p\/[A-Za-z0-9_-]{1,40}\/(ref|photo|aligned|thumb|prog-[A-Za-z0-9_-]{1,40}|progt-[A-Za-z0-9_-]{1,40})-\d{1,16}$/];
+
 async function putFile(req, env, acct, key) {
+  if (!FILE_SHAPES.some(re => re.test(key))) throw fail(400, "bad-key");
   const len = Number(req.headers.get("Content-Length") || 0);
   if (len > MAX_FILE) throw fail(413, "too-big");
   // a file for a project that isn't on the server yet counts as a new project
@@ -181,14 +216,27 @@ async function putFile(req, env, acct, key) {
   const full = "u/" + acct.id + "/" + key;
   const body = await req.arrayBuffer();
   if (body.byteLength > MAX_FILE) throw fail(413, "too-big");
+  // the byte cap: what's stored now, less the file being replaced
+  const old = await env.BUCKET.head(full), used = await usage(env, acct.id);
+  const after = used - (old ? old.size : 0) + body.byteLength;
+  if (after > ACCOUNT_BYTES && body.byteLength > (old ? old.size : 0)) throw fail(403, "storage");
   const opts = { httpMetadata: { contentType: req.headers.get("Content-Type") || "application/octet-stream" } };
   // documents the app merges are written only over the version it read
   const ifMatch = req.headers.get("If-Match");
   if (ifMatch) opts.onlyIf = { etagMatches: ifMatch.replace(/^W\//, "").replace(/"/g, "") };
-  if (req.headers.get("X-If-Absent") && (await env.BUCKET.head(full))) throw fail(412, "conflict");
+  if (req.headers.get("X-If-Absent")) { if (old) throw fail(412, "conflict"); }
   const o = await env.BUCKET.put(full, body, opts);
   if (!o) throw fail(412, "conflict");
+  await setUsage(env, acct.id, after);
   return json({ ok: true }, 200, { "ETag": o.httpEtag });
+}
+
+async function deleteFile(env, acct, key) {
+  const full = "u/" + acct.id + "/" + key;
+  const old = await env.BUCKET.head(full);
+  if (!old) return;
+  await env.BUCKET.delete(full);
+  await setUsage(env, acct.id, (await usage(env, acct.id)) - old.size);
 }
 
 // ---------------- admin ----------------
@@ -220,9 +268,11 @@ async function admin(req, env, sub, url) {
       });
       cursor = r.truncated ? r.cursor : undefined;
     } while (cursor);
+    const seen = {};
+    for (const a of accts) seen[a.id] = await seenAt(env, a.id);
     return json({
-      total, limit: PROJECT_LIMIT,
-      accounts: accts.map(a => ({ id: a.id, name: a.name, created: a.created, seen: a.seen, disabled: !!a.disabled,
+      total, limit: PROJECT_LIMIT, cap: ACCOUNT_BYTES,
+      accounts: accts.map(a => ({ id: a.id, name: a.name, created: a.created, seen: seen[a.id], disabled: !!a.disabled,
         bytes: use[a.id] ? use[a.id].bytes : 0, projects: use[a.id] ? Object.keys(use[a.id].projects).length : 0 }))
     });
   }
@@ -241,7 +291,7 @@ async function admin(req, env, sub, url) {
       const files = await listAll(env, "u/" + acct.id + "/", "");
       for (let i = 0; i < files.length; i += 500) await env.BUCKET.delete(files.slice(i, i + 500).map(f => "u/" + acct.id + "/" + f.key));
       if (acct.codeHash) await env.BUCKET.delete("codes/" + acct.codeHash);
-      await env.BUCKET.delete("accounts/" + acct.id + ".json");
+      await env.BUCKET.delete(["accounts/" + acct.id + ".json", "seen/" + acct.id, "usage/" + acct.id]);
       return json({ ok: true, files: files.length });
     }
   }

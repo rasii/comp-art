@@ -2909,12 +2909,19 @@
         dropProjThumb(id);
         if(id === openId){
           if(what.reload) reloadOpenProject();
-          else if(what.stages) render();
+          else if(what.stages){
+            // a stage may have been replaced (same stage, new image): the cached pictures go
+            Object.keys(progUrls).forEach(function(k){ URL.revokeObjectURL(progUrls[k]); });
+            Object.keys(progThumbs).forEach(function(k){ URL.revokeObjectURL(progThumbs[k]); });
+            progUrls = {}; progThumbs = {}; progStripKey = null; progShownKey = null; progGains = null; progFilesReady = false;
+            render();
+          }
         }
         if(projModal.classList.contains("show")) renderProjects();
       },
       projects: function(out){
         out.removed.concat(out.renamed).forEach(dropProjThumb);
+        if(out.removed.length) toast(out.removed.length === 1 ? "A project was deleted on another device, so it's gone here too." : out.removed.length + " projects were deleted on another device, so they're gone here too.");
         if(!Projects.list().length) newProject();
         else if(!Projects.get(openId)) openProject(Projects.activeId());
         if(projModal.classList.contains("show")) renderProjects();
@@ -2971,23 +2978,25 @@
     if(s.state === "syncing") return s.done ? "Syncing… " + s.done + (s.done === 1 ? " image" : " images") : "Syncing…";
     if(s.state === "error") return s.error === "offline" ? "Offline, will try again" : s.error === "disabled" ? "Turned off by the server" : s.error === "code" ? "Sync code no longer works" : "Problem, will try again";
     if(s.limited && s.limited.length) return "Project limit reached";
+    if(s.full) return "Storage full";
     return s.last ? "Up to date · " + ago(s.last) : "On";
   }
   function esc(t){ return String(t).replace(/[&<>"']/g, function(c){ return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function renderSync(){
     var s = Sync.status(), on = Sync.on(), acct = Sync.account();
     menuSyncSub.textContent = on ? syncLine(s) : "";
-    menuSync.classList.toggle("attn", on && (s.state === "error" || (s.limited && s.limited.length > 0)));
+    menuSync.classList.toggle("attn", on && (s.state === "error" || s.full || (s.limited && s.limited.length > 0)));
     menuWhere.textContent = on ? "synced with your sync account." : "your photos stay on this device.";
     if(!syncModal.classList.contains("show")) return;
     syncOff.hidden = on; syncOn.hidden = !on;
     syncUrlField.hidden = on || !!Sync.defaultUrl();
     if(!on) return;
     var html = "<b>" + esc(syncLine(s)) + "</b>";
-    if(s.info) html += "<br><span class='mix-note'>" + esc(acct.name || s.info.name || "") + " · " + s.info.projects + " of " + s.info.limit + " projects on the server</span>";
+    if(s.info) html += "<br><span class='mix-note'>" + esc(acct.name || s.info.name || "") + " · " + s.info.projects + " of " + s.info.limit + " projects" + (s.info.cap ? " · " + mb(s.info.bytes || 0) + " of " + mb(s.info.cap) : "") + " on the server</span>";
     syncStatus.innerHTML = html;
     var msg = s.state === "error" ? (SYNC_ERRORS[s.error] || SYNC_ERRORS.server) : "";
     if(s.limited && s.limited.length) msg = (msg ? msg + " " : "") + "Only " + ((s.info && s.info.limit) || 10) + " projects can sync, so " + s.limited.map(function(n){ return "“" + n + "”"; }).join(", ") + (s.limited.length > 1 ? " aren't" : " isn't") + " synced. Delete a project you no longer need to make room.";
+    if(s.full) msg = (msg ? msg + " " : "") + "Your account's storage on the server is full" + (s.info && s.info.cap ? " (" + mb(s.info.cap) + ")" : "") + ", so some photos aren't synced. Delete a project or some stages you no longer need to make room.";
     syncErr.textContent = msg; syncErr.hidden = !msg;
     syncCodeShow.textContent = syncCodeShown ? acct.code : "••••-••••-••••-••••-••••";
     syncCodeBtn.textContent = syncCodeShown ? "Hide" : "Show";
@@ -3111,7 +3120,12 @@
   adminBack.addEventListener("click", function(){ adminViews.pop(); adminShow(adminViews[adminViews.length - 1], false); });
   $("adminDone").addEventListener("click", closeAdmin);
   adminModal.addEventListener("click", function(e){ if(e.target === adminModal) closeAdmin(); });
-  function mb(b){ return b >= 1e9 ? (b/1e9).toFixed(2) + " GB" : (b/1e6).toFixed(b < 1e7 ? 1 : 0) + " MB"; }
+  // sizes in the units Cloudflare counts in (1 GB = 1024³ bytes)
+  function mb(b){
+    var gb = b/1073741824, m = b/1048576;
+    if(gb >= 1) return (Math.round(gb*100)/100).toString().replace(/\.?0+$/, "") + " GB";
+    return (m < 10 && m > 0 ? (Math.round(m*10)/10) : Math.round(m)) + " MB";
+  }
   function el(tag, cls, text){ var e = document.createElement(tag); if(cls) e.className = cls; if(text !== undefined) e.textContent = text; return e; }
 
   function adminAccounts(){
@@ -3119,7 +3133,7 @@
     adminNote.textContent = "Loading…";
     Sync.admin(adminCfg, "GET", "/accounts").then(function(r){
       adminNote.textContent = r.accounts.length ? "" : "No accounts yet.";
-      adminBody.appendChild(el("p", "adm-total", mb(r.total) + " stored in all · the free tier is 10 GB · " + r.limit + " projects per account"));
+      adminBody.appendChild(el("p", "adm-total", mb(r.total) + " stored in all · the free tier is 10 GB · " + r.limit + " projects and " + mb(r.cap || 0) + " per account"));
       var ul = el("ul", "adm-list");
       r.accounts.sort(function(a, b){ return (b.seen || 0) - (a.seen || 0); }).forEach(function(a){
         var li = el("li"), row = el("div", "adm-row" + (a.disabled ? " off" : ""));

@@ -21,7 +21,8 @@ Past that, storage is $0.015 per GB a month.
   projects, and turn accounts off and on or delete them.
 
 Use long, random invite codes and admin keys, for example from a password
-manager.
+manager. Letters and digits only for the invite code: it's compared ignoring
+case, spaces and punctuation, so those add nothing.
 
 ## Setting it up (about 10 minutes)
 
@@ -72,6 +73,7 @@ manager.
 - **Limits:** the numbers at the top of `worker.js`. Edit them in Edit code,
   then Deploy:
   - `PROJECT_LIMIT` (10 projects per account)
+  - `ACCOUNT_BYTES` (1 GB of storage per account)
   - `MAX_FILE` (40 MB per photo)
 - **Updates to `worker.js`:** paste the new version in Edit code and Deploy.
   Stored files are kept.
