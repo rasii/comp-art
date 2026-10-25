@@ -1066,8 +1066,9 @@
   // once ready; until then the last one made (or the original) stays up.
   // Not in black & white, where it can't be seen. Colour readings of the
   // reference get the same boost (readAt), so a recipe matches what's on
-  // screen. Saved images, the video and the contact sheet keep the original.
-  var refInt = { key: null, url: null, pending: null, seq: 0, timer: null, workerToken: -1 };
+  // screen. Saved images, the video and the contact sheet use it too
+  // (refForSaving), waiting for it if it isn't ready yet.
+  var refInt = { key: null, url: null, pending: null, seq: 0, timer: null, workerToken: -1, promise: null, promiseKey: null };
   function refIntensityOn(){ return !!state.ref && enhanceOn() && state.shapes.chroma !== 100; }
   function forgetRefIntensity(){
     if(refInt.url) URL.revokeObjectURL(refInt.url);
@@ -1085,6 +1086,7 @@
   }
   function runRefIntensity(key, token, factor){
     var seq = ++refInt.seq;
+    refInt.promiseKey = key;
     function ask(withPixels){
       var msg = { kind: "enhance", slot: "full", token: token, factor: factor }, transfer = [];
       if(withPixels){
@@ -1102,21 +1104,47 @@
       var px = scaledPixels(state.ref, WORK_DIM), out = Shapes.enhance(px.data, px.w, px.h, factor);
       return { buf: out.buffer, w: px.w, h: px.h };
     }
-    ask(refInt.workerToken !== token)
+    return (refInt.promise = ask(refInt.workerToken !== token)
       .catch(function(){ return runHere(); })
       .then(function(res){
-        if(seq !== refInt.seq || token !== shapesToken) return;
+        if(seq !== refInt.seq || token !== shapesToken) return null;
         var c = document.createElement("canvas"); c.width = res.w; c.height = res.h;
         c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(res.buf), res.w, res.h), 0, 0);
         return canvasToBlob(c, "image/jpeg", 0.95).then(function(b){
-          if(seq !== refInt.seq || token !== shapesToken) return;
+          if(seq !== refInt.seq || token !== shapesToken) return null;
           if(refInt.url) URL.revokeObjectURL(refInt.url);
           refInt.url = URL.createObjectURL(b); refInt.key = key; refInt.pending = null;
           render();
+          return refInt.url;
         });
       })
-      .catch(function(){ if(seq === refInt.seq) refInt.pending = null; });
+      .catch(function(){ if(seq === refInt.seq) refInt.pending = null; return null; }));
   }
+  // the boosted reference's url once it's ready (made now if need be), or
+  // null when the switch is off or it couldn't be made
+  function ensureRefIntensity(){
+    if(!refIntensityOn()) return Promise.resolve(null);
+    var key = shapesToken + ":" + state.shapes.chroma;
+    if(refInt.key === key && refInt.url) return Promise.resolve(refInt.url);
+    if(refInt.pending === key && refInt.promiseKey === key && refInt.promise) return refInt.promise;
+    clearTimeout(refInt.timer);
+    refInt.pending = key;
+    return runRefIntensity(key, shapesToken, state.shapes.chroma/100);
+  }
+  // the reference to put in saved images and the video: boosted when the
+  // switch says so, else the original
+  function refForSaving(){
+    return ensureRefIntensity().then(function(url){
+      if(!url) return state.ref.canvas;
+      return new Promise(function(resolve){
+        var img = new Image();
+        img.onload = function(){ resolve(img); };
+        img.onerror = function(){ resolve(state.ref.canvas); };
+        img.src = url;
+      });
+    });
+  }
+  function refNote(){ return refIntensityOn() ? "The reference at intensity ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "") + ", as shown." : ""; }
   // the reference as Compare and Side by side show it
   function showRef(img){
     if(refIntensityOn() && refInt.url){
@@ -1668,7 +1696,10 @@
     if(progSlider.value != progIndex) progSlider.value = progIndex;
     progSlider.disabled = n < 2; progPlay.disabled = n < 2;
     var w = stageWhen(it.t, items[0].t);
-    progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + (progIndex === 0 ? "The first photo" : w.since + " after the first") + "</span>";
+    // how long since the photo before, and since the first
+    var since = progIndex === 0 ? "The first photo"
+      : stageWhen(it.t, items[progIndex - 1].t).since + " after the previous" + (progIndex > 1 ? " · " + w.since.toLowerCase() + " after the first" : "");
+    progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + since + "</span>";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;
     progRefSwitch.classList.toggle("on", progRef);
@@ -1803,7 +1834,7 @@
     var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
     function frame(k){
       return gainsP.then(function(G){
-        var src = k < items.length ? Progress.blob(items[k].id).then(decodeBlob) : Promise.resolve(state.ref.canvas);
+        var src = k < items.length ? Progress.blob(items[k].id).then(decodeBlob) : refForSaving();
         return src.then(function(img){
           var c = document.createElement("canvas"); c.width = videoCanvas.width; c.height = videoCanvas.height;
           var ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
@@ -1883,8 +1914,11 @@
         });
       });
       return chain.then(function(){
-        if(withRef) cell(items.length, state.ref.canvas, null, "Reference", "");
-        return canvasToBlob(sheet, "image/jpeg", 0.9);
+        if(!withRef) return canvasToBlob(sheet, "image/jpeg", 0.9);
+        return refForSaving().then(function(src){
+          cell(items.length, src, null, "Reference", "");
+          return canvasToBlob(sheet, "image/jpeg", 0.9);
+        });
       });
     }).then(function(blob){
       if(run !== sheetRun) return;
@@ -2300,10 +2334,10 @@
   // sheet can open straight from the tap that chooses one (iOS only allows
   // it within a tap).
   var saveFiles = null, saveSeq = 0;
-  function grayCopy(im){
+  function grayCopy(im, src){
     var c = document.createElement("canvas"); c.width = im.w; c.height = im.h;
     var ctx = c.getContext("2d");
-    ctx.drawImage(im.canvas, 0, 0);
+    ctx.drawImage(src || im.canvas, 0, 0, im.w, im.h);
     if(state.grayscale){
       var img = ctx.getImageData(0, 0, im.w, im.h), d = img.data;
       for(var i=0;i<d.length;i+=4){ var y = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2]; d[i] = d[i+1] = d[i+2] = y; }
@@ -2323,7 +2357,7 @@
   // the painting drawn at the reference's size, which an older, smaller
   // aligned image may not match)
   var CANVAS_MAX = 16000000;
-  function sideBySideCanvas(){
+  function sideBySideCanvas(refSrc){
     var row = state.ref.w <= state.ref.h;
     var W0 = row ? 2.02*state.ref.w : state.ref.w, H0 = row ? state.ref.h : 2.02*state.ref.h;
     var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W0*H0)));
@@ -2333,7 +2367,7 @@
     var ctx = c.getContext("2d");
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(grayCopy(state.ref), 0, 0, w, h);
+    ctx.drawImage(grayCopy(state.ref, refSrc), 0, 0, w, h);
     ctx.drawImage(paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap, w, h);
     return c;
   }
@@ -2347,16 +2381,19 @@
     saveFiles = null;
     savePaintingBtn.disabled = saveSideBtn.disabled = true;
     savePaintingBtn.textContent = saveSideBtn.textContent = "Preparing…";
-    saveNote.textContent = state.grayscale ? "In black & white, since values mode is on." : "";
+    saveNote.textContent = state.grayscale ? "In black & white, since values mode is on." : refNote();
     saveModal.classList.add("show");
     var stamp = fileStamp();
     // let the dialog draw before the (brief) work of making the images
     requestAnimationFrame(function(){ setTimeout(function(){
       if(seq !== saveSeq) return;
-      Promise.all([
-        canvasToBlob(paintingCanvas(), "image/jpeg", 0.92),
-        canvasToBlob(sideBySideCanvas(), "image/jpeg", 0.92)
-      ]).then(function(b){
+      refForSaving().then(function(refSrc){
+        if(seq !== saveSeq) throw new Error("closed");
+        return Promise.all([
+          canvasToBlob(paintingCanvas(), "image/jpeg", 0.92),
+          canvasToBlob(sideBySideCanvas(refSrc), "image/jpeg", 0.92)
+        ]);
+      }).then(function(b){
         if(seq !== saveSeq) return;
         saveFiles = {
           painting: new File([b[0]], "comp-art-painting-" + stamp + ".jpg", { type: "image/jpeg" }),
