@@ -3,8 +3,9 @@
 //
 // Each stage is the aligned painting (straightened and cropped to the
 // reference's rectangle), so stages line up exactly. Stored on the device:
-// the list under Store key "progress" ([{id, t, key}]) and each image as a
-// JPEG under "prog-<id>". `key` identifies the painting photo it came
+// the list under Store key "progress" ([{id, t, key}]), each image as a
+// JPEG under "prog-<id>" (full detail, up to 4000 px) and a small
+// thumbnail under "progt-<id>". `key` identifies the painting photo it came
 // from, so aligning the same photo again updates its stage instead of
 // adding one.
 //
@@ -13,7 +14,7 @@
 window.Progress = (function(){
   "use strict";
 
-  var store = null, list = [], blobs = {};
+  var store = null, list = [], blobs = {}, thumbs = {};
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function valid(it){ return it && typeof it.id === "string" && typeof it.t === "number"; }
@@ -27,27 +28,33 @@ window.Progress = (function(){
   function items(){ return list.slice(); }
   function count(){ return list.length; }
   // a new stage, or the latest one replaced when it came from the same photo
-  function add(blob, key){
-    var last = list[list.length - 1];
-    if(last && key && last.key === key){
-      last.t = Date.now();
-      blobs[last.id] = blob;
-      return Promise.all([store.set("prog-" + last.id, blob), saveList()]).then(function(){ return { item: last, replaced: true }; });
-    }
-    var item = { id: uid(), t: Date.now(), key: key || null };
-    list.push(item); blobs[item.id] = blob;
-    return Promise.all([store.set("prog-" + item.id, blob), saveList()]).then(function(){ return { item: item, replaced: false }; });
+  function add(blob, key, thumb){
+    var last = list[list.length - 1], item, replaced = false;
+    if(last && key && last.key === key){ item = last; item.t = Date.now(); replaced = true; }
+    else { item = { id: uid(), t: Date.now(), key: key || null }; list.push(item); }
+    blobs[item.id] = blob;
+    var jobs = [store.set("prog-" + item.id, blob), saveList()];
+    if(thumb){ thumbs[item.id] = thumb; jobs.push(store.set("progt-" + item.id, thumb)); }
+    else { delete thumbs[item.id]; jobs.push(store.remove("progt-" + item.id)); }
+    return Promise.all(jobs).then(function(){ return { item: item, replaced: replaced }; });
   }
   function remove(id){
     list = list.filter(function(it){ return it.id !== id; });
-    delete blobs[id];
-    return Promise.all([store.remove("prog-" + id), saveList()]);
+    delete blobs[id]; delete thumbs[id];
+    return Promise.all([store.remove("prog-" + id), store.remove("progt-" + id), saveList()]);
   }
   function clear(){
     var ids = list.map(function(it){ return it.id; });
-    list = []; blobs = {};
-    return Promise.all(ids.map(function(id){ return store.remove("prog-" + id); }).concat([saveList()]));
+    list = []; blobs = {}; thumbs = {};
+    return Promise.all(ids.map(function(id){ return Promise.all([store.remove("prog-" + id), store.remove("progt-" + id)]); }).concat([saveList()]));
   }
+  // the small version for the thumbnail strip, or null if there isn't one
+  // yet (stages from before v2.31); setThumb stores one made later
+  function thumb(id){
+    if(thumbs[id]) return Promise.resolve(thumbs[id]);
+    return store.get("progt-" + id).then(function(b){ if(b) thumbs[id] = b; return b || null; }).catch(function(){ return null; });
+  }
+  function setThumb(id, b){ thumbs[id] = b; return store.set("progt-" + id, b).catch(function(){}); }
   function blob(id){
     if(blobs[id]) return Promise.resolve(blobs[id]);
     return store.get("prog-" + id).then(function(b){ if(b) blobs[id] = b; return b || null; });
@@ -198,6 +205,6 @@ window.Progress = (function(){
     return { promise: promise, cancel: function(){ cancelled = true; if(rec && rec.state !== "inactive") rec.stop(); } };
   }
 
-  return { init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached,
+  return { init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached, thumb: thumb, setThumb: setThumb,
            loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, timeline: timeline, record: record };
 })();

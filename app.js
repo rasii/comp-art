@@ -1603,8 +1603,10 @@
   var videoModal = $("videoModal"), videoTitle = $("videoTitle"), videoCanvas = $("videoCanvas"), videoPreview = $("videoPreview");
   var videoBar = $("videoBar"), videoNote = $("videoNote"), videoClose = $("videoClose"), videoSave = $("videoSave");
 
-  var STAGE_DIM = 2000;         // stages are stored at this size (plenty for viewing and video)
-  var progIndex = -1, progTimer = null, progUrls = {}, progStripKey = null, progEven = false;
+  var STAGE_DIM = 4000;         // stages and saved paintings: at most this on the long side
+  var STAGE_MIN = 2000;         // ...and at least this (a painting small in its photo is enlarged a little)
+  var THUMB_DIM = 240;          // the thumbnail strip
+  var progIndex = -1, progTimer = null, progUrls = {}, progThumbs = {}, progStripKey = null, progEven = false;
   // video / contact sheet options: time per photo (steps) and whether the reference comes last
   var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false;
   function perPhoto(){ return SPEEDS[progSpeedIdx]; }
@@ -1622,9 +1624,64 @@
     ctx.drawImage(im.canvas, 0, 0, c.width, c.height);
     return canvasToBlob(c, "image/jpeg", 0.9);
   }
+  // The painting straightened at the detail the camera actually captured:
+  // from the original painting photo (kept as it was taken), only the
+  // canvas area, sized from how many photo pixels it covers (between
+  // STAGE_MIN and STAGE_DIM on the long side), in the reference's shape.
+  // The photo is cropped to the canvas before straightening, so even a
+  // large photo never needs a full-size working copy. Cached for the
+  // current photo and corners. Resolves to {blob, w, h} (JPEG).
+  var fullCache = null;
+  function fullPainting(){
+    if(!state.ref || !state.corners) return Promise.reject(new Error("nothing to straighten"));
+    var corners = state.corners.map(copyPt), ar = state.ref.w/state.ref.h;
+    var key = state.photoKey + "|" + JSON.stringify(corners) + "|" + state.ref.w + "x" + state.ref.h;
+    if(fullCache && fullCache.key === key) return fullCache.promise;
+    var p = Store.get("photo").then(function(b){
+      if(!b) throw new Error("no original photo");
+      return decodeBlob(b);
+    }).then(function(img){
+      var W = img.naturalWidth, H = img.naturalHeight;
+      var P = corners.map(function(c){ return { x: c.u*W, y: c.v*H }; });
+      function d(a, b){ return Math.hypot(a.x - b.x, a.y - b.y); }
+      var qw = (d(P[0], P[1]) + d(P[3], P[2]))/2, qh = (d(P[0], P[3]) + d(P[1], P[2]))/2, long = Math.max(qw, qh, 1);
+      var outLong = clamp(Math.round(long), STAGE_MIN, STAGE_DIM), s = outLong/long;
+      var w = ar >= 1 ? outLong : Math.round(outLong*ar), h = ar >= 1 ? Math.round(outLong/ar) : outLong;
+      var xs = P.map(function(q){ return q.x; }), ys = P.map(function(q){ return q.y; });
+      var x0 = Math.max(0, Math.floor(Math.min.apply(null, xs)) - 2), y0 = Math.max(0, Math.floor(Math.min.apply(null, ys)) - 2);
+      var x1 = Math.min(W, Math.ceil(Math.max.apply(null, xs)) + 2), y1 = Math.min(H, Math.ceil(Math.max.apply(null, ys)) + 2);
+      var cw = Math.max(1, Math.round((x1 - x0)*s)), ch = Math.max(1, Math.round((y1 - y0)*s));
+      var c = document.createElement("canvas"); c.width = cw; c.height = ch;
+      var ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, cw, ch);
+      var cp = P.map(function(q){ return { x: (q.x - x0)*s, y: (q.y - y0)*s }; });
+      return warpAsync({ canvas: c, w: cw, h: ch }, cp, w, h);
+    }).then(function(im){
+      var c = document.createElement("canvas"); c.width = im.w; c.height = im.h;
+      var ctx = c.getContext("2d");
+      ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, im.w, im.h);   // the warp's uncovered edge
+      ctx.drawImage(im.canvas, 0, 0);
+      return canvasToBlob(c, "image/jpeg", 0.92).then(function(b){ return { blob: b, w: im.w, h: im.h }; });
+    });
+    fullCache = { key: key, promise: p };
+    p.catch(function(){ if(fullCache && fullCache.key === key) fullCache = null; });
+    return p;
+  }
+  function thumbOf(blob){
+    return decodeBlob(blob).then(function(img){
+      var s = THUMB_DIM/Math.max(img.naturalWidth, img.naturalHeight);
+      var c = document.createElement("canvas"); c.width = Math.max(1, Math.round(img.naturalWidth*s)); c.height = Math.max(1, Math.round(img.naturalHeight*s));
+      var ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high"; ctx.drawImage(img, 0, 0, c.width, c.height);
+      return canvasToBlob(c, "image/jpeg", 0.85);
+    });
+  }
+  // a new stage: the full-detail painting (or, if that can't be made, the
+  // aligned image as shown) and its thumbnail
   function addStage(im){
-    stageBlob(im).then(function(b){ return Progress.add(b, state.photoKey); })
+    fullPainting().then(function(r){ return r.blob; }).catch(function(){ return stageBlob(im); })
+      .then(function(b){ return thumbOf(b).catch(function(){ return null; }).then(function(t){ return Progress.add(b, state.photoKey, t); }); })
       .then(function(r){
+        if(progThumbs[r.item.id]){ URL.revokeObjectURL(progThumbs[r.item.id]); delete progThumbs[r.item.id]; }
         if(progUrls[r.item.id]){ URL.revokeObjectURL(progUrls[r.item.id]); delete progUrls[r.item.id]; }
         progIndex = Progress.count() - 1; progStripKey = null; progGains = null;
         render();
@@ -1633,8 +1690,17 @@
   function clearProgress(){
     stopPlay();
     Object.keys(progUrls).forEach(function(id){ URL.revokeObjectURL(progUrls[id]); });
-    progUrls = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
+    Object.keys(progThumbs).forEach(function(id){ URL.revokeObjectURL(progThumbs[id]); });
+    progUrls = {}; progThumbs = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
     return Progress.clear().catch(function(){});
+  }
+  // the thumbnail's url; stages from before thumbnails get one made (and kept) now
+  function thumbUrl(id){
+    if(progThumbs[id]) return Promise.resolve(progThumbs[id]);
+    return Progress.thumb(id).then(function(t){
+      if(t) return t;
+      return Progress.blob(id).then(function(b){ return b ? thumbOf(b).then(function(nt){ Progress.setThumb(id, nt); return nt; }) : null; });
+    }).then(function(t){ return t ? (progThumbs[id] = progThumbs[id] || URL.createObjectURL(t)) : ""; });
   }
   function urlOfStage(id){
     if(progUrls[id]) return Promise.resolve(progUrls[id]);
@@ -1721,7 +1787,7 @@
       items.forEach(function(x, i){
         var b = document.createElement("button"), im = document.createElement("img");
         im.alt = "Stage " + (i + 1);
-        urlOfStage(x.id).then(function(u){ im.src = u; });
+        thumbUrl(x.id).then(function(u){ im.src = u; });
         b.appendChild(im);
         b.addEventListener("click", function(){ stopPlay(); progIndex = i; renderProgress(); renderHint(); });
         progStrip.appendChild(b);
@@ -1755,6 +1821,7 @@
     askConfirm("Delete stage " + (progIndex + 1) + "? This can't be undone.", "Delete", function(){
       stopPlay();
       if(progUrls[it.id]){ URL.revokeObjectURL(progUrls[it.id]); delete progUrls[it.id]; }
+      if(progThumbs[it.id]){ URL.revokeObjectURL(progThumbs[it.id]); delete progThumbs[it.id]; }
       Progress.remove(it.id).catch(function(){});
       progStripKey = null; progGains = null; progShownKey = null;
       if(progIndex >= Progress.count()) progIndex = Progress.count() - 1;
@@ -2345,6 +2412,26 @@
     }
     return c;
   }
+  // the painting for saving: the full-detail version (fullPainting), or the
+  // aligned image as shown if that can't be made. Resolves to a drawable
+  // with its size {src, w, h, blob?} (blob: the JPEG, when it can be used as is).
+  function paintingForSaving(){
+    return fullPainting().then(function(r){
+      return decodeBlob(r.blob).then(function(img){ return { src: img, w: r.w, h: r.h, blob: r.blob }; });
+    }).catch(function(){
+      var c = paintingCanvas();
+      return { src: c, w: c.width, h: c.height, blob: null };
+    });
+  }
+  // the reference for saving at size w × h: the boosted one if the switch
+  // is on, else the original file, decoded at that size
+  function referenceForSaving(w, h){
+    if(refIntensityOn()) return refForSaving();
+    return Store.get("ref").then(function(b){
+      if(!b) return state.ref.canvas;
+      return decodeToCanvas(b, Math.max(w, h)).then(function(im){ return im.canvas; });
+    }).catch(function(){ return state.ref.canvas; });
+  }
   function paintingCanvas(){
     var c = grayCopy(state.aligned), ctx = c.getContext("2d");
     // the warp leaves any area outside the photo transparent: JPEG would
@@ -2357,18 +2444,18 @@
   // the painting drawn at the reference's size, which an older, smaller
   // aligned image may not match)
   var CANVAS_MAX = 16000000;
-  function sideBySideCanvas(refSrc){
-    var row = state.ref.w <= state.ref.h;
-    var W0 = row ? 2.02*state.ref.w : state.ref.w, H0 = row ? state.ref.h : 2.02*state.ref.h;
+  function sideBySideCanvas(refSrc, paint){
+    var row = state.ref.w <= state.ref.h, pw = paint ? paint.w : state.ref.w, ph = paint ? paint.h : state.ref.h;
+    var W0 = row ? 2.02*pw : pw, H0 = row ? ph : 2.02*ph;
     var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W0*H0)));
-    var w = Math.round(state.ref.w*s), h = Math.round(state.ref.h*s), gap = Math.round(0.02*Math.max(w, h));
+    var w = Math.round(pw*s), h = Math.round(ph*s), gap = Math.round(0.02*Math.max(w, h));
     var c = document.createElement("canvas");
     c.width = row ? 2*w + gap : w; c.height = row ? h : 2*h + gap;
     var ctx = c.getContext("2d");
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(grayCopy(state.ref, refSrc), 0, 0, w, h);
-    ctx.drawImage(paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap, w, h);
+    ctx.drawImage(grayCopy({ w: w, h: h }, refSrc || state.ref.canvas), 0, 0, w, h);
+    ctx.drawImage(paint ? grayCopy({ w: w, h: h }, paint.src) : paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap, w, h);
     return c;
   }
   function fileStamp(){
@@ -2387,12 +2474,15 @@
     // let the dialog draw before the (brief) work of making the images
     requestAnimationFrame(function(){ setTimeout(function(){
       if(seq !== saveSeq) return;
-      refForSaving().then(function(refSrc){
+      paintingForSaving().then(function(paint){
         if(seq !== saveSeq) throw new Error("closed");
-        return Promise.all([
-          canvasToBlob(paintingCanvas(), "image/jpeg", 0.92),
-          canvasToBlob(sideBySideCanvas(refSrc), "image/jpeg", 0.92)
-        ]);
+        return referenceForSaving(paint.w, paint.h).then(function(refSrc){
+          if(seq !== saveSeq) throw new Error("closed");
+          // the painting's JPEG as is, unless it has to be made black & white
+          var paintBlob = (paint.blob && !state.grayscale) ? Promise.resolve(paint.blob)
+                        : canvasToBlob(grayCopy({ w: paint.w, h: paint.h }, paint.src), "image/jpeg", 0.92);
+          return Promise.all([paintBlob, canvasToBlob(sideBySideCanvas(refSrc, paint), "image/jpeg", 0.92)]);
+        });
       }).then(function(b){
         if(seq !== saveSeq) return;
         saveFiles = {
