@@ -442,8 +442,8 @@ input[type=range]::-webkit-slider-thumb{
 .sync-status{ font-size:14px !important; }
 .sync-status b{ font-weight:600; }
 .sync-code{ display:flex; flex-direction:column; gap:6px; }
-.sync-code-row{ display:flex; align-items:center; gap:6px; }
-.sync-code-row code{ flex:1; min-width:0; font-size:14px; letter-spacing:0.5px; overflow-wrap:anywhere; user-select:all; -webkit-user-select:all; }
+.sync-code-row{ display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; }
+.sync-code-row code{ flex:1 1 100%; min-width:0; font-size:15px; letter-spacing:0.5px; overflow-wrap:anywhere; user-select:all; -webkit-user-select:all; }
 .sync-err{ color: var(--sienna) !important; }
 .sync-err[hidden]{ display:none; }
 .adm-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
