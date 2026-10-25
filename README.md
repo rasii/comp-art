@@ -24,7 +24,9 @@ screen, but works on any modern browser.
 | --- | --- |
 | `index.html` | Page markup |
 | `app.css` | Styles (dark, fit-to-screen layout) |
-| `app.js` | The app: state, `render()`, gestures, alignment, compare, colour reading |
+| `app.js` | The app: state, `render()`, gestures, alignment, compare, colour reading, Block-in, Progress, projects |
+| `palettes-ui.js` | The Mix and Palettes screens (installed by app.js with what they use) |
+| `sync-ui.js` | The Sync and Admin screens (installed by app.js with what they use) |
 | `warp.js` | Perspective warp (4-point homography), shared with the worker |
 | `warp-worker.js` | Runs the warp off the main thread |
 | `detect.js` | Finds the canvas in the painting photo (whole-photo guess, and snapping rough points to the edges) |
