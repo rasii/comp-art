@@ -403,6 +403,25 @@ input[type=range]::-webkit-slider-thumb{
 /* the confirm dialog can open over another dialog (e.g. delete a palette) */
 #confirmModal{ z-index:70; }
 
+/* ---------- progress ---------- */
+.prog-info{ margin:0; font-size:13px; line-height:1.45; }
+.prog-info b{ font-weight:600; }
+.prog-info span{ color: var(--ink-dim); }
+.prog-scrub{ display:flex; align-items:center; gap:12px; }
+.prog-scrub .btn{ flex:0 0 auto; min-width:64px; }
+.prog-scrub input[type=range]{ flex:1; min-width:0; }
+.prog-strip{ display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; -webkit-overflow-scrolling: touch; touch-action: pan-x; }
+.prog-strip button{ flex:0 0 auto; padding:0; border:2px solid transparent; border-radius: var(--radius); background:none; line-height:0; }
+.prog-strip button.on{ border-color: var(--sienna); }
+.prog-strip img{ height:52px; width:auto; border-radius:2px; display:block; }
+#progFrame img.gray{ filter: grayscale(1) contrast(1.03); }
+.video-box{ width: min(520px, 100%); }
+#videoCanvas, #videoPreview{ width:100%; max-height: 60dvh; object-fit:contain; border-radius: var(--radius); background:#000; display:block; }
+#videoCanvas[hidden], #videoPreview[hidden]{ display:none; }
+.video-bar{ height:4px; background: var(--line); border-radius:2px; overflow:hidden; }
+.video-bar div{ height:100%; width:0; background: var(--sienna); }
+#confirmExtra[hidden]{ display:none; }
+
 /* ---------- palettes ---------- */
 .mix-palrow{ display:flex; align-items:center; gap:8px; margin-top:-4px; }
 .mix-pallabel{ font-size:12.5px; color: var(--ink-dim); }

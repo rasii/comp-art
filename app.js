@@ -30,6 +30,7 @@
     peeking: false,  // finger held on the compare image: painting hidden
     reading: null,   // last colour reading {u, v, pointerType, r, p}
     busy: false,     // alignment being baked
+    photoKey: null,  // identifies the painting photo (a stage per photo, see Progress)
     // Block-in tab: the reference painted with a limited palette. Values vs
     // colour follows the black & white button (state.grayscale).
     // shapes: how the picture is shown. opacity of the block-in over the
@@ -175,7 +176,7 @@
     storeWarned = true;
   }
   function persistMeta(){
-    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks }).catch(storeFail);
+    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, progEven: progEven }).catch(storeFail);
   }
   function persistBlob(key, blob){ return Store.set(key, blob).catch(storeFail); }
   function persistCanvas(key, canvas){
@@ -191,12 +192,14 @@
     Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
       b.classList.toggle("active", b.dataset.mode === m);
       if(b.dataset.mode === "blocks") b.disabled = !hasRef;       // needs only the reference
+      else if(b.dataset.mode === "progress") b.disabled = !Progress.count();
       else if(b.dataset.mode !== "align") b.disabled = !hasAligned;
     });
     show(viewAlign, m === "align");
     show(viewCompare, m === "compare");
     show(viewSide, m === "side");
     show(viewShapes, m === "blocks");
+    show(viewProgress, m === "progress");
     grayBtn.hidden = (m === "align");
     saveBtn.hidden = !(hasAligned && (m === "compare" || m === "side"));
     grayBtn.classList.toggle("on", state.grayscale);
@@ -253,6 +256,9 @@
     if(m === "side") sideZoom.clampPan();
     compareZoom.apply(); sideZoom.apply();
 
+    // ---- progress ----
+    if(m === "progress") renderProgress();
+
     // ---- shapes ----
     if(hasRef && m === "blocks") renderShapes();
 
@@ -274,6 +280,8 @@
            : "check the points are on the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
+    } else if(m === "progress"){
+      hint = Progress.count() > 1 ? "slide or play to watch the painting develop" : "each aligned photo is kept here";
     } else if(m === "blocks"){
       hint = state.shapesBusy && !state.shapesResult ? "blocking in…"
            : (state.blocks.detail === 0 ? "flat masses" : "brush strokes") + " from a few " + (state.grayscale ? "values" : "mixtures") + " · tap one to read it";
@@ -465,6 +473,8 @@
   function setMode(m){
     if((m === "compare" || m === "side") && !state.aligned) return;
     if(m === "blocks" && !state.ref) return;
+    if(m === "progress" && !Progress.count()) return;
+    if(m === "progress" && m !== state.mode){ progIndex = Progress.count() - 1; prepareProgressFiles(); }
     if(m !== state.mode){
       state.mode = m;
       state.reading = null;
@@ -481,7 +491,13 @@
 
   // ---------------- loading photos ----------------
   addRefBtn.addEventListener("click", function(){ refInput.click(); });
-  changeRefBtn.addEventListener("click", function(){ refInput.click(); });
+  changeRefBtn.addEventListener("click", function(){
+    var n = Progress.count();
+    if(!n){ refInput.click(); return; }
+    prepareProgressFiles();
+    askConfirm("A different reference starts a new painting: its " + n + " progress photo" + (n > 1 ? "s are" : " is") + " cleared once you choose it.",
+      "Choose reference", function(){ refInput.click(); }, { label: "Save the progress photos first", action: saveAllProgress });
+  });
   refInput.addEventListener("change", function(){
     var f = refInput.files && refInput.files[0];
     refInput.value = "";
@@ -489,6 +505,7 @@
     decodeToCanvas(f, WORK_DIM).then(function(im){
       state.ref = im;
       newShapesSource();
+      clearProgress();
       state.aligned = null; state.photo = null; state.corners = null;
       state.offU = 0; state.offV = 0; state.reading = null;
       state.mode = "align";
@@ -509,6 +526,7 @@
     if(!f) return;
     decodeToCanvas(f, SRC_MAX).then(function(im){
       var reused = setPhoto(im, null);
+      state.photoKey = Date.now().toString(36);    // a new painting photo: aligning it adds a stage
       state.aligned = null; state.reading = null;
       state.mode = "align";
       render();
@@ -833,6 +851,7 @@
       render();
       persistMeta();
       persistCanvas("aligned", im.canvas);
+      addStage(im);
     }).catch(function(){
       state.busy = false;
       render();
@@ -1463,15 +1482,265 @@
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
   if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "blocks"){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
 
+  // ---------------- progress: the painting's stages ----------------
+  // One stage per aligned photo (progress.js keeps them on the device).
+  // The tab shows one stage large, a slider and thumbnails to move through
+  // them, play, delete, save all, and the timelapse video. The history
+  // belongs to the reference: a new reference or "Start new painting"
+  // clears it (both ask first, with the chance to save the photos).
+  var viewProgress = $("view-progress"), progImg = $("progImg"), progInfo = $("progInfo");
+  var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
+  var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
+  var videoModal = $("videoModal"), videoTitle = $("videoTitle"), videoCanvas = $("videoCanvas"), videoPreview = $("videoPreview");
+  var videoBar = $("videoBar"), videoNote = $("videoNote"), videoClose = $("videoClose"), videoSave = $("videoSave");
+
+  var STAGE_DIM = 2000;         // stages are stored at this size (plenty for viewing and video)
+  var progIndex = -1, progTimer = null, progUrls = {}, progStripKey = null, progEven = false;
+  var progGains = null, progGainsKey = null, progShownKey = null;
+
+  // a stage image from an aligned painting: JPEG, the uncovered warp edge
+  // in the app's background colour
+  function stageBlob(im){
+    var s = Math.min(1, STAGE_DIM/Math.max(im.w, im.h));
+    var c = document.createElement("canvas"); c.width = Math.round(im.w*s); c.height = Math.round(im.h*s);
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(im.canvas, 0, 0, c.width, c.height);
+    return canvasToBlob(c, "image/jpeg", 0.9);
+  }
+  function addStage(im){
+    stageBlob(im).then(function(b){ return Progress.add(b, state.photoKey); })
+      .then(function(r){
+        if(progUrls[r.item.id]){ URL.revokeObjectURL(progUrls[r.item.id]); delete progUrls[r.item.id]; }
+        progIndex = Progress.count() - 1; progStripKey = null; progGains = null;
+        render();
+      }).catch(storeFail);
+  }
+  function clearProgress(){
+    stopPlay();
+    Object.keys(progUrls).forEach(function(id){ URL.revokeObjectURL(progUrls[id]); });
+    progUrls = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
+    return Progress.clear().catch(function(){});
+  }
+  function urlOfStage(id){
+    if(progUrls[id]) return Promise.resolve(progUrls[id]);
+    return Progress.blob(id).then(function(b){ if(!b) return ""; return (progUrls[id] = progUrls[id] || URL.createObjectURL(b)); });
+  }
+  function stageWhen(t, first){
+    var d = new Date(t), opts = { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
+    var when = d.toLocaleString(undefined, opts);
+    var mins = Math.round((t - first)/60000), days = Math.floor(mins/1440), hrs = Math.floor((mins % 1440)/60), m = mins % 60;
+    var since = mins < 1 ? "Under a minute" : (days ? days + (days === 1 ? " day " : " days ") : "") + (hrs ? hrs + " h " : "") + (!days && m ? m + " min" : "");
+    return { when: when, since: since.trim() };
+  }
+
+  // the lighting gains for every stage (small copies compared), cached
+  function ensureGains(){
+    var items = Progress.items(), key = items.map(function(it){ return it.id; }).join(",");
+    if(progGains && progGainsKey === key) return Promise.resolve(progGains);
+    return Promise.all(items.map(function(it){ return Progress.blob(it.id).then(smallPixels); })).then(function(smalls){
+      progGains = Progress.gains(smalls); progGainsKey = key;
+      return progGains;
+    });
+  }
+  function decodeBlob(b){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(b), img = new Image();
+      img.onload = function(){ resolve(img); setTimeout(function(){ URL.revokeObjectURL(url); }, 0); };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new Error("decode")); };
+      img.src = url;
+    });
+  }
+  function smallPixels(b){
+    return decodeBlob(b).then(function(img){
+      var c = document.createElement("canvas"); c.width = 160; c.height = Math.max(1, Math.round(160*img.naturalHeight/img.naturalWidth));
+      var ctx = c.getContext("2d"); ctx.drawImage(img, 0, 0, c.width, c.height);
+      return ctx.getImageData(0, 0, c.width, c.height).data;
+    });
+  }
+  // a stage as shown: as photographed, or with the lighting evened out
+  function shownStage(i){
+    var it = Progress.items()[i];
+    if(!progEven) return urlOfStage(it.id);
+    return Promise.all([ensureGains(), Progress.blob(it.id)]).then(function(r){
+      return decodeBlob(r[1]).then(function(img){
+        var s = Math.min(1, 1600/Math.max(img.naturalWidth, img.naturalHeight));
+        var c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*s); c.height = Math.round(img.naturalHeight*s);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        Progress.adjust(c, r[0][i], false);
+        return c.toDataURL("image/jpeg", 0.9);
+      });
+    });
+  }
+
+  function renderProgress(){
+    var items = Progress.items(), n = items.length;
+    if(!n) return;
+    if(progIndex < 0 || progIndex >= n) progIndex = n - 1;
+    var it = items[progIndex];
+    progSlider.max = String(n - 1);
+    if(progSlider.value != progIndex) progSlider.value = progIndex;
+    progSlider.disabled = n < 2; progPlay.disabled = n < 2;
+    var w = stageWhen(it.t, items[0].t);
+    progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + (progIndex === 0 ? "The first photo" : w.since + " after the first") + "</span>";
+    progEvenSwitch.classList.toggle("on", progEven);
+    progEvenSwitch.disabled = n < 2;
+    progImg.classList.toggle("gray", state.grayscale);
+    // the large view
+    var key = it.id + ":" + (progEven ? "e" : "o") + ":" + n;
+    if(key !== progShownKey){
+      progShownKey = key;
+      shownStage(progIndex).then(function(src){ if(progShownKey === key) progImg.src = src; }).catch(function(){});
+    }
+    // thumbnails, rebuilt only when the list changes
+    var skey = items.map(function(x){ return x.id; }).join(",");
+    if(skey !== progStripKey){
+      progStripKey = skey;
+      progStrip.innerHTML = "";
+      items.forEach(function(x, i){
+        var b = document.createElement("button"), im = document.createElement("img");
+        im.alt = "Stage " + (i + 1);
+        urlOfStage(x.id).then(function(u){ im.src = u; });
+        b.appendChild(im);
+        b.addEventListener("click", function(){ stopPlay(); progIndex = i; renderProgress(); renderHint(); });
+        progStrip.appendChild(b);
+      });
+    }
+    Array.prototype.forEach.call(progStrip.children, function(b, i){ b.classList.toggle("on", i === progIndex); });
+    var on = progStrip.children[progIndex];
+    if(on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+    progPlay.textContent = progTimer ? "Pause" : "Play";
+  }
+  progSlider.addEventListener("input", function(){ stopPlay(); progIndex = Number(progSlider.value); renderProgress(); renderHint(); });
+  function stopPlay(){ if(progTimer){ clearInterval(progTimer); progTimer = null; progPlay.textContent = "Play"; } }
+  progPlay.addEventListener("click", function(){
+    if(progTimer){ stopPlay(); return; }
+    var n = Progress.count();
+    if(progIndex >= n - 1) progIndex = 0;
+    renderProgress();
+    progTimer = setInterval(function(){
+      if(progIndex >= Progress.count() - 1){ stopPlay(); renderProgress(); return; }
+      progIndex++; renderProgress(); renderHint();
+    }, 700);
+    progPlay.textContent = "Pause";
+  });
+  progEvenSwitch.addEventListener("click", function(){ progEven = !progEven; persistMeta(); renderProgress(); });
+  progDeleteBtn.addEventListener("click", function(){
+    var it = Progress.items()[progIndex];
+    if(!it) return;
+    askConfirm("Delete stage " + (progIndex + 1) + "? This can't be undone.", "Delete", function(){
+      stopPlay();
+      if(progUrls[it.id]){ URL.revokeObjectURL(progUrls[it.id]); delete progUrls[it.id]; }
+      Progress.remove(it.id).catch(function(){});
+      progStripKey = null; progGains = null; progShownKey = null;
+      if(progIndex >= Progress.count()) progIndex = Progress.count() - 1;
+      if(!Progress.count()) state.mode = state.aligned ? "compare" : "align";
+      render();
+    });
+  });
+
+  // ---- saving: all the images, as photographed ----
+  // The images have to be in hand before the tap (the share sheet only
+  // opens straight from a tap), so they're loaded whenever the tab or a
+  // "clear" question is shown.
+  var progFilesReady = false;
+  function prepareProgressFiles(){ progFilesReady = false; return Progress.loadAll().then(function(){ progFilesReady = true; }).catch(function(){}); }
+  function progressFiles(){
+    var stamp = fileStamp();
+    return Progress.items().map(function(it, i){
+      var b = Progress.cached(it.id);
+      return b ? new File([b], "comp-art-stage-" + (i < 9 ? "0" : "") + (i + 1) + "-" + stamp + ".jpg", { type: "image/jpeg" }) : null;
+    });
+  }
+  function saveAllProgress(){
+    var files = progressFiles();
+    if(!progFilesReady || files.some(function(f){ return !f; })){ prepareProgressFiles(); toast("Getting the photos ready. Tap again in a moment."); return; }
+    deliverMany(files);
+  }
+  function deliverMany(files){
+    var touch = navigator.maxTouchPoints > 0;
+    if(touch && navigator.canShare && navigator.canShare({ files: files })){
+      navigator.share({ files: files }).catch(function(e){ if(!e || e.name !== "AbortError") files.forEach(download); });
+    } else {
+      files.forEach(function(f, i){ setTimeout(function(){ download(f); }, i*250); });
+    }
+  }
+  progSaveAllBtn.addEventListener("click", saveAllProgress);
+
+  // ---- the timelapse video: the stages cross-fading, ending on the reference ----
+  var videoRun = null, videoFile = null, videoUrl = null;
+  function closeVideo(){
+    if(videoRun){ videoRun.cancel(); videoRun = null; }
+    videoModal.classList.remove("show");
+    videoPreview.pause(); videoPreview.removeAttribute("src");
+    if(videoUrl){ URL.revokeObjectURL(videoUrl); videoUrl = null; }
+    videoFile = null;
+  }
+  progVideoBtn.addEventListener("click", function(){
+    var items = Progress.items();
+    if(!items.length || !state.ref) return;
+    if(!Progress.videoType()){ toast("This browser can't make videos."); return; }
+    stopPlay();
+    // the video's size: the reference's shape, 1920 px on the long side (even numbers)
+    var ar = state.ref.w/state.ref.h, L = 1920;
+    var W = ar >= 1 ? L : Math.round(L*ar), H = ar >= 1 ? Math.round(L/ar) : L;
+    videoCanvas.width = W - (W % 2); videoCanvas.height = H - (H % 2);
+    videoCanvas.hidden = false; videoPreview.hidden = true;
+    videoTitle.textContent = "Making the timelapse…";
+    videoNote.textContent = "Keep this screen open while it records (" + items.length + (items.length === 1 ? " stage" : " stages") + ", then the reference).";
+    videoBar.style.width = "0";
+    videoSave.disabled = true; videoClose.textContent = "Cancel";
+    videoModal.classList.add("show");
+    var gray = state.grayscale;
+    var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
+    function frame(k){
+      return gainsP.then(function(G){
+        var src = k < items.length ? Progress.blob(items[k].id).then(decodeBlob) : Promise.resolve(state.ref.canvas);
+        return src.then(function(img){
+          var c = document.createElement("canvas"); c.width = videoCanvas.width; c.height = videoCanvas.height;
+          var ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          return Progress.adjust(c, (G && k < items.length) ? G[k] : null, gray);
+        });
+      });
+    }
+    videoRun = Progress.record(videoCanvas, items.length + 1, frame, function(f){ videoBar.style.width = Math.round(f*100) + "%"; });
+    videoRun.promise.then(function(res){
+      videoRun = null;
+      var ext = res.type.indexOf("mp4") >= 0 ? "mp4" : "webm";
+      videoFile = new File([res.blob], "comp-art-timelapse-" + fileStamp() + "." + ext, { type: res.type });
+      videoUrl = URL.createObjectURL(res.blob);
+      videoCanvas.hidden = true; videoPreview.hidden = false;
+      videoPreview.src = videoUrl; videoPreview.play().catch(function(){});
+      videoTitle.textContent = "Timelapse";
+      videoNote.textContent = Math.round(res.seconds) + " seconds, " + Math.max(1, Math.round(res.blob.size/1048576)) + " MB.";
+      videoSave.disabled = false; videoClose.textContent = "Close";
+    }).catch(function(e){
+      videoRun = null;
+      if(e && e.message === "cancelled") return;
+      closeVideo();
+      toast("The video couldn't be made on this device.");
+    });
+  });
+  videoClose.addEventListener("click", closeVideo);
+  videoSave.addEventListener("click", function(){ if(videoFile) deliver(videoFile); });
+
   // ---------------- restart ----------------
-  var confirmAction = null;
-  function askConfirm(msg, okLabel, action){
+  // extra (optional): {label, action}, a third button that runs its action
+  // and closes the dialog, e.g. "save the photos first"
+  var confirmAction = null, confirmExtraAction = null, confirmExtra = $("confirmExtra");
+  function askConfirm(msg, okLabel, action, extra){
     confirmMsg.textContent = msg;
     confirmOk.textContent = okLabel;
     confirmAction = action;
+    confirmExtraAction = extra ? extra.action : null;
+    confirmExtra.hidden = !extra;
+    if(extra) confirmExtra.textContent = extra.label;
     confirmModal.classList.add("show");
   }
-  function closeConfirm(){ confirmModal.classList.remove("show"); confirmAction = null; }
+  function closeConfirm(){ confirmModal.classList.remove("show"); confirmAction = null; confirmExtraAction = null; }
+  confirmExtra.addEventListener("click", function(){ var a = confirmExtraAction; closeConfirm(); if(a) a(); });
   confirmOk.addEventListener("click", function(){ var a = confirmAction; closeConfirm(); if(a) a(); });
   confirmCancel.addEventListener("click", closeConfirm);
   confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
@@ -1481,6 +1750,7 @@
     if(palModal.classList.contains("show")){ if(!palListView.hidden) closePalettes(); return; }
     if(mixModal.classList.contains("show")) closeMix();
     if(saveModal.classList.contains("show")) closeSave();
+    if(videoModal.classList.contains("show")) closeVideo();
   });
 
   // ---------------- paint recipes (mix.js) ----------------
@@ -1950,14 +2220,15 @@
   saveModal.addEventListener("click", function(e){ if(e.target === saveModal) closeSave(); });
 
   function restart(){
-    state.ref = null; state.photo = null; state.aligned = null;
+    clearProgress();
+    state.ref = null; state.photo = null; state.aligned = null; state.photoKey = null;
     newShapesSource();
     state.corners = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
     state.reading = null; state.peeking = false; state.mode = "align";
     pinZoom.reset(); compareZoom.reset(); sideZoom.reset();
     render();
-    // the photos and their settings go; your palettes and paints stay
+    // the photos, their settings and the progress go; your palettes and paints stay
     ["ref", "photo", "aligned", "meta"].forEach(function(k){ Store.remove(k).catch(function(){}); });
     try{ localStorage.removeItem(LEGACY_KEY); }catch(e){}
   }
@@ -1966,10 +2237,12 @@
     // within the tap on "Start new" (iOS only allows it from a user
     // gesture), and it does: the confirm button runs this synchronously.
     // Cancelling it leaves the usual "Add reference photo" screen.
-    askConfirm("Start a new painting? This clears your reference and painting photos.", "Start new", function(){
+    var n = Progress.count();
+    if(n) prepareProgressFiles();
+    askConfirm("Start a new painting? This clears your reference and painting photos" + (n ? ", and the " + n + " progress photo" + (n > 1 ? "s" : "") : "") + ".", "Start new", function(){
       restart();
       refInput.click();
-    });
+    }, n ? { label: "Save the progress photos first", action: saveAllProgress } : null);
   });
 
   // ---------------- boot ----------------
@@ -1989,6 +2262,7 @@
   function boot(){
     render();
     Palettes.load(Store);
+    Progress.init(Store).then(render);
     // Ask for durable storage so the browser doesn't clear the saved photos
     // after a spell of non-use.
     if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }
@@ -1999,6 +2273,8 @@
       if(!refBlob) return;
       state.lastCorners = (meta.lastCorners && validCorners(meta.lastCorners.pts)) ? meta.lastCorners : null;
       state.offU = Number(meta.offU) || 0; state.offV = Number(meta.offV) || 0;
+      state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : null;
+      progEven = !!meta.progEven;
       if(meta.shapes && typeof meta.shapes === "object"){
         var s = meta.shapes;
         state.shapes = {

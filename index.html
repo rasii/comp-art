@@ -47,6 +47,7 @@
     <button data-mode="compare" disabled>Compare</button>
     <button data-mode="side" disabled>Side by side</button>
     <button data-mode="blocks" disabled>Block-in</button>
+    <button data-mode="progress" disabled>Progress</button>
   </nav>
 
   <!-- ===================== ALIGN VIEW ===================== -->
@@ -287,6 +288,34 @@
    </div>
   </section>
 
+  <!-- ===================== PROGRESS VIEW ===================== -->
+  <!-- every aligned photo of the painting, in order -->
+  <section id="view-progress" style="display:none;">
+   <div class="step">
+    <div class="fit">
+      <div class="frame fill" id="progFrame"><img id="progImg" alt="The painting at this stage"></div>
+    </div>
+    <div class="controls">
+      <div class="panel">
+        <p class="prog-info" id="progInfo"></p>
+        <div class="prog-scrub">
+          <button class="btn small" id="progPlay">Play</button>
+          <input type="range" id="progSlider" min="0" max="0" step="1" value="0" aria-label="Stage">
+        </div>
+        <div class="prog-strip" id="progStrip"></div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">Even out lighting</div>
+          <button class="switch" id="progEvenSwitch" aria-label="Even out the lighting between photos"></button>
+        </div>
+        <div class="divider"></div>
+        <button class="btn primary full" id="progVideoBtn">Make timelapse video</button>
+        <button class="btn full" id="progSaveAllBtn">Save all images</button>
+        <button class="btn ghost full small" id="progDeleteBtn">Delete this stage</button>
+      </div>
+    </div>
+   </div>
+  </section>
+
 </main>
 
 <div class="toast" id="toast"></div>
@@ -294,9 +323,25 @@
 <div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmMsg">
   <div class="modal-box">
     <p id="confirmMsg"></p>
+    <button class="btn full" id="confirmExtra" hidden></button>
     <div class="row stretch">
       <button class="btn" id="confirmCancel">Cancel</button>
       <button class="btn primary" id="confirmOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- making the timelapse: plays (and records) on the canvas, then shows the video -->
+<div class="modal" id="videoModal" role="dialog" aria-modal="true" aria-labelledby="videoTitle">
+  <div class="modal-box video-box">
+    <p class="mix-title" id="videoTitle">Making the timelapse…</p>
+    <canvas id="videoCanvas"></canvas>
+    <video id="videoPreview" playsinline muted loop controls hidden></video>
+    <div class="video-bar"><div id="videoBar"></div></div>
+    <p class="mix-note" id="videoNote"></p>
+    <div class="row stretch">
+      <button class="btn" id="videoClose">Cancel</button>
+      <button class="btn primary" id="videoSave" disabled>Save video</button>
     </div>
   </div>
 </div>
@@ -426,6 +471,7 @@
 <script src="mix.js"></script>
 <script src="pigments.js"></script>
 <script src="palettes.js"></script>
+<script src="progress.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
 </body>

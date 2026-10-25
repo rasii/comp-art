@@ -1,0 +1,190 @@
+// Progress: the painting's stages, one per aligned photo, for the Progress
+// tab and its timelapse.
+//
+// Each stage is the aligned painting (straightened and cropped to the
+// reference's rectangle), so stages line up exactly. Stored on the device:
+// the list under Store key "progress" ([{id, t, key}]) and each image as a
+// JPEG under "prog-<id>". `key` identifies the painting photo it came
+// from, so aligning the same photo again updates its stage instead of
+// adding one.
+//
+// Also here: "even out lighting" (per-stage colour gains so changes in
+// daylight or lamps don't flicker) and the timelapse recorder.
+window.Progress = (function(){
+  "use strict";
+
+  var store = null, list = [], blobs = {};
+
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function valid(it){ return it && typeof it.id === "string" && typeof it.t === "number"; }
+  function saveList(){ return store.set("progress", list.slice()); }
+
+  function init(s){
+    store = s;
+    return s.get("progress").then(function(r){ list = Array.isArray(r) ? r.filter(valid) : []; })
+      .catch(function(){ list = []; });
+  }
+  function items(){ return list.slice(); }
+  function count(){ return list.length; }
+  // a new stage, or the latest one replaced when it came from the same photo
+  function add(blob, key){
+    var last = list[list.length - 1];
+    if(last && key && last.key === key){
+      last.t = Date.now();
+      blobs[last.id] = blob;
+      return Promise.all([store.set("prog-" + last.id, blob), saveList()]).then(function(){ return { item: last, replaced: true }; });
+    }
+    var item = { id: uid(), t: Date.now(), key: key || null };
+    list.push(item); blobs[item.id] = blob;
+    return Promise.all([store.set("prog-" + item.id, blob), saveList()]).then(function(){ return { item: item, replaced: false }; });
+  }
+  function remove(id){
+    list = list.filter(function(it){ return it.id !== id; });
+    delete blobs[id];
+    return Promise.all([store.remove("prog-" + id), saveList()]);
+  }
+  function clear(){
+    var ids = list.map(function(it){ return it.id; });
+    list = []; blobs = {};
+    return Promise.all(ids.map(function(id){ return store.remove("prog-" + id); }).concat([saveList()]));
+  }
+  function blob(id){
+    if(blobs[id]) return Promise.resolve(blobs[id]);
+    return store.get("prog-" + id).then(function(b){ if(b) blobs[id] = b; return b || null; });
+  }
+  function loadAll(){ return Promise.all(list.map(function(it){ return blob(it.id); })); }
+  function cached(id){ return blobs[id] || null; }
+
+  // ---------------- even out lighting ----------------
+  var LIN = new Float32Array(256);
+  for(var i=0;i<256;i++){ var c = i/255; LIN[i] = c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
+  function toByte(l){ var c = l <= 0.0031308 ? 12.92*l : 1.055*Math.pow(l, 1/2.4) - 0.055; return c <= 0 ? 0 : c >= 1 ? 255 : Math.round(c*255); }
+
+  // Per-stage gains [r, g, b] that bring each stage's lighting to the
+  // latest stage's. Between two neighbouring stages most of the painting is
+  // unchanged, so the typical (median) ratio of their pixels is the change
+  // in lighting, not in paint. The ratios are chained back from the last
+  // stage. smalls: same-size RGBA pixel arrays, one per stage, in order.
+  function gains(smalls){
+    var n = smalls.length, G = new Array(n);
+    G[n-1] = [1, 1, 1];
+    var BINS = 600, LR = 1.2, hist = [new Uint32Array(BINS), new Uint32Array(BINS), new Uint32Array(BINS)];   // ln ratios in ±LR
+    for(var s=n-2; s>=0; s--){
+      var a = smalls[s], b = smalls[s+1], r = [1, 1, 1];
+      hist.forEach(function(h){ h.fill(0); });
+      var cnt = 0;
+      for(var p=0; p<a.length; p+=4){
+        for(var ch=0; ch<3; ch++){
+          var x = LIN[a[p+ch]], y = LIN[b[p+ch]];
+          if(x < 0.02 || y < 0.02 || x > 0.95 || y > 0.95) continue;
+          var lr = Math.log(y/x), bin = Math.round((lr + LR)/(2*LR)*(BINS-1));
+          if(bin < 0 || bin >= BINS) continue;
+          hist[ch][bin]++; if(ch === 0) cnt++;
+        }
+      }
+      if(cnt > 200) for(ch=0; ch<3; ch++){
+        var total = 0, h = hist[ch], half, acc = 0, k;
+        for(k=0;k<BINS;k++) total += h[k];
+        half = total/2;
+        for(k=0;k<BINS && acc < half;k++) acc += h[k];
+        r[ch] = Math.min(2.5, Math.max(0.4, Math.exp((k - 1)/(BINS-1)*2*LR - LR)));
+      }
+      G[s] = [G[s+1][0]*r[0], G[s+1][1]*r[1], G[s+1][2]*r[2]];
+    }
+    return G;
+  }
+  // applies gains (and optionally black & white) to a canvas in place
+  function adjust(canvas, gain, gray){
+    var g = gain || [1, 1, 1];
+    if(!gray && g[0] === 1 && g[1] === 1 && g[2] === 1) return canvas;
+    var ctx = canvas.getContext("2d"), img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
+    var lut = [new Uint8Array(256), new Uint8Array(256), new Uint8Array(256)];
+    for(var v=0; v<256; v++) for(var ch=0; ch<3; ch++) lut[ch][v] = toByte(LIN[v]*g[ch]);
+    for(var p=0; p<d.length; p+=4){
+      var R = lut[0][d[p]], G = lut[1][d[p+1]], B = lut[2][d[p+2]];
+      if(gray){ var y = Math.round(0.2126*R + 0.7152*G + 0.0722*B); R = G = B = y; }
+      d[p] = R; d[p+1] = G; d[p+2] = B;
+    }
+    ctx.putImageData(img, 0, 0);
+    return canvas;
+  }
+
+  // ---------------- timelapse ----------------
+  function videoType(){
+    if(!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
+    var types = ["video/mp4;codecs=avc1.42E01E", "video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    for(var i=0;i<types.length;i++) if(MediaRecorder.isTypeSupported(types[i])) return types[i];
+    return null;
+  }
+  // Plays the stages on `canvas` (sized by the caller) with a cross-fade
+  // between each, ending on the reference, and records it. frame(k)
+  // returns a Promise of a drawable for sequence position k (the stages,
+  // then the reference); frames are prepared one ahead, so only a few are
+  // in memory at once. Returns {promise, cancel}; the promise gives
+  // {blob, type, seconds}.
+  function record(canvas, total, frame, onProgress){
+    var type = videoType();
+    if(!type) return { promise: Promise.reject(new Error("no recorder")), cancel: function(){} };
+    var ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
+    var n = total;                     // positions: stages 0..n-2, reference n-1
+    var HOLD_FIRST = 1.2, HOLD = 0.55, HOLD_LAST = 1.6, HOLD_REF = 2.6, FADE = 0.45, FADE_REF = 0.9;
+    var start = [], hold = [], t = 0;
+    for(var k=0;k<n;k++){
+      start.push(t);
+      hold[k] = k === 0 ? HOLD_FIRST : k === n-1 ? HOLD_REF : k === n-2 ? HOLD_LAST : HOLD;
+      t += hold[k] + (k < n-1 ? (k === n-2 ? FADE_REF : FADE) : 0);
+    }
+    var duration = t, ready = {}, pending = {}, cancelled = false, rec, chunks = [];
+    function want(k){
+      if(k >= n || ready[k] || pending[k]) return;
+      pending[k] = frame(k).then(function(img){ ready[k] = img; delete pending[k]; });
+    }
+    function draw(img, alpha){
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(img, 0, 0, W, H);
+    }
+    var promise = new Promise(function(resolve, reject){
+      var stream = canvas.captureStream(30);
+      try{ rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 10000000 }); }
+      catch(e){ rec = new MediaRecorder(stream); }
+      rec.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function(){
+        stream.getTracks().forEach(function(tr){ tr.stop(); });
+        if(cancelled){ reject(new Error("cancelled")); return; }
+        resolve({ blob: new Blob(chunks, { type: type.split(";")[0] }), type: type.split(";")[0], seconds: duration });
+      };
+      want(0); want(1);
+      // the clock only runs while the frames it needs are ready, so a slow
+      // decode makes a frame linger a moment rather than skip
+      var clock = 0, last = null, started = false;
+      function tick(now){
+        if(cancelled){ if(rec.state !== "inactive") rec.stop(); else reject(new Error("cancelled")); return; }
+        var k = 0;
+        while(k < n-1 && clock >= start[k+1]) k++;
+        var into = clock - start[k], fading = k < n-1 && into > hold[k];
+        want(k+1); want(k+2);
+        var cur = ready[k], next = fading ? ready[k+1] : null;
+        if(!cur || (fading && !next)){ last = now; requestAnimationFrame(tick); return; }
+        if(!started){ rec.start(250); started = true; last = now; }
+        ctx.globalAlpha = 1; ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H);
+        draw(cur, 1);
+        if(fading){
+          var fade = k === n-2 ? FADE_REF : FADE;
+          draw(next, Math.min(1, (into - hold[k])/fade));
+        }
+        ctx.globalAlpha = 1;
+        // drop frames that have gone by
+        Object.keys(ready).forEach(function(j){ if(Number(j) < k) delete ready[j]; });
+        if(onProgress) onProgress(Math.min(1, clock/duration));
+        if(clock >= duration){ setTimeout(function(){ if(rec.state !== "inactive") rec.stop(); }, 300); return; }
+        clock += (now - last)/1000; last = now;
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+    return { promise: promise, cancel: function(){ cancelled = true; if(rec && rec.state !== "inactive") rec.stop(); } };
+  }
+
+  return { init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached,
+           loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, record: record };
+})();
