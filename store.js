@@ -37,6 +37,8 @@ window.Store = (function(){
     get: function(key){ return run("readonly", function(s){ return s.get(key); }); },
     set: function(key, value){ return run("readwrite", function(s){ s.put(value, key); }); },
     remove: function(key){ return run("readwrite", function(s){ s.delete(key); }); },
+    // every key in the store (for copying or deleting a whole project)
+    keys: function(){ return run("readonly", function(s){ return s.getAllKeys(); }); },
     clear: function(){ return run("readwrite", function(s){ s.clear(); }); }
   };
 })();

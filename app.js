@@ -25,6 +25,7 @@
     adjusting: false, // compare: drag moves the painting instead of peeking
     opacityBeforeAdjust: null,
     mode: "align",
+    cmpView: "compare", // which compare view the Compare tab opens: "compare" (overlay) or "side"
     grayscale: false,
     opacity: 100,    // painting opacity on the compare view
     peeking: false,  // finger held on the compare image: painting hidden
@@ -49,7 +50,11 @@
   // ---------------- element refs ----------------
   var $ = function(id){ return document.getElementById(id); };
   var tabs = $("tabs"), stepHint = $("stepHint");
-  var grayBtn = $("grayBtn"), restartBtn = $("restartBtn"), saveBtn = $("saveBtn");
+  var grayBtn = $("grayBtn"), saveBtn = $("saveBtn"), menuBtn = $("menuBtn");
+  var projectBtn = $("projectBtn"), projectName = $("projectName");
+  var projModal = $("projModal"), projList = $("projList"), projNewBtn = $("projNewBtn"), projDone = $("projDone");
+  var nameModal = $("nameModal"), nameInput = $("nameInput"), nameOk = $("nameOk"), nameCancel = $("nameCancel"), nameTitle = $("nameTitle");
+  var menuModal = $("menuModal"), menuProjects = $("menuProjects"), menuPalettes = $("menuPalettes"), menuDone = $("menuDone");
   var saveModal = $("saveModal"), savePaintingBtn = $("savePaintingBtn"), saveSideBtn = $("saveSideBtn");
   var saveNote = $("saveNote"), saveCancel = $("saveCancel");
 
@@ -69,7 +74,11 @@
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
   var compareFrame = $("compareFrame"), compareView = $("compareView"), compareRef = $("compareRef"), compareCur = $("compareCur");
   var opacitySlider = $("opacitySlider");
-  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn"), retakeFromCompareBtn = $("retakeFromCompareBtn");
+  var adjustSwitch = $("adjustSwitch"), resetPosBtn = $("resetPosBtn");
+  var cmpBar = $("cmpBar"), cmpSeg = $("cmpSeg"), compareBarSlot = $("compareBarSlot"), sideBarSlot = $("sideBarSlot");
+  var newPhotoBtn = $("newPhotoBtn"), adjustAlignBtn = $("adjustAlignBtn"), alignBackBtn = $("alignBackBtn");
+  var blocksMoreBtn = $("blocksMoreBtn"), blocksMore = $("blocksMore");
+  var exportModal = $("exportModal"), exportNote = $("exportNote"), exportDone = $("exportDone"), progExportBtn = $("progExportBtn");
   var pickMarker = $("pickMarker");
 
   var sideFit = $("sideFit"), sideSplit = $("sideSplit");
@@ -170,15 +179,19 @@
   // ---------------- persistence (IndexedDB) ----------------
   // Original photo files are stored as-is; the aligned result as PNG;
   // corners and offsets as a small record. Failures never block the app.
+  // PStore: the open project's data (Projects.scoped); palettes use Store.
+  var PStore = null;
   var storeWarned = false;
   function storeFail(){
     if(!storeWarned) toast("Photos couldn't be saved on this device, but this session works fine.");
     storeWarned = true;
   }
   function persistMeta(){
-    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx }).catch(storeFail);
+    if(!PStore) return;
+    Projects.touch(Projects.activeId());
+    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx }).catch(storeFail);
   }
-  function persistBlob(key, blob){ return Store.set(key, blob).catch(storeFail); }
+  function persistBlob(key, blob){ return PStore ? PStore.set(key, blob).catch(storeFail) : Promise.resolve(); }
   function persistCanvas(key, canvas){
     return canvasToBlob(canvas, "image/png").then(function(b){ return persistBlob(key, b); }).catch(storeFail);
   }
@@ -190,11 +203,20 @@
 
     // tabs and views
     Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
-      b.classList.toggle("active", b.dataset.mode === m);
-      if(b.dataset.mode === "blocks") b.disabled = !hasRef;       // needs only the reference
-      else if(b.dataset.mode === "progress") b.disabled = !Progress.count();
-      else if(b.dataset.mode !== "align") b.disabled = !hasAligned;
+      var bm = b.dataset.mode;
+      b.classList.toggle("active", bm === m || (bm === "compare" && m === "side"));
+      if(bm === "blocks") b.disabled = !hasRef;                    // needs only the reference
+      else if(bm === "progress") b.disabled = !Progress.count();
+      else b.disabled = !hasAligned;
     });
+    // the compare bar goes with whichever compare view is showing
+    var barSlot = (m === "side") ? sideBarSlot : compareBarSlot;
+    if(cmpBar.parentElement !== barSlot.parentElement || cmpBar.previousElementSibling !== barSlot) barSlot.parentNode.insertBefore(cmpBar, barSlot.nextSibling);
+    Array.prototype.forEach.call(cmpSeg.children, function(b){
+      var on = b.dataset.view === m;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    alignBackBtn.hidden = !hasAligned;
     show(viewAlign, m === "align");
     show(viewCompare, m === "compare");
     show(viewSide, m === "side");
@@ -295,6 +317,8 @@
     if(m === "blocks" && state.shapesPick !== null && state.shapesResult) hint += " · double-tap to clear";
     else if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (m === "blocks" && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
     stepHint.textContent = hint;
+    var proj = Projects.active();
+    if(proj && projectName.textContent !== proj.name) projectName.textContent = proj.name;
   }
 
   function renderReading(){
@@ -480,6 +504,7 @@
     if(m === "blocks" && !state.ref) return;
     if(m === "progress" && !Progress.count()) return;
     if(m === "progress" && m !== state.mode){ progIndex = Progress.count() - 1; prepareProgressFiles(); }
+    if(m === "compare" || m === "side") state.cmpView = m;
     if(m !== state.mode){
       state.mode = m;
       state.reading = null;
@@ -490,8 +515,16 @@
   tabs.addEventListener("click", function(e){
     var b = e.target.closest("button[data-mode]");
     if(!b || b.disabled) return;
-    setMode(b.dataset.mode);
+    setMode(b.dataset.mode === "compare" ? state.cmpView : b.dataset.mode);
   });
+  cmpSeg.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-view]");
+    if(b) setMode(b.dataset.view);
+  });
+  // Align is a step: a new photo of the painting, or adjusting the current one's corners
+  newPhotoBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
+  adjustAlignBtn.addEventListener("click", function(){ setMode("align"); });
+  alignBackBtn.addEventListener("click", function(){ if(state.aligned) setMode(state.cmpView); });
   grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; state.shapesPick = null; render(); });
 
   // ---------------- loading photos ----------------
@@ -499,9 +532,9 @@
   changeRefBtn.addEventListener("click", function(){
     var n = Progress.count();
     if(!n){ refInput.click(); return; }
-    prepareProgressFiles();
-    askConfirm("A different reference starts a new painting: its " + n + " progress photo" + (n > 1 ? "s are" : " is") + " cleared once you choose it.",
-      "Choose reference", function(){ refInput.click(); }, { label: "Save the progress photos first", action: saveAllProgress });
+    // the progress photos belong to this reference: a different one is a new painting
+    askConfirm("This project has " + n + " progress photo" + (n > 1 ? "s" : "") + " of its reference. Start a new project with a different reference? This one is kept.",
+      "New project", function(){ newProject(true); });
   });
   refInput.addEventListener("change", function(){
     var f = refInput.files && refInput.files[0];
@@ -516,15 +549,16 @@
       state.mode = "align";
       render();
       persistBlob("ref", f);
-      Store.remove("photo").catch(function(){});
-      Store.remove("aligned").catch(function(){});
+      PStore.remove("photo").catch(function(){});
+      PStore.remove("aligned").catch(function(){});
       persistMeta();
+      // the project's picture in the list, until it has progress photos
+      thumbOf(f).then(function(t){ PStore.set("thumb", t); }).catch(function(){});
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
 
   addCurBtn.addEventListener("click", function(){ curInput.click(); });
   retakeBtn.addEventListener("click", function(){ curInput.click(); });
-  retakeFromCompareBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
   curInput.addEventListener("change", function(){
     var f = curInput.files && curInput.files[0];
     curInput.value = "";
@@ -540,7 +574,7 @@
       if(reused) requestAnimationFrame(zoomToPainting);
       detectCanvas(reused ? "snap" : "guess");
       persistBlob("photo", f);
-      Store.remove("aligned").catch(function(){});
+      PStore.remove("aligned").catch(function(){});
       persistMeta();
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
@@ -852,7 +886,7 @@
       state.reading = null;
       compareZoom.reset(); sideZoom.reset();
       state.busy = false;
-      state.mode = "compare";
+      state.mode = state.cmpView;
       render();
       persistMeta();
       persistCanvas("aligned", im.canvas);
@@ -1576,6 +1610,13 @@
     render();
     persistMeta();
   });
+  blocksMoreBtn.addEventListener("click", function(){
+    var open = blocksMore.hidden;
+    blocksMore.hidden = !open;
+    blocksMoreBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    try{ localStorage.setItem("compart.blocksMore", open ? "1" : ""); }catch(e){}
+  });
+  try{ if(localStorage.getItem("compart.blocksMore")){ blocksMore.hidden = false; blocksMoreBtn.setAttribute("aria-expanded", "true"); } }catch(e){}
   function toggleShapesOption(name){
     return function(){
       var o = (name === "outlines" || name === "fill") ? state.blocks : state.shapes;
@@ -1637,7 +1678,7 @@
     var corners = state.corners.map(copyPt), ar = state.ref.w/state.ref.h;
     var key = state.photoKey + "|" + JSON.stringify(corners) + "|" + state.ref.w + "x" + state.ref.h;
     if(fullCache && fullCache.key === key) return fullCache.promise;
-    var p = Store.get("photo").then(function(b){
+    var p = PStore.get("photo").then(function(b){
       if(!b) throw new Error("no original photo");
       return decodeBlob(b);
     }).then(function(img){
@@ -1679,11 +1720,15 @@
   // aligned image as shown) and its thumbnail
   function addStage(im){
     fullPainting().then(function(r){ return r.blob; }).catch(function(){ return stageBlob(im); })
-      .then(function(b){ return thumbOf(b).catch(function(){ return null; }).then(function(t){ return Progress.add(b, state.photoKey, t); }); })
+      .then(function(b){ return thumbOf(b).catch(function(){ return null; }).then(function(t){
+        if(t) PStore.set("thumb", t).catch(function(){});
+        return Progress.add(b, state.photoKey, t);
+      }); })
       .then(function(r){
         if(progThumbs[r.item.id]){ URL.revokeObjectURL(progThumbs[r.item.id]); delete progThumbs[r.item.id]; }
         if(progUrls[r.item.id]){ URL.revokeObjectURL(progUrls[r.item.id]); delete progUrls[r.item.id]; }
         progIndex = Progress.count() - 1; progStripKey = null; progGains = null;
+        Projects.touch(Projects.activeId(), Progress.count());
         render();
       }).catch(storeFail);
   }
@@ -1823,6 +1868,7 @@
       if(progUrls[it.id]){ URL.revokeObjectURL(progUrls[it.id]); delete progUrls[it.id]; }
       if(progThumbs[it.id]){ URL.revokeObjectURL(progThumbs[it.id]); delete progThumbs[it.id]; }
       Progress.remove(it.id).catch(function(){});
+      Projects.touch(Projects.activeId(), Progress.count());
       progStripKey = null; progGains = null; progShownKey = null;
       if(progIndex >= Progress.count()) progIndex = Progress.count() - 1;
       if(!Progress.count()) state.mode = state.aligned ? "compare" : "align";
@@ -1857,6 +1903,18 @@
     }
   }
   progSaveAllBtn.addEventListener("click", saveAllProgress);
+  function openExport(){
+    stopPlay();
+    prepareProgressFiles();
+    var n = Progress.count();
+    exportNote.textContent = n + (n === 1 ? " stage" : " stages") + (progEven && n > 1 ? ", with the lighting evened out" : "") + (state.grayscale ? ", in black & white" : "") + ".";
+    renderProgress();
+    exportModal.classList.add("show");
+  }
+  function closeExport(){ exportModal.classList.remove("show"); }
+  progExportBtn.addEventListener("click", openExport);
+  exportDone.addEventListener("click", closeExport);
+  exportModal.addEventListener("click", function(e){ if(e.target === exportModal) closeExport(); });
 
   // ---- the timelapse video: the stages cross-fading, ending on the reference ----
   // The dialog shows the video being made (or the contact sheet), then the
@@ -1886,6 +1944,7 @@
     videoSave.disabled = false; videoClose.textContent = "Close";
   }
   progVideoBtn.addEventListener("click", function(){
+    closeExport();
     var items = Progress.items();
     if(!items.length || !state.ref) return;
     if(!Progress.videoType()){ toast("This browser can't make videos."); return; }
@@ -1930,6 +1989,7 @@
   // wide; follows "Even out lighting", "Include the reference" and the
   // black & white button, like the video.
   progSheetBtn.addEventListener("click", function(){
+    closeExport();
     var items = Progress.items();
     if(!items.length || !state.ref) return;
     stopPlay();
@@ -2003,7 +2063,7 @@
   videoClose.addEventListener("click", closeVideo);
   videoSave.addEventListener("click", function(){ if(videoFile) deliver(videoFile); });
 
-  // ---------------- restart ----------------
+  // ---------------- dialogs ----------------
   // extra (optional): {label, action}, a third button that runs its action
   // and closes the dialog, e.g. "save the photos first"
   var confirmAction = null, confirmExtraAction = null, confirmExtra = $("confirmExtra");
@@ -2028,6 +2088,10 @@
     if(mixModal.classList.contains("show")) closeMix();
     if(saveModal.classList.contains("show")) closeSave();
     if(videoModal.classList.contains("show")) closeVideo();
+    if(exportModal.classList.contains("show")) closeExport();
+    if(nameModal.classList.contains("show")) closeName();
+    else if(projModal.classList.contains("show")) closeProjects();
+    if(menuModal.classList.contains("show")) closeMenu();
   });
 
   // ---------------- paint recipes (mix.js) ----------------
@@ -2427,7 +2491,7 @@
   // is on, else the original file, decoded at that size
   function referenceForSaving(w, h){
     if(refIntensityOn()) return refForSaving();
-    return Store.get("ref").then(function(b){
+    return PStore.get("ref").then(function(b){
       if(!b) return state.ref.canvas;
       return decodeToCanvas(b, Math.max(w, h)).then(function(im){ return im.canvas; });
     }).catch(function(){ return state.ref.canvas; });
@@ -2522,31 +2586,53 @@
   saveCancel.addEventListener("click", closeSave);
   saveModal.addEventListener("click", function(e){ if(e.target === saveModal) closeSave(); });
 
-  function restart(){
-    clearProgress();
+  // ---------------- projects ----------------
+  // The open project's data is read and written through PStore; switching
+  // projects clears what's in memory (nothing stored is touched) and loads
+  // the other project. View settings (Block-in, intensity, export options)
+  // carry over into a new project.
+  function resetForProject(){
+    stopPlay();
+    if(videoModal.classList.contains("show")) closeVideo();
+    Object.keys(progUrls).forEach(function(id){ URL.revokeObjectURL(progUrls[id]); });
+    Object.keys(progThumbs).forEach(function(id){ URL.revokeObjectURL(progThumbs[id]); });
+    progUrls = {}; progThumbs = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
+    progFilesReady = false; fullCache = null;
     state.ref = null; state.photo = null; state.aligned = null; state.photoKey = null;
     newShapesSource();
-    state.corners = null; state.lastCorners = null;
+    state.corners = null; state.cornerSure = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
     state.reading = null; state.peeking = false; state.mode = "align";
     pinZoom.reset(); compareZoom.reset(); sideZoom.reset();
-    render();
-    // the photos, their settings and the progress go; your palettes and paints stay
-    ["ref", "photo", "aligned", "meta"].forEach(function(k){ Store.remove(k).catch(function(){}); });
-    try{ localStorage.removeItem(LEGACY_KEY); }catch(e){}
   }
-  restartBtn.addEventListener("click", function(){
-    // Straight on to choosing the new reference. The picker has to open
-    // within the tap on "Start new" (iOS only allows it from a user
-    // gesture), and it does: the confirm button runs this synchronously.
-    // Cancelling it leaves the usual "Add reference photo" screen.
-    var n = Progress.count();
-    if(n) prepareProgressFiles();
-    askConfirm("Start a new painting? This clears your reference and painting photos" + (n ? ", and the " + n + " progress photo" + (n > 1 ? "s" : "") : "") + ".", "Start new", function(){
-      restart();
-      refInput.click();
-    }, n ? { label: "Save the progress photos first", action: saveAllProgress } : null);
-  });
+  // opens a project: what can be done at once is done at once (so a file
+  // picker can still open from the same tap), the stored data follows
+  function openProject(id){
+    resetForProject();
+    Projects.setActive(id);
+    Projects.touch(id);                 // most recently used first in the list
+    PStore = Projects.scoped(id);
+    render();
+    return loadProject(id);
+  }
+  function newProject(pickReference){
+    var id = Projects.create();
+    openProject(id).then(function(){ persistMeta(); });
+    if(pickReference) refInput.click();
+  }
+  function loadProject(id){
+    var ps = PStore;
+    return Progress.init(ps).then(function(){
+      return Promise.all([ps.get("meta"), ps.get("ref"), ps.get("photo"), ps.get("aligned")]);
+    }).then(function(res){
+      if(PStore !== ps) return;                         // another project was opened meanwhile
+      var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3];
+      // a project without a reference yet keeps its own settings if it has
+      // any, else the current ones (a new project carries them over)
+      if(!refBlob){ if(res[0]) applyMeta(meta); return; }
+      return loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob);
+    }).catch(function(){}).then(function(){ if(PStore === ps) render(); });
+  }
 
   // ---------------- boot ----------------
   // One-time import of a save made by the old localStorage version.
@@ -2562,21 +2648,11 @@
     return Promise.all(jobs).then(function(){ try{ localStorage.removeItem(LEGACY_KEY); }catch(e){} }).catch(function(){});
   }
 
-  function boot(){
-    render();
-    Palettes.load(Store);
-    Progress.init(Store).then(render);
-    // Ask for durable storage so the browser doesn't clear the saved photos
-    // after a spell of non-use.
-    if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }
-    migrateLegacy().then(function(){
-      return Promise.all([Store.get("meta"), Store.get("ref"), Store.get("photo"), Store.get("aligned")]);
-    }).then(function(res){
-      var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3];
-      if(!refBlob) return;
+  function applyMeta(meta){
       state.lastCorners = (meta.lastCorners && validCorners(meta.lastCorners.pts)) ? meta.lastCorners : null;
       state.offU = Number(meta.offU) || 0; state.offV = Number(meta.offV) || 0;
       state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : null;
+      state.cmpView = meta.cmpView === "side" ? "side" : "compare";
       progEven = !!meta.progEven;
       progRef = !!meta.progRef;
       if(meta.progSpeed !== undefined) progSpeedIdx = clamp(Math.round(Number(meta.progSpeed) || 0), 0, SPEEDS.length - 1);
@@ -2595,22 +2671,157 @@
         var colours = b.colours === undefined ? Math.round(6*Math.pow(40/6, detail/100)) : Number(b.colours);
         state.blocks = { colours: clamp(Math.round((colours || 12)/2)*2, 6, 40), detail: detail, outlines: !!b.outlines, fill: b.fill !== false };   // steps of 2
       }
+  }
+
+  // (loadProject, continued)
+  function loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob){
+      applyMeta(meta);
       return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
+        if(PStore !== ps) return;
         state.ref = ref;
         newShapesSource();
         var jobs = [];
         if(photoBlob) jobs.push(decodeToCanvas(photoBlob, SRC_MAX).then(function(im){
+          if(PStore !== ps) return;
           setPhoto(im, validCorners(meta.corners) ? meta.corners : null);
+          state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : state.photoKey;
         }).catch(function(){}));
         if(alignedBlob) jobs.push(decodeToCanvas(alignedBlob, WORK_DIM).then(function(im){
-          state.aligned = im;
+          if(PStore === ps) state.aligned = im;
         }).catch(function(){}));
         return Promise.all(jobs);
       }).then(function(){
-        if(state.aligned) state.mode = "compare";
+        if(PStore !== ps) return;
+        if(state.aligned) state.mode = state.cmpView;
+        // a project copied from the single painting has opened: the old copy can go
+        if(state.ref) Projects.cleanupLegacy();
       });
-    }).catch(function(){}).then(render);
   }
+
+  function boot(){
+    render();
+    Palettes.load(Store);
+    // Ask for durable storage so the browser doesn't clear the saved photos
+    // after a spell of non-use.
+    if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }
+    migrateLegacy().then(function(){ return Projects.init(Store); })
+      .then(function(){ return openProject(Projects.activeId()); })
+      .catch(function(){}).then(render);
+  }
+
+  // ---- the Projects screen ----
+  function fmtDay(t){ return new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }); }
+  var projThumbUrls = {};
+  function projectThumb(id){
+    if(projThumbUrls[id]) return Promise.resolve(projThumbUrls[id]);
+    var ps = Projects.scoped(id);
+    return ps.get("thumb").then(function(t){
+      if(t) return t;
+      return ps.get("ref").then(function(r){ return r ? thumbOf(r).then(function(nt){ ps.set("thumb", nt); return nt; }) : null; });
+    }).then(function(t){
+      if(!t) return "";
+      if(projThumbUrls[id]) URL.revokeObjectURL(projThumbUrls[id]);
+      return (projThumbUrls[id] = URL.createObjectURL(t));
+    }).catch(function(){ return ""; });
+  }
+  function renderProjects(){
+    projList.innerHTML = "";
+    Projects.list().forEach(function(p){
+      var li = document.createElement("li"), row = document.createElement("div");
+      row.className = "proj-row" + (p.id === Projects.activeId() ? " on" : "");
+      var img = document.createElement("img"); img.className = "proj-thumb"; img.alt = "";
+      // refresh the open project's picture (it may have just changed)
+      if(p.id === Projects.activeId() && projThumbUrls[p.id]){ URL.revokeObjectURL(projThumbUrls[p.id]); delete projThumbUrls[p.id]; }
+      projectThumb(p.id).then(function(u){ if(u) img.src = u; });
+      var main = document.createElement("div"); main.className = "proj-main";
+      var nm = document.createElement("span"); nm.className = "proj-name"; nm.textContent = p.name;
+      var sub = document.createElement("span"); sub.className = "proj-sub";
+      var photos = p.id === Projects.activeId() ? Progress.count() : (p.photos || 0);
+      sub.textContent = (photos ? photos + (photos === 1 ? " progress photo" : " progress photos") : "No progress photos yet") + " · " + fmtDay(p.updated);
+      main.appendChild(nm); main.appendChild(sub);
+      var btns = document.createElement("div"); btns.className = "proj-btns";
+      var rn = document.createElement("button"); rn.className = "btn small"; rn.textContent = "Rename";
+      rn.addEventListener("click", function(e){ e.stopPropagation(); askName(p); });
+      var del = document.createElement("button"); del.className = "btn small ghost"; del.textContent = "Delete";
+      del.addEventListener("click", function(e){ e.stopPropagation(); askDelete(p); });
+      btns.appendChild(rn); btns.appendChild(del);
+      row.addEventListener("click", function(){
+        closeProjects();
+        if(p.id !== Projects.activeId()) openProject(p.id);
+      });
+      row.appendChild(img); row.appendChild(main); row.appendChild(btns);
+      li.appendChild(row); projList.appendChild(li);
+    });
+  }
+  function openProjects(){ closeMenu(); renderProjects(); projModal.classList.add("show"); }
+  function closeProjects(){ projModal.classList.remove("show"); }
+  projectBtn.addEventListener("click", openProjects);
+  projDone.addEventListener("click", closeProjects);
+  projModal.addEventListener("click", function(e){ if(e.target === projModal) closeProjects(); });
+  // a new project goes straight on to choosing its reference
+  projNewBtn.addEventListener("click", function(){ closeProjects(); newProject(true); });
+
+  var renaming = null;
+  function askName(p){
+    renaming = p;
+    nameTitle.textContent = "Rename project";
+    nameInput.value = p.name;
+    nameModal.classList.add("show");
+    setTimeout(function(){ nameInput.focus(); nameInput.select(); }, 50);
+  }
+  function closeName(){ nameModal.classList.remove("show"); renaming = null; }
+  nameOk.addEventListener("click", function(){
+    if(renaming){ Projects.rename(renaming.id, nameInput.value); }
+    closeName(); renderProjects(); render();
+  });
+  nameInput.addEventListener("keydown", function(e){ if(e.key === "Enter") nameOk.click(); });
+  nameCancel.addEventListener("click", closeName);
+  nameModal.addEventListener("click", function(e){ if(e.target === nameModal) closeName(); });
+
+  // A project's progress photos as files, for "save its photos first".
+  // Loaded when the question is asked, so the share sheet can open from the tap.
+  var delFiles = null;
+  function projectFiles(id){
+    var ps = Projects.scoped(id);
+    return ps.get("progress").then(function(r){
+      var items = Array.isArray(r) ? r : (r && r.items) || [];
+      return Promise.all(items.map(function(it){ return ps.get("prog-" + it.id); })).then(function(bs){
+        var stamp = fileStamp(), files = [];
+        bs.forEach(function(b, i){ if(b) files.push(new File([b], "comp-art-stage-" + (i < 9 ? "0" : "") + (i + 1) + "-" + stamp + ".jpg", { type: "image/jpeg" })); });
+        return files;
+      });
+    });
+  }
+  function askDelete(p){
+    var photos = p.id === Projects.activeId() ? Progress.count() : (p.photos || 0);
+    delFiles = null;
+    if(photos) projectFiles(p.id).then(function(f){ delFiles = f; }).catch(function(){});
+    askConfirm("Delete “" + p.name + "”? Its reference" + (photos ? ", painting photos and " + photos + " progress photo" + (photos > 1 ? "s" : "") : " and painting photos") + " are removed from this device. Palettes stay.",
+      "Delete", function(){ deleteProject(p.id); },
+      photos ? { label: "Save its progress photos first", action: function(){
+        if(delFiles && delFiles.length) deliverMany(delFiles);
+        else toast("Getting the photos ready. Tap again in a moment.");
+      } } : null);
+  }
+  function deleteProject(id){
+    var wasOpen = id === Projects.activeId();
+    if(projThumbUrls[id]){ URL.revokeObjectURL(projThumbUrls[id]); delete projThumbUrls[id]; }
+    Projects.remove(id).then(function(){
+      if(!Projects.list().length){ newProject(false); }
+      else if(wasOpen){ openProject(Projects.activeId()); }
+      if(projModal.classList.contains("show")) renderProjects();
+      render();
+    }).catch(function(){ toast("The project couldn't be deleted. Try again."); });
+  }
+
+  // ---- the ⋯ menu ----
+  function closeMenu(){ menuModal.classList.remove("show"); }
+  menuBtn.addEventListener("click", function(){ menuModal.classList.add("show"); });
+  menuDone.addEventListener("click", closeMenu);
+  menuModal.addEventListener("click", function(e){ if(e.target === menuModal) closeMenu(); });
+  menuProjects.addEventListener("click", openProjects);
+  menuPalettes.addEventListener("click", function(){ closeMenu(); lastRecipe = null; openPalettes(); });
+
   boot();
 
   // Offline support: cache the app files so the home-screen app opens

@@ -23,19 +23,21 @@
 
 <header>
   <div class="brand">
-    <h1>Comp-Art</h1>
+    <button class="project-btn" id="projectBtn" title="Your projects" aria-label="Your projects">
+      <span id="projectName">Comp-Art</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
     <p id="stepHint">reference → painting → compare</p>
   </div>
   <div class="header-btns">
-  <span class="version" id="versionLabel" title="App version"></span>
   <button class="icon-btn" id="saveBtn" title="Save images" aria-label="Save images" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
   </button>
   <button class="icon-btn" id="grayBtn" title="Check values (black &amp; white)" aria-label="Check values in black and white" aria-pressed="false" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
   </button>
-  <button class="icon-btn" id="restartBtn" title="Start a new painting" aria-label="Start a new painting">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+  <button class="icon-btn" id="menuBtn" title="More" aria-label="More">
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
   </button>
   </div>
 </header>
@@ -43,9 +45,7 @@
 <main>
 
   <nav class="tabs" id="tabs">
-    <button data-mode="align" class="active">Align</button>
     <button data-mode="compare" disabled>Compare</button>
-    <button data-mode="side" disabled>Side by side</button>
     <button data-mode="blocks" disabled>Block-in</button>
     <button data-mode="progress" disabled>Progress</button>
   </nav>
@@ -93,6 +93,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             Align &amp; continue
           </button>
+          <button class="btn ghost full small" id="alignBackBtn" hidden>Cancel, back to Compare</button>
         </div>
       </div>
     </div>
@@ -141,6 +142,17 @@
       </div>
     </div>
     <div class="controls">
+    <div id="compareBarSlot"></div>
+    <div class="cmp-bar" id="cmpBar">
+      <div class="seg" id="cmpSeg" role="tablist" aria-label="Compare view">
+        <button data-view="compare" role="tab">Overlay</button>
+        <button data-view="side" role="tab">Side by side</button>
+      </div>
+      <div class="cmp-actions">
+        <button class="btn small" id="newPhotoBtn" title="Photograph your painting again"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="14" r="3.3"/></svg>New photo</button>
+        <button class="btn small ghost" id="adjustAlignBtn" title="Adjust the corners of the current photo">Adjust alignment</button>
+      </div>
+    </div>
     <div id="compareCardSlot"></div>
     <div class="panel color-card" id="colorCard">
       <p class="cc-empty" id="ccEmpty">Touch and hold the painting to read colours</p>
@@ -176,10 +188,6 @@
         <button class="switch" id="adjustSwitch" aria-label="Toggle position adjustment"></button>
       </div>
       <button class="btn ghost full small" id="resetPosBtn" style="display:none;">Reset position</button>
-
-      <div class="divider"></div>
-
-      <button class="btn ghost full small" id="retakeFromCompareBtn">Retake painting photo</button>
     </div>
     </div>
    </div>
@@ -200,7 +208,8 @@
         </div>
       </div>
     </div>
-    <div class="controls">
+    <div class="controls side-controls">
+      <div id="sideBarSlot"></div>
       <div id="sideCardSlot"></div>
     </div>
    </div>
@@ -232,13 +241,6 @@
           </div>
           <input type="range" id="detailSlider" min="0" max="100" step="10" value="50" aria-label="Broad to fine: flat masses, then brush strokes from big to small">
         </div>
-        <div class="ctrl-row opacity-row">
-          <div class="ctrl-label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
-            Block-in opacity
-          </div>
-          <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Block-in opacity over the photo">
-        </div>
         <div class="ctrl-row opacity-row" id="chromaRow">
           <div class="ctrl-label">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9H12Z" fill="currentColor" stroke="none"/></svg>
@@ -247,19 +249,27 @@
           <input type="range" id="chromaSlider" min="100" max="300" step="5" value="100" aria-label="Colour intensity">
         </div>
 
-        <div class="divider"></div>
-
-        <div class="ctrl-row">
-          <div class="ctrl-label">Outlines</div>
-          <button class="switch" id="outlinesSwitch" aria-label="Show outlines"></button>
-        </div>
-        <div class="ctrl-row">
-          <div class="ctrl-label">Average colour</div>
-          <button class="switch on" id="fillSwitch" aria-label="Fill the masses with their paint colour"></button>
-        </div>
-        <div class="ctrl-row" id="enhanceRow">
-          <div class="ctrl-label">Show intensity on the reference (all tabs)</div>
-          <button class="switch" id="enhanceSwitch" aria-label="Show the colour intensity on the reference photo, here and on Align, Compare and Side by side"></button>
+        <button class="more-toggle" id="blocksMoreBtn" aria-expanded="false" aria-controls="blocksMore">More options</button>
+        <div class="more-body" id="blocksMore" hidden>
+          <div class="ctrl-row opacity-row">
+            <div class="ctrl-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
+              Block-in opacity
+            </div>
+            <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Block-in opacity over the photo">
+          </div>
+          <div class="ctrl-row">
+            <div class="ctrl-label">Outlines</div>
+            <button class="switch" id="outlinesSwitch" aria-label="Show outlines"></button>
+          </div>
+          <div class="ctrl-row">
+            <div class="ctrl-label">Average colour</div>
+            <button class="switch on" id="fillSwitch" aria-label="Fill the masses with their paint colour"></button>
+          </div>
+          <div class="ctrl-row" id="enhanceRow">
+            <div class="ctrl-label">Show intensity on the reference (all tabs)</div>
+            <button class="switch" id="enhanceSwitch" aria-label="Show the colour intensity on the reference photo, here and on Align, Compare and Side by side"></button>
+          </div>
         </div>
 
         <div class="divider"></div>
@@ -308,17 +318,7 @@
           <button class="switch" id="progEvenSwitch" aria-label="Even out the lighting between photos"></button>
         </div>
         <div class="divider"></div>
-        <div class="ctrl-row opacity-row">
-          <div class="ctrl-label">Time per photo <span class="shapes-count" id="progSpeedLabel"></span></div>
-          <input type="range" id="progSpeed" min="0" max="7" step="1" value="4" aria-label="Time each photo is shown in the video">
-        </div>
-        <div class="ctrl-row">
-          <div class="ctrl-label">Include the reference</div>
-          <button class="switch" id="progRefSwitch" aria-label="End the video and the contact sheet with the reference"></button>
-        </div>
-        <button class="btn primary full" id="progVideoBtn">Make timelapse video</button>
-        <button class="btn full" id="progSheetBtn">Make contact sheet</button>
-        <button class="btn full" id="progSaveAllBtn">Save all images</button>
+        <button class="btn primary full" id="progExportBtn">Share &amp; export…</button>
         <button class="btn ghost full small" id="progDeleteBtn">Delete this stage</button>
       </div>
     </div>
@@ -337,6 +337,61 @@
       <button class="btn" id="confirmCancel">Cancel</button>
       <button class="btn primary" id="confirmOk">OK</button>
     </div>
+  </div>
+</div>
+
+<!-- projects: one painting each -->
+<div class="modal" id="projModal" role="dialog" aria-modal="true" aria-labelledby="projTitle">
+  <div class="modal-box proj-box">
+    <div class="proj-head">
+      <p class="mix-title" id="projTitle">Projects</p>
+      <button class="btn primary small" id="projNewBtn">New project</button>
+    </div>
+    <ul class="proj-list" id="projList"></ul>
+    <p class="mix-note">Each project keeps its own reference, painting photos and progress. Palettes are shared by all of them. Everything is kept on this device.</p>
+    <div class="row stretch"><button class="btn" id="projDone">Done</button></div>
+  </div>
+</div>
+
+<!-- a name (renaming a project) -->
+<div class="modal" id="nameModal" role="dialog" aria-modal="true" aria-labelledby="nameTitle">
+  <div class="modal-box">
+    <p class="mix-title" id="nameTitle">Rename project</p>
+    <label class="field"><span>Name</span><input type="text" id="nameInput" maxlength="60" autocomplete="off"></label>
+    <div class="row stretch">
+      <button class="btn" id="nameCancel">Cancel</button>
+      <button class="btn primary" id="nameOk">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- the ⋯ menu -->
+<div class="modal" id="menuModal" role="dialog" aria-modal="true" aria-label="More">
+  <div class="modal-box menu-box">
+    <button class="btn full" id="menuProjects">Projects…</button>
+    <button class="btn full" id="menuPalettes">Palettes…</button>
+    <p class="mix-note menu-about">Comp-Art <span id="versionLabel"></span> · your photos stay on this device.</p>
+    <div class="row stretch"><button class="btn ghost" id="menuDone">Close</button></div>
+  </div>
+</div>
+
+<!-- progress: share & export (video, contact sheet, all images) -->
+<div class="modal" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+  <div class="modal-box">
+    <p class="mix-title" id="exportTitle">Share &amp; export</p>
+    <div class="ctrl-row opacity-row">
+      <div class="ctrl-label">Time per photo <span class="shapes-count" id="progSpeedLabel"></span></div>
+      <input type="range" id="progSpeed" min="0" max="7" step="1" value="4" aria-label="Time each photo is shown in the video">
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label">Include the reference</div>
+      <button class="switch" id="progRefSwitch" aria-label="End the video and the contact sheet with the reference"></button>
+    </div>
+    <p class="mix-note" id="exportNote"></p>
+    <button class="btn primary full" id="progVideoBtn">Make timelapse video</button>
+    <button class="btn full" id="progSheetBtn">Make contact sheet</button>
+    <button class="btn full" id="progSaveAllBtn">Save all images</button>
+    <div class="row stretch"><button class="btn ghost" id="exportDone">Done</button></div>
   </div>
 </div>
 
@@ -482,6 +537,7 @@
 <script src="pigments.js"></script>
 <script src="palettes.js"></script>
 <script src="progress.js"></script>
+<script src="projects.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
 </body>

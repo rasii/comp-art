@@ -54,6 +54,14 @@ h1{
   font-weight:600; font-size: 21px; letter-spacing:0.2px;
   margin:0; white-space:nowrap;
 }
+/* the project's name is the title: tap for the projects */
+.project-btn{
+  display:flex; align-items:center; gap:4px; min-width:0; max-width: 46vw; padding:0; margin:0;
+  background:none; border:none; color: var(--ink);
+  font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:21px; letter-spacing:0.2px;
+}
+.project-btn span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-btn svg{ flex:0 0 auto; width:16px; height:16px; color: var(--ink-dim); }
 header p{
   margin:0; font-size:12.5px; color: var(--ink-dim);
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -402,6 +410,44 @@ input[type=range]::-webkit-slider-thumb{
 .btn:disabled{ opacity:0.5; }
 /* the confirm dialog can open over another dialog (e.g. delete a palette) */
 #confirmModal{ z-index:70; }
+
+/* ---------- projects ---------- */
+.proj-box{ width: min(520px, 100%); max-height: calc(100dvh - 48px); overflow-y:auto; }
+.proj-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.proj-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.proj-row{ display:flex; align-items:center; gap:12px; padding:8px; border:1px solid var(--line); border-radius: var(--radius); cursor:pointer; }
+.proj-row.on{ border-color: var(--sienna); }
+.proj-thumb{ flex:0 0 auto; width:56px; height:56px; border-radius:2px; background: var(--panel-2); object-fit:cover; }
+.proj-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.proj-name{ font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.proj-sub{ font-size:12px; color: var(--ink-dim); }
+.proj-btns{ display:flex; gap:6px; flex:0 0 auto; }
+.menu-box{ width: min(320px, 100%); }
+.menu-about{ text-align:center; }
+
+/* ---------- compare bar: Overlay | Side by side, new photo, adjust ---------- */
+#compareBarSlot, #sideBarSlot{ display: contents; }
+.cmp-bar{ display:flex; flex-direction:column; gap:8px; }
+.seg{ display:flex; background: var(--panel); border:1px solid var(--line); border-radius: var(--radius); padding:3px; gap:2px; }
+.seg button{ flex:1; padding:7px 6px; font: inherit; font-size:13px; font-weight:500; color: var(--ink-dim); background:transparent; border:none; border-radius:2px; }
+.seg button.on{ background: var(--panel-2); color: var(--ink); }
+.cmp-actions{ display:flex; gap:8px; }
+.cmp-actions .btn{ flex:1; }
+/* side by side: the bar and the colour card in a row under the images */
+@media (orientation: landscape) and (min-width: 700px){
+  .step.side-step .side-controls{ flex-direction:row; align-items:stretch; }
+  .step.side-step .side-controls .cmp-bar{ width: 300px; flex:0 0 auto; justify-content:center; }
+  .step.side-step .side-controls .color-card{ flex:1; }
+}
+/* a folded section of rarely changed options */
+.more-toggle{
+  display:flex; align-items:center; gap:6px; width:100%; padding:2px 0; margin:-4px 0;
+  background:none; border:none; color: var(--ink-dim); font: inherit; font-size:12.5px; text-align:left;
+}
+.more-toggle::before{ content:""; width:0; height:0; border-left:5px solid currentColor; border-top:4px solid transparent; border-bottom:4px solid transparent; transition: transform .15s ease; }
+.more-toggle[aria-expanded="true"]::before{ transform: rotate(90deg); }
+.more-body{ display:flex; flex-direction:column; gap:14px; }
+.more-body[hidden]{ display:none; }
 
 /* ---------- progress ---------- */
 .prog-info{ margin:0; font-size:13px; line-height:1.45; }

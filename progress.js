@@ -2,8 +2,9 @@
 // tab and its timelapse.
 //
 // Each stage is the aligned painting (straightened and cropped to the
-// reference's rectangle), so stages line up exactly. Stored on the device:
-// the list under Store key "progress" ([{id, t, key}]), each image as a
+// reference's rectangle), so stages line up exactly. Stored with the
+// project: the list under key "progress" ({items: [{id, t, key}], deleted:
+// [ids]}; an older plain array is read too), each image as a
 // JPEG under "prog-<id>" (full detail, up to 4000 px) and a small
 // thumbnail under "progt-<id>". `key` identifies the painting photo it came
 // from, so aligning the same photo again updates its stage instead of
@@ -14,16 +15,22 @@
 window.Progress = (function(){
   "use strict";
 
-  var store = null, list = [], blobs = {}, thumbs = {};
+  // deleted: ids of stages deleted here, so a sync can't bring them back
+  var store = null, list = [], deleted = [], blobs = {}, thumbs = {};
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function valid(it){ return it && typeof it.id === "string" && typeof it.t === "number"; }
-  function saveList(){ return store.set("progress", list.slice()); }
+  function saveList(){ return store.set("progress", { items: list.slice(), deleted: deleted.slice() }); }
 
+  // (again for each project: forgets the previous project's stages)
   function init(s){
-    store = s;
-    return s.get("progress").then(function(r){ list = Array.isArray(r) ? r.filter(valid) : []; })
-      .catch(function(){ list = []; });
+    store = s; list = []; deleted = []; blobs = {}; thumbs = {};
+    return s.get("progress").then(function(r){
+      if(store !== s) return;                                   // another project opened meanwhile
+      var items = Array.isArray(r) ? r : (r && Array.isArray(r.items) ? r.items : []);
+      list = items.filter(valid);
+      deleted = (r && Array.isArray(r.deleted)) ? r.deleted.slice() : [];
+    }).catch(function(){ list = []; });
   }
   function items(){ return list.slice(); }
   function count(){ return list.length; }
@@ -40,11 +47,13 @@ window.Progress = (function(){
   }
   function remove(id){
     list = list.filter(function(it){ return it.id !== id; });
+    if(deleted.indexOf(id) < 0) deleted.push(id);
     delete blobs[id]; delete thumbs[id];
     return Promise.all([store.remove("prog-" + id), store.remove("progt-" + id), saveList()]);
   }
   function clear(){
     var ids = list.map(function(it){ return it.id; });
+    deleted = deleted.concat(ids.filter(function(id){ return deleted.indexOf(id) < 0; }));
     list = []; blobs = {}; thumbs = {};
     return Promise.all(ids.map(function(id){ return Promise.all([store.remove("prog-" + id), store.remove("progt-" + id)]); }).concat([saveList()]));
   }

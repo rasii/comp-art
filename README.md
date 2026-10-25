@@ -8,7 +8,9 @@ masses or brush strokes along the fur, with more detail where the photo is
 in focus. "Mix" suggests a recipe from your own paints for any colour you
 read; you can keep several palettes and add any paint by the pigment codes
 on its tube. The Progress tab keeps every aligned photo of the painting, to
-step through, save, or turn into a timelapse video.
+step through, save, or turn into a timelapse video. Each painting is a
+project (tap its name in the header to switch, rename or start a new one);
+palettes are shared by all projects.
 
 Runs entirely in the browser; photos never leave the device. Made for an iPad
 saved to the home screen, but works on any modern browser.
@@ -29,6 +31,7 @@ saved to the home screen, but works on any modern browser.
 | `mix.js` | Paint recipes: the built-in paints (the Default palette), and the search for the mix of a palette's paints closest to a colour |
 | `pigments.js` | Pigment table by Colour Index code (PB29, PY35…), used to add your own paints by the pigments on the tube |
 | `progress.js` | The painting's stages (one per aligned photo), "even out lighting", and the timelapse recorder |
+| `projects.js` | Projects: one painting each, its data stored under its own prefix; the list; moving an older single painting into a first project |
 | `palettes.js` | Palettes and your own paints: saved on the device, export / import, the Default palette always available |
 | `mixbox.js` | [Mixbox](https://github.com/scrtwpns/mixbox) pigment-mixing model by Secret Weapons (Šárka Sochorová, Ondřej Jamriška), used unmodified under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — non-commercial use only |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
