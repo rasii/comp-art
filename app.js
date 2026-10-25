@@ -91,7 +91,7 @@
 
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
   var ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
-  var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun");
+  var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun"), ccRefName = $("ccRefName");
   var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
 
   var toastEl = $("toast");
@@ -219,7 +219,8 @@
     else if(confirmAlignBtn.innerHTML !== confirmAlignHTML) confirmAlignBtn.innerHTML = confirmAlignHTML;
     if(hasRef && hasPhoto){
       setSrc(pinImg, state.photo);
-      setSrc(pinRefImg, state.ref);
+      if(m === "align") requestRefIntensity(0);
+      showRef(pinRefImg);
       pinStage.style.setProperty("--ar", state.photo.w + " / " + state.photo.h);
       pinImg.style.opacity = String(state.pinOpacity/100);
       if(pinOpacitySlider.value != state.pinOpacity) pinOpacitySlider.value = state.pinOpacity;
@@ -233,8 +234,9 @@
 
     // ---- compare / side ----
     if(hasRef && hasAligned){
-      setSrc(compareRef, state.ref); setSrc(compareCur, state.aligned);
-      setSrc(sideRef, state.ref);    setSrc(sideCur, state.aligned);
+      if(m === "compare" || m === "side") requestRefIntensity(0);   // (made once, shared by every tab)
+      showRef(compareRef); setSrc(compareCur, state.aligned);
+      showRef(sideRef);    setSrc(sideCur, state.aligned);
       if(m === "side") layoutSide();
     }
     if(opacitySlider.value != state.opacity) opacitySlider.value = state.opacity;
@@ -280,6 +282,7 @@
            : "check the points are on the canvas corners · double-tap to zoom in";
     } else if(m === "compare"){
       hint = state.adjusting ? "drag the painting to line it up" : "hold the painting to peek and read colour";
+      if(refIntensityOn()) hint += " · reference at intensity ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "");
     } else if(m === "progress"){
       hint = Progress.count() > 1 ? "slide or play to watch the painting develop" : "each aligned photo is kept here";
     } else if(m === "blocks"){
@@ -287,6 +290,7 @@
            : (state.blocks.detail === 0 ? "flat masses" : "brush strokes") + " from a few " + (state.grayscale ? "values" : "mixtures") + " · tap one to read it";
     } else {
       hint = "touch either image to read colours";
+      if(refIntensityOn()) hint += " · reference at intensity ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "");
     }
     if(m === "blocks" && state.shapesPick !== null && state.shapesResult) hint += " · double-tap to clear";
     else if((m === "compare" && compareZoom.z > 1) || (m === "side" && sideZoom.z > 1) || (m === "blocks" && shapesZoom.z > 1)) hint += " · double-tap to reset zoom";
@@ -311,6 +315,7 @@
       placeMarker(sideCurMarker, sideCurFrame, sideCurView, rd, pCss);
     }
     ccRefMun.textContent = rd.r.notation;
+    ccRefName.textContent = rd.intensity ? "Reference ×" + rd.intensity : "Reference";
     ccRefSw.style.background = rd.r.css;
     if(rd.p){
       ccPaintMun.textContent = rd.p.notation;
@@ -921,8 +926,13 @@
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     var shown = vr.width*c.w, rr = patchFor(state.ref, shown), ra = patchFor(state.aligned, shown);
     var refLin = samplePatch(state.ref, u, v, rr);
+    if(refIntensityOn()){
+      var bo = Shapes.boostChroma(refLin.r, refLin.g, refLin.b, state.shapes.chroma/100);
+      refLin = { r: bo[0], g: bo[1], b: bo[2] };
+    }
     var curLin = samplePatch(state.aligned, u - state.offU, v - state.offV, ra);
-    state.reading = { u: u, v: v, pointerType: e.pointerType, patch: 2*rr + 1, r: readColour(refLin), p: curLin ? readColour(curLin) : null };
+    state.reading = { u: u, v: v, pointerType: e.pointerType, patch: 2*rr + 1, r: readColour(refLin), p: curLin ? readColour(curLin) : null,
+                      intensity: refIntensityOn() ? (state.shapes.chroma/100).toFixed(2).replace(/0$/, "") : null };
     renderReading();
   }
 
@@ -1000,6 +1010,7 @@
     enhancedKey = null; enhancePendingKey = null;
     shapesPhoto.hidden = true;
     shapesZoom.reset();
+    forgetRefIntensity();
   }
 
   // ---- the reference photo with the colour intensity applied ----
@@ -1020,7 +1031,7 @@
   function runEnhance(key, token, factor){
     var seq = ++enhanceSeq;
     function ask(withPixels){
-      var msg = { kind: "enhance", token: token, factor: factor }, transfer = [];
+      var msg = { kind: "enhance", slot: "view", token: token, factor: factor }, transfer = [];
       if(withPixels){
         var px = scaledPixels(state.ref, ENHANCE_DIM);
         msg.pixels = { buf: px.data.buffer, w: px.w, h: px.h };
@@ -1047,6 +1058,74 @@
       })
       .catch(function(){ enhancePendingKey = null; });
   }
+  // ---- the reference at the Block-in intensity, on every tab ----
+  // Block-in's "Show intensity on the reference" switch, with the intensity
+  // above ×1.0, shows the reference boosted on Align, Compare and Side by
+  // side too, so it looks the same everywhere. Made at full size in the
+  // worker (so zooming in stays sharp) and shown in place of the original
+  // once ready; until then the last one made (or the original) stays up.
+  // Not in black & white, where it can't be seen. Colour readings of the
+  // reference get the same boost (readAt), so a recipe matches what's on
+  // screen. Saved images, the video and the contact sheet keep the original.
+  var refInt = { key: null, url: null, pending: null, seq: 0, timer: null, workerToken: -1 };
+  function refIntensityOn(){ return !!state.ref && enhanceOn() && state.shapes.chroma !== 100; }
+  function forgetRefIntensity(){
+    if(refInt.url) URL.revokeObjectURL(refInt.url);
+    refInt.key = null; refInt.url = null; refInt.pending = null; refInt.seq++;
+    clearTimeout(refInt.timer);
+  }
+  function requestRefIntensity(delay){
+    if(!refIntensityOn()) return;
+    var key = shapesToken + ":" + state.shapes.chroma;
+    if(refInt.key === key || refInt.pending === key) return;
+    refInt.pending = key;
+    clearTimeout(refInt.timer);
+    var token = shapesToken, factor = state.shapes.chroma/100;
+    refInt.timer = setTimeout(function(){ runRefIntensity(key, token, factor); }, delay || 0);
+  }
+  function runRefIntensity(key, token, factor){
+    var seq = ++refInt.seq;
+    function ask(withPixels){
+      var msg = { kind: "enhance", slot: "full", token: token, factor: factor }, transfer = [];
+      if(withPixels){
+        var px = scaledPixels(state.ref, WORK_DIM);
+        msg.pixels = { buf: px.data.buffer, w: px.w, h: px.h };
+        transfer = [px.data.buffer];
+      }
+      return callShapes(msg, transfer).then(function(reply){
+        if(reply.needPixels){ if(withPixels) throw new Error("worker lost the image"); return ask(true); }
+        refInt.workerToken = token;
+        return reply.result;
+      });
+    }
+    function runHere(){
+      var px = scaledPixels(state.ref, WORK_DIM), out = Shapes.enhance(px.data, px.w, px.h, factor);
+      return { buf: out.buffer, w: px.w, h: px.h };
+    }
+    ask(refInt.workerToken !== token)
+      .catch(function(){ return runHere(); })
+      .then(function(res){
+        if(seq !== refInt.seq || token !== shapesToken) return;
+        var c = document.createElement("canvas"); c.width = res.w; c.height = res.h;
+        c.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(res.buf), res.w, res.h), 0, 0);
+        return canvasToBlob(c, "image/jpeg", 0.95).then(function(b){
+          if(seq !== refInt.seq || token !== shapesToken) return;
+          if(refInt.url) URL.revokeObjectURL(refInt.url);
+          refInt.url = URL.createObjectURL(b); refInt.key = key; refInt.pending = null;
+          render();
+        });
+      })
+      .catch(function(){ if(seq === refInt.seq) refInt.pending = null; });
+  }
+  // the reference as Compare and Side by side show it
+  function showRef(img){
+    if(refIntensityOn() && refInt.url){
+      if(img._im !== refInt.url){ img._im = refInt.url; img.src = refInt.url; }
+    } else {
+      setSrc(img, state.ref);
+    }
+  }
+
   function shapesWant(){
     return { token: shapesToken, values: state.grayscale, colours: state.blocks.colours, detail: state.blocks.detail };
   }

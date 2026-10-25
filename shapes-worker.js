@@ -4,13 +4,17 @@
 importScripts("shapes.js");
 
 var analyzer = null, token = null;     // analysis copy of the reference
-var photo = null, photoToken = null;   // display-size copy, for enhancement
+// copies of the reference for enhancement, by slot: "view" (Block-in,
+// display size) and "full" (Compare / Side by side, full size)
+var photos = {};
 
 self.onmessage = function(e){
   var m = e.data;
   if(m.kind === "enhance"){
-    if(m.pixels){ photo = { data: new Uint8ClampedArray(m.pixels.buf), w: m.pixels.w, h: m.pixels.h }; photoToken = m.token; }
-    if(!photo || photoToken !== m.token){ self.postMessage({ id: m.id, needPixels: true }); return; }
+    var slot = m.slot || "view";
+    if(m.pixels) photos[slot] = { data: new Uint8ClampedArray(m.pixels.buf), w: m.pixels.w, h: m.pixels.h, token: m.token };
+    var photo = photos[slot];
+    if(!photo || photo.token !== m.token){ self.postMessage({ id: m.id, needPixels: true }); return; }
     var out = self.Shapes.enhance(photo.data, photo.w, photo.h, m.factor);
     self.postMessage({ id: m.id, result: { buf: out.buffer, w: photo.w, h: photo.h } }, [out.buffer]);
     return;
