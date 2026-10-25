@@ -116,25 +116,36 @@ window.Progress = (function(){
     for(var i=0;i<types.length;i++) if(MediaRecorder.isTypeSupported(types[i])) return types[i];
     return null;
   }
+  // The video's timing. `per`: seconds each photo is on screen, its
+  // cross-fade into the next included. The first photo stays a little
+  // longer, the finished painting longer still, and the reference (when
+  // included) fades in slowly and stays. Returns, per position (the
+  // stages, then the reference), when it starts, how long it holds and how
+  // long it then fades into the next; and the total length.
+  function timeline(stages, withRef, per){
+    var n = stages + (withRef ? 1 : 0), fadeN = Math.min(0.45, per*0.4);
+    var start = [], hold = [], fade = [], t = 0;
+    for(var k=0;k<n;k++){
+      var isRef = withRef && k === n-1, lastStage = k === stages-1;
+      start.push(t);
+      fade[k] = k === n-1 ? 0 : (withRef && k === n-2) ? 0.9 : fadeN;
+      hold[k] = isRef ? 2.6 : lastStage ? Math.max(1.6, per*1.5) : (per - fadeN) + (k === 0 ? 0.6 : 0);
+      t += hold[k] + fade[k];
+    }
+    return { n: n, start: start, hold: hold, fade: fade, duration: t };
+  }
   // Plays the stages on `canvas` (sized by the caller) with a cross-fade
-  // between each, ending on the reference, and records it. frame(k)
-  // returns a Promise of a drawable for sequence position k (the stages,
+  // between each, optionally ending on the reference, and records it.
+  // frame(k) returns a Promise of a drawable for position k (the stages,
   // then the reference); frames are prepared one ahead, so only a few are
   // in memory at once. Returns {promise, cancel}; the promise gives
   // {blob, type, seconds}.
-  function record(canvas, total, frame, onProgress){
+  function record(canvas, stages, withRef, per, frame, onProgress){
     var type = videoType();
     if(!type) return { promise: Promise.reject(new Error("no recorder")), cancel: function(){} };
     var ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
-    var n = total;                     // positions: stages 0..n-2, reference n-1
-    var HOLD_FIRST = 1.2, HOLD = 0.55, HOLD_LAST = 1.6, HOLD_REF = 2.6, FADE = 0.45, FADE_REF = 0.9;
-    var start = [], hold = [], t = 0;
-    for(var k=0;k<n;k++){
-      start.push(t);
-      hold[k] = k === 0 ? HOLD_FIRST : k === n-1 ? HOLD_REF : k === n-2 ? HOLD_LAST : HOLD;
-      t += hold[k] + (k < n-1 ? (k === n-2 ? FADE_REF : FADE) : 0);
-    }
-    var duration = t, ready = {}, pending = {}, cancelled = false, rec, chunks = [];
+    var tl = timeline(stages, withRef, per), n = tl.n, start = tl.start, hold = tl.hold;
+    var duration = tl.duration, ready = {}, pending = {}, cancelled = false, rec, chunks = [];
     function want(k){
       if(k >= n || ready[k] || pending[k]) return;
       pending[k] = frame(k).then(function(img){ ready[k] = img; delete pending[k]; });
@@ -151,33 +162,35 @@ window.Progress = (function(){
       rec.onstop = function(){
         stream.getTracks().forEach(function(tr){ tr.stop(); });
         if(cancelled){ reject(new Error("cancelled")); return; }
-        resolve({ blob: new Blob(chunks, { type: type.split(";")[0] }), type: type.split(";")[0], seconds: duration });
+        var seconds = startedAt ? (performance.now() - startedAt)/1000 - 0.3 : duration;   // as recorded
+        resolve({ blob: new Blob(chunks, { type: type.split(";")[0] }), type: type.split(";")[0], seconds: Math.max(duration, seconds) });
       };
       want(0); want(1);
       // the clock only runs while the frames it needs are ready, so a slow
       // decode makes a frame linger a moment rather than skip
-      var clock = 0, last = null, started = false;
+      var clock = 0, last = null, started = false, startedAt = 0;
       function tick(now){
         if(cancelled){ if(rec.state !== "inactive") rec.stop(); else reject(new Error("cancelled")); return; }
         var k = 0;
         while(k < n-1 && clock >= start[k+1]) k++;
         var into = clock - start[k], fading = k < n-1 && into > hold[k];
-        want(k+1); want(k+2);
+        want(k); want(k+1); want(k+2);
         var cur = ready[k], next = fading ? ready[k+1] : null;
         if(!cur || (fading && !next)){ last = now; requestAnimationFrame(tick); return; }
-        if(!started){ rec.start(250); started = true; last = now; }
+        if(!started){ rec.start(250); started = true; last = now; startedAt = performance.now(); }
         ctx.globalAlpha = 1; ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H);
         draw(cur, 1);
-        if(fading){
-          var fade = k === n-2 ? FADE_REF : FADE;
-          draw(next, Math.min(1, (into - hold[k])/fade));
-        }
+        if(fading) draw(next, Math.min(1, (into - hold[k])/tl.fade[k]));
         ctx.globalAlpha = 1;
         // drop frames that have gone by
         Object.keys(ready).forEach(function(j){ if(Number(j) < k) delete ready[j]; });
         if(onProgress) onProgress(Math.min(1, clock/duration));
         if(clock >= duration){ setTimeout(function(){ if(rec.state !== "inactive") rec.stop(); }, 300); return; }
+        // real time, but never past a whole stage in one step: on a slow
+        // moment (decoding a photo) every stage is still drawn, and the
+        // video runs a touch longer rather than skipping one
         clock += (now - last)/1000; last = now;
+        if(k + 2 < n) clock = Math.min(clock, start[k + 2]);
         requestAnimationFrame(tick);
       }
       requestAnimationFrame(tick);
@@ -186,5 +199,5 @@ window.Progress = (function(){
   }
 
   return { init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached,
-           loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, record: record };
+           loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, timeline: timeline, record: record };
 })();

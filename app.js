@@ -176,7 +176,7 @@
     storeWarned = true;
   }
   function persistMeta(){
-    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, progEven: progEven }).catch(storeFail);
+    Store.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx }).catch(storeFail);
   }
   function persistBlob(key, blob){ return Store.set(key, blob).catch(storeFail); }
   function persistCanvas(key, canvas){
@@ -1491,11 +1491,17 @@
   var viewProgress = $("view-progress"), progImg = $("progImg"), progInfo = $("progInfo");
   var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
   var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
+  var progSheetBtn = $("progSheetBtn"), progSpeed = $("progSpeed"), progSpeedLabel = $("progSpeedLabel"), progRefSwitch = $("progRefSwitch");
+  var sheetPreview = $("sheetPreview");
   var videoModal = $("videoModal"), videoTitle = $("videoTitle"), videoCanvas = $("videoCanvas"), videoPreview = $("videoPreview");
   var videoBar = $("videoBar"), videoNote = $("videoNote"), videoClose = $("videoClose"), videoSave = $("videoSave");
 
   var STAGE_DIM = 2000;         // stages are stored at this size (plenty for viewing and video)
   var progIndex = -1, progTimer = null, progUrls = {}, progStripKey = null, progEven = false;
+  // video / contact sheet options: time per photo (steps) and whether the reference comes last
+  var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false;
+  function perPhoto(){ return SPEEDS[progSpeedIdx]; }
+  function secs(x){ return String(x) + " s"; }
   var progGains = null, progGainsKey = null, progShownKey = null;
 
   // a stage image from an aligned painting: JPEG, the uncovered warp edge
@@ -1586,6 +1592,10 @@
     progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + (progIndex === 0 ? "The first photo" : w.since + " after the first") + "</span>";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;
+    progRefSwitch.classList.toggle("on", progRef);
+    if(progSpeed.value != progSpeedIdx) progSpeed.value = progSpeedIdx;
+    progSpeedLabel.textContent = "· " + secs(perPhoto());
+    progVideoBtn.textContent = "Make timelapse video · about " + Math.round(Progress.timeline(n, progRef, perPhoto()).duration) + " s";
     progImg.classList.toggle("gray", state.grayscale);
     // the large view
     var key = it.id + ":" + (progEven ? "e" : "o") + ":" + n;
@@ -1626,6 +1636,9 @@
     progPlay.textContent = "Pause";
   });
   progEvenSwitch.addEventListener("click", function(){ progEven = !progEven; persistMeta(); renderProgress(); });
+  progRefSwitch.addEventListener("click", function(){ progRef = !progRef; persistMeta(); renderProgress(); });
+  progSpeed.addEventListener("input", function(){ progSpeedIdx = Number(progSpeed.value); renderProgress(); });
+  progSpeed.addEventListener("change", persistMeta);
   progDeleteBtn.addEventListener("click", function(){
     var it = Progress.items()[progIndex];
     if(!it) return;
@@ -1669,13 +1682,31 @@
   progSaveAllBtn.addEventListener("click", saveAllProgress);
 
   // ---- the timelapse video: the stages cross-fading, ending on the reference ----
-  var videoRun = null, videoFile = null, videoUrl = null;
+  // The dialog shows the video being made (or the contact sheet), then the
+  // result with a Save button: saving needs a fresh tap, since making it
+  // takes longer than iOS allows between a tap and the share sheet.
+  var videoRun = null, videoFile = null, videoUrl = null, sheetRun = 0;
   function closeVideo(){
     if(videoRun){ videoRun.cancel(); videoRun = null; }
+    sheetRun++;
     videoModal.classList.remove("show");
     videoPreview.pause(); videoPreview.removeAttribute("src");
+    sheetPreview.removeAttribute("src");
     if(videoUrl){ URL.revokeObjectURL(videoUrl); videoUrl = null; }
     videoFile = null;
+  }
+  function openResult(title, note){
+    videoTitle.textContent = title; videoNote.textContent = note;
+    videoBar.style.width = "0";
+    videoCanvas.hidden = true; videoPreview.hidden = true; sheetPreview.hidden = true;
+    videoSave.disabled = true; videoClose.textContent = "Cancel";
+    videoModal.classList.add("show");
+  }
+  function showResult(file, title, note){
+    videoFile = file; videoUrl = URL.createObjectURL(file);
+    videoTitle.textContent = title; videoNote.textContent = note;
+    videoSave.textContent = file.type.indexOf("video") === 0 ? "Save video" : "Save image";
+    videoSave.disabled = false; videoClose.textContent = "Close";
   }
   progVideoBtn.addEventListener("click", function(){
     var items = Progress.items();
@@ -1686,12 +1717,9 @@
     var ar = state.ref.w/state.ref.h, L = 1920;
     var W = ar >= 1 ? L : Math.round(L*ar), H = ar >= 1 ? Math.round(L/ar) : L;
     videoCanvas.width = W - (W % 2); videoCanvas.height = H - (H % 2);
-    videoCanvas.hidden = false; videoPreview.hidden = true;
-    videoTitle.textContent = "Making the timelapse…";
-    videoNote.textContent = "Keep this screen open while it records (" + items.length + (items.length === 1 ? " stage" : " stages") + ", then the reference).";
-    videoBar.style.width = "0";
-    videoSave.disabled = true; videoClose.textContent = "Cancel";
-    videoModal.classList.add("show");
+    var per = perPhoto(), withRef = progRef, length = Math.round(Progress.timeline(items.length, withRef, per).duration);
+    openResult("Making the timelapse…", "Keep this screen open while it records (about " + length + " s).");
+    videoCanvas.hidden = false;
     var gray = state.grayscale;
     var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
     function frame(k){
@@ -1705,17 +1733,14 @@
         });
       });
     }
-    videoRun = Progress.record(videoCanvas, items.length + 1, frame, function(f){ videoBar.style.width = Math.round(f*100) + "%"; });
+    videoRun = Progress.record(videoCanvas, items.length, withRef, per, frame, function(f){ videoBar.style.width = Math.round(f*100) + "%"; });
     videoRun.promise.then(function(res){
       videoRun = null;
       var ext = res.type.indexOf("mp4") >= 0 ? "mp4" : "webm";
-      videoFile = new File([res.blob], "comp-art-timelapse-" + fileStamp() + "." + ext, { type: res.type });
-      videoUrl = URL.createObjectURL(res.blob);
+      showResult(new File([res.blob], "comp-art-timelapse-" + fileStamp() + "." + ext, { type: res.type }), "Timelapse",
+                 Math.round(res.seconds) + " seconds, " + Math.max(1, Math.round(res.blob.size/1048576)) + " MB.");
       videoCanvas.hidden = true; videoPreview.hidden = false;
       videoPreview.src = videoUrl; videoPreview.play().catch(function(){});
-      videoTitle.textContent = "Timelapse";
-      videoNote.textContent = Math.round(res.seconds) + " seconds, " + Math.max(1, Math.round(res.blob.size/1048576)) + " MB.";
-      videoSave.disabled = false; videoClose.textContent = "Close";
     }).catch(function(e){
       videoRun = null;
       if(e && e.message === "cancelled") return;
@@ -1723,6 +1748,78 @@
       toast("The video couldn't be made on this device.");
     });
   });
+  // ---- the contact sheet: every stage in a grid, captioned ----
+  // Laid out as close to square as the photos' shape allows, at most 3200 px
+  // wide; follows "Even out lighting", "Include the reference" and the
+  // black & white button, like the video.
+  progSheetBtn.addEventListener("click", function(){
+    var items = Progress.items();
+    if(!items.length || !state.ref) return;
+    stopPlay();
+    var run = ++sheetRun, withRef = progRef, gray = state.grayscale, count = items.length + (withRef ? 1 : 0);
+    openResult("Making the contact sheet…", "");
+    var ar = state.ref.w/state.ref.h, cols = 1, best = Infinity;
+    for(var c=1; c<=count; c++){
+      var rows = Math.ceil(count/c), d = Math.abs(Math.log(c*ar/rows));
+      if(d < best - 1e-9){ best = d; cols = c; }
+    }
+    var rowsN = Math.ceil(count/cols);
+    var CW = Math.min(800, Math.floor(3200/(cols + 0.05*(cols + 1)))), CH = Math.round(CW/ar);
+    var gap = Math.round(CW*0.05), cap = Math.round(Math.max(28, CW*0.1));
+    var W = cols*CW + (cols + 1)*gap, H = rowsN*(CH + cap) + (rowsN + 1)*gap;
+    var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W*H)));          // within the iPad's largest canvas
+    if(s < 1){ CW = Math.floor(CW*s); CH = Math.round(CW/ar); gap = Math.round(CW*0.05); cap = Math.round(Math.max(24, CW*0.1)); W = cols*CW + (cols + 1)*gap; H = rowsN*(CH + cap) + (rowsN + 1)*gap; }
+    var sheet = document.createElement("canvas"); sheet.width = W; sheet.height = H;
+    var ctx = sheet.getContext("2d");
+    ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H);
+    ctx.textBaseline = "middle";
+    var first = items[0].t;
+    var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
+    function cell(i, img, G, label, sub){
+      var col = i % cols, row = Math.floor(i/cols);
+      var x = gap + col*(CW + gap), y = gap + row*(CH + cap + gap);
+      var c = document.createElement("canvas"); c.width = CW; c.height = CH;
+      var cx = c.getContext("2d"); cx.imageSmoothingQuality = "high"; cx.drawImage(img, 0, 0, CW, CH);
+      Progress.adjust(c, G, gray);
+      ctx.drawImage(c, x, y);
+      ctx.fillStyle = "#EDE6D9"; ctx.font = "600 " + Math.round(cap*0.42) + "px -apple-system, 'Segoe UI', sans-serif";
+      ctx.fillText(label, x, y + CH + cap*0.5);
+      if(sub){
+        var lw = ctx.measureText(label).width;
+        ctx.fillStyle = "#A79C8B"; ctx.font = Math.round(cap*0.36) + "px -apple-system, 'Segoe UI', sans-serif";
+        ctx.fillText("  " + sub, x + lw, y + CH + cap*0.5);
+      }
+    }
+    gainsP.then(function(G){
+      // one stage at a time, so only one full-size photo is decoded at once
+      var chain = Promise.resolve();
+      items.forEach(function(it, i){
+        chain = chain.then(function(){
+          if(run !== sheetRun) throw new Error("cancelled");
+          return Progress.blob(it.id).then(decodeBlob).then(function(img){
+            var d = new Date(it.t);
+            cell(i, img, G ? G[i] : null, "Stage " + (i + 1), d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + (i ? " · " + stageWhen(it.t, first).since : ""));
+            videoBar.style.width = Math.round((i + 1)/count*100) + "%";
+          });
+        });
+      });
+      return chain.then(function(){
+        if(withRef) cell(items.length, state.ref.canvas, null, "Reference", "");
+        return canvasToBlob(sheet, "image/jpeg", 0.9);
+      });
+    }).then(function(blob){
+      if(run !== sheetRun) return;
+      videoBar.style.width = "100%";
+      showResult(new File([blob], "comp-art-contact-sheet-" + fileStamp() + ".jpg", { type: "image/jpeg" }), "Contact sheet",
+                 count + " pictures, " + W + " × " + H + " px.");
+      sheetPreview.src = videoUrl; sheetPreview.hidden = false;
+    }).catch(function(e){
+      if(run !== sheetRun || (e && e.message === "cancelled")) return;
+      closeVideo();
+      toast("The contact sheet couldn't be made.");
+    });
+  });
+
   videoClose.addEventListener("click", closeVideo);
   videoSave.addEventListener("click", function(){ if(videoFile) deliver(videoFile); });
 
@@ -2275,6 +2372,8 @@
       state.offU = Number(meta.offU) || 0; state.offV = Number(meta.offV) || 0;
       state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : null;
       progEven = !!meta.progEven;
+      progRef = !!meta.progRef;
+      if(meta.progSpeed !== undefined) progSpeedIdx = clamp(Math.round(Number(meta.progSpeed) || 0), 0, SPEEDS.length - 1);
       if(meta.shapes && typeof meta.shapes === "object"){
         var s = meta.shapes;
         state.shapes = {

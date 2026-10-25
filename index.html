@@ -308,7 +308,16 @@
           <button class="switch" id="progEvenSwitch" aria-label="Even out the lighting between photos"></button>
         </div>
         <div class="divider"></div>
+        <div class="ctrl-row opacity-row">
+          <div class="ctrl-label">Time per photo <span class="shapes-count" id="progSpeedLabel"></span></div>
+          <input type="range" id="progSpeed" min="0" max="7" step="1" value="4" aria-label="Time each photo is shown in the video">
+        </div>
+        <div class="ctrl-row">
+          <div class="ctrl-label">Include the reference</div>
+          <button class="switch" id="progRefSwitch" aria-label="End the video and the contact sheet with the reference"></button>
+        </div>
         <button class="btn primary full" id="progVideoBtn">Make timelapse video</button>
+        <button class="btn full" id="progSheetBtn">Make contact sheet</button>
         <button class="btn full" id="progSaveAllBtn">Save all images</button>
         <button class="btn ghost full small" id="progDeleteBtn">Delete this stage</button>
       </div>
@@ -337,6 +346,7 @@
     <p class="mix-title" id="videoTitle">Making the timelapse…</p>
     <canvas id="videoCanvas"></canvas>
     <video id="videoPreview" playsinline muted loop controls hidden></video>
+    <img id="sheetPreview" alt="Contact sheet" hidden>
     <div class="video-bar"><div id="videoBar"></div></div>
     <p class="mix-note" id="videoNote"></p>
     <div class="row stretch">

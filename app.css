@@ -416,8 +416,8 @@ input[type=range]::-webkit-slider-thumb{
 .prog-strip img{ height:52px; width:auto; border-radius:2px; display:block; }
 #progFrame img.gray{ filter: grayscale(1) contrast(1.03); }
 .video-box{ width: min(520px, 100%); }
-#videoCanvas, #videoPreview{ width:100%; max-height: 60dvh; object-fit:contain; border-radius: var(--radius); background:#000; display:block; }
-#videoCanvas[hidden], #videoPreview[hidden]{ display:none; }
+#videoCanvas, #videoPreview, #sheetPreview{ width:100%; max-height: 60dvh; object-fit:contain; border-radius: var(--radius); background:#000; display:block; }
+#videoCanvas[hidden], #videoPreview[hidden], #sheetPreview[hidden]{ display:none; }
 .video-bar{ height:4px; background: var(--line); border-radius:2px; overflow:hidden; }
 .video-bar div{ height:100%; width:0; background: var(--sienna); }
 #confirmExtra[hidden]{ display:none; }
