@@ -348,7 +348,7 @@
       <button class="btn primary small" id="projNewBtn">New project</button>
     </div>
     <ul class="proj-list" id="projList"></ul>
-    <p class="mix-note">Each project keeps its own reference, painting photos and progress. Palettes are shared by all of them. Everything is kept on this device.</p>
+    <p class="mix-note">Each project keeps its own reference, painting photos and progress. Palettes are shared by all of them. Everything is kept on this device, and on your sync account when Sync is on (up to 10 projects).</p>
     <div class="row stretch"><button class="btn" id="projDone">Done</button></div>
   </div>
 </div>
@@ -370,8 +370,69 @@
   <div class="modal-box menu-box">
     <button class="btn full" id="menuProjects">Projects…</button>
     <button class="btn full" id="menuPalettes">Palettes…</button>
-    <p class="mix-note menu-about">Comp-Art <span id="versionLabel"></span> · your photos stay on this device.</p>
+    <button class="btn full menu-sync" id="menuSync">Sync…<span id="menuSyncSub"></span></button>
+    <p class="mix-note menu-about">Comp-Art <span id="versionLabel"></span> · <span id="menuWhere">your photos stay on this device.</span></p>
     <div class="row stretch"><button class="btn ghost" id="menuDone">Close</button></div>
+  </div>
+</div>
+
+<!-- sync: the same projects and palettes on all your devices -->
+<div class="modal" id="syncModal" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+  <div class="modal-box sync-box">
+    <p class="mix-title" id="syncTitle">Sync</p>
+    <div class="sync-view" id="syncOff">
+      <p class="mix-note">Keeps your projects and palettes the same on all your devices (up to 10 projects). Your photos are kept on the Comp-Art sync server, and everything still works offline.</p>
+      <div class="seg sync-seg" id="syncSeg" role="tablist">
+        <button data-v="join" class="on">I have a sync code</button>
+        <button data-v="new">New account</button>
+      </div>
+      <div class="sync-form" id="syncJoinForm">
+        <label class="field"><span>Your sync code <em>(from another device: ⋯ › Sync)</em></span><input type="text" id="syncCodeIn" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"></label>
+        <button class="btn primary full" id="syncJoinBtn">Join</button>
+      </div>
+      <div class="sync-form" id="syncNewForm" hidden>
+        <label class="field"><span>Your name <em>(so the server's owner knows whose account it is)</em></span><input type="text" id="syncNameIn" maxlength="60" autocomplete="off"></label>
+        <label class="field"><span>Invite code <em>(from whoever runs the sync server)</em></span><input type="text" id="syncInviteIn" autocomplete="off" spellcheck="false"></label>
+        <button class="btn primary full" id="syncNewBtn">Turn on sync</button>
+      </div>
+      <label class="field" id="syncUrlField"><span>Sync server</span><input type="text" id="syncUrlIn" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://….workers.dev"></label>
+    </div>
+    <div class="sync-view" id="syncOn" hidden>
+      <p class="sync-status" id="syncStatus"></p>
+      <button class="btn primary full" id="syncNowBtn">Sync now</button>
+      <div class="sync-code">
+        <span class="mix-note">Your sync code. Enter it once on each of your other devices; keep it private, it opens your projects.</span>
+        <div class="sync-code-row"><code id="syncCodeShow">••••-••••-••••-••••-••••</code><button class="btn small" id="syncCodeBtn">Show</button><button class="btn small" id="syncCopyBtn">Copy</button></div>
+      </div>
+      <button class="btn full" id="syncRotateBtn">Change code…</button>
+      <button class="btn full ghost" id="syncLeaveBtn">Turn off sync on this device…</button>
+    </div>
+    <p class="mix-note sync-err" id="syncErr" hidden></p>
+    <div class="row stretch">
+      <button class="btn ghost" id="syncAdminBtn">Admin…</button>
+      <button class="btn" id="syncDone">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- admin: the sync server's accounts (needs the admin key) -->
+<div class="modal" id="adminModal" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
+  <div class="modal-box proj-box">
+    <div class="proj-head">
+      <p class="mix-title" id="adminTitle">Admin</p>
+      <button class="btn small" id="adminBack" hidden>Back</button>
+    </div>
+    <div class="sync-form" id="adminKeyView">
+      <label class="field"><span>Admin key</span><input type="password" id="adminKeyIn" autocomplete="off"></label>
+      <label class="field"><span>Sync server</span><input type="text" id="adminUrlIn" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://….workers.dev"></label>
+      <button class="btn primary full" id="adminOpenBtn">Open</button>
+    </div>
+    <div id="adminBody"></div>
+    <p class="mix-note" id="adminNote"></p>
+    <div class="row stretch">
+      <button class="btn ghost" id="adminForget" hidden>Forget admin key</button>
+      <button class="btn" id="adminDone">Done</button>
+    </div>
   </div>
 </div>
 
@@ -539,6 +600,7 @@
 <script src="progress.js"></script>
 <script src="projects.js"></script>
 <script src="store.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

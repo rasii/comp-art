@@ -16,7 +16,7 @@ window.Progress = (function(){
   "use strict";
 
   // deleted: ids of stages deleted here, so a sync can't bring them back
-  var store = null, list = [], deleted = [], blobs = {}, thumbs = {};
+  var store = null, list = [], deleted = [], blobs = {}, thumbs = {}, ready = Promise.resolve();
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function valid(it){ return it && typeof it.id === "string" && typeof it.t === "number"; }
@@ -25,12 +25,35 @@ window.Progress = (function(){
   // (again for each project: forgets the previous project's stages)
   function init(s){
     store = s; list = []; deleted = []; blobs = {}; thumbs = {};
-    return s.get("progress").then(function(r){
+    return (ready = s.get("progress").then(function(r){
       if(store !== s) return;                                   // another project opened meanwhile
       var items = Array.isArray(r) ? r : (r && Array.isArray(r.items) ? r.items : []);
       list = items.filter(valid);
       deleted = (r && Array.isArray(r.deleted)) ? r.deleted.slice() : [];
-    }).catch(function(){ list = []; });
+    }).catch(function(){ list = []; }));
+  }
+  // Stages synced from another device (their images are already stored):
+  // the union of both lists, the newer of any stage on both, minus deleted
+  // ones. Returns whether anything changed.
+  function merge(items, del){
+    var s = store;
+    return ready.then(function(){
+      if(store !== s) return false;
+      var changed = false, byId = {};
+      (del || []).forEach(function(id){ if(deleted.indexOf(id) < 0){ deleted.push(id); changed = true; } });
+      list.forEach(function(it){ byId[it.id] = it; });
+      (items || []).filter(valid).forEach(function(it){
+        var here = byId[it.id];
+        if(!here || here.t < it.t){ byId[it.id] = { id: it.id, t: it.t, key: it.key || null }; delete blobs[it.id]; delete thumbs[it.id]; changed = true; }
+      });
+      var next = Object.keys(byId).map(function(id){ return byId[id]; })
+        .filter(function(it){ return deleted.indexOf(it.id) < 0; })
+        .sort(function(a, b){ return a.t - b.t; });
+      if(next.length !== list.length) changed = true;
+      if(!changed) return false;
+      list = next;
+      return saveList().then(function(){ return true; });
+    });
   }
   function items(){ return list.slice(); }
   function count(){ return list.length; }
@@ -214,6 +237,6 @@ window.Progress = (function(){
     return { promise: promise, cancel: function(){ cancelled = true; if(rec && rec.state !== "inactive") rec.stop(); } };
   }
 
-  return { init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached, thumb: thumb, setThumb: setThumb,
+  return { merge: merge, init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached, thumb: thumb, setThumb: setThumb,
            loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, timeline: timeline, record: record };
 })();

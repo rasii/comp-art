@@ -12,8 +12,11 @@ step through, save, or turn into a timelapse video. Each painting is a
 project (tap its name in the header to switch, rename or start a new one);
 palettes are shared by all projects.
 
-Runs entirely in the browser; photos never leave the device. Made for an iPad
-saved to the home screen, but works on any modern browser.
+Runs entirely in the browser; photos stay on the device unless you turn on
+Sync (⋯ › Sync), which keeps your projects and palettes the same on all your
+devices through a small sync server of your own on Cloudflare (free tier;
+see [worker/README.md](worker/README.md)). Made for an iPad saved to the home
+screen, but works on any modern browser.
 
 ## Files
 
@@ -32,6 +35,8 @@ saved to the home screen, but works on any modern browser.
 | `pigments.js` | Pigment table by Colour Index code (PB29, PY35…), used to add your own paints by the pigments on the tube |
 | `progress.js` | The painting's stages (one per aligned photo), "even out lighting", and the timelapse recorder |
 | `projects.js` | Projects: one painting each, its data stored under its own prefix; the list; moving an older single painting into a first project |
+| `sync.js` | Sync: merges projects (stages by id, deletions kept), palettes and settings with the sync server; turning it on, codes, the admin calls |
+| `worker/worker.js` | The sync server (a Cloudflare Worker with one R2 bucket): accounts and sync codes, each account's files, the 10-project limit, admin |
 | `palettes.js` | Palettes and your own paints: saved on the device, export / import, the Default palette always available |
 | `mixbox.js` | [Mixbox](https://github.com/scrtwpns/mixbox) pigment-mixing model by Secret Weapons (Šárka Sochorová, Ondřej Jamriška), used unmodified under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) — non-commercial use only |
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
