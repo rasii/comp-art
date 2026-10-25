@@ -1468,15 +1468,27 @@
   document.addEventListener("keydown", function(e){
     if(e.key !== "Escape") return;
     if(confirmModal.classList.contains("show")) closeConfirm();
+    if(palModal.classList.contains("show")){ if(!palListView.hidden) closePalettes(); return; }
     if(mixModal.classList.contains("show")) closeMix();
     if(saveModal.classList.contains("show")) closeSave();
   });
 
   // ---------------- paint recipes (mix.js) ----------------
   // Shows which of your paints, in what proportions, come closest to a colour.
+  var lastRecipe = null;   // what the Mix dialog is showing, to redo it for another palette
   function showRecipe(targetLin, what){
-    var res = Mix.recipe(targetLin), best = res.best;
+    lastRecipe = { lin: targetLin, what: what };
+    fillPaletteSelect();
     mixTitle.textContent = "Mix " + what;
+    var paints = Palettes.activePaints();
+    if(!paints.length){
+      mixResultSw.style.background = "transparent"; mixResultMun.textContent = "";
+      mixClose.textContent = "This palette has no paints yet. Add some under Palettes…";
+      mixList.innerHTML = ""; mixAlt.hidden = true; mixNote.textContent = "";
+      mixModal.classList.add("show");
+      return;
+    }
+    var res = Mix.recipe(targetLin, paints), best = res.best;
     mixTargetSw.style.background = linCss(targetLin);
     mixResultSw.style.background = best.css;
     function notation(lin){ return Munsell.fromLinearRGB(lin[0], lin[1], lin[2]).notation; }
@@ -1490,7 +1502,7 @@
       fillRecipeList(mixAltList, res.closer);
     }
     var notes = ["Proportions are estimates from typical pigment strengths — a starting point to adjust by eye."];
-    if(best.approx || (res.closer && res.closer.approx)) notes.push("Alizarin Crimson and Transparent Maroon are approximated until they're calibrated from a swatch card.");
+    if(best.approx || (res.closer && res.closer.approx)) notes.push("* Estimated from the paint's pigments or colour rather than measured.");
     notes.push("Mixing predicted with Mixbox (Secret Weapons), non-commercial licence.");
     mixNote.textContent = notes.join(" ");
     mixModal.classList.add("show");
@@ -1510,6 +1522,278 @@
   function closeMix(){ mixModal.classList.remove("show"); }
   mixDone.addEventListener("click", closeMix);
   mixModal.addEventListener("click", function(e){ if(e.target === mixModal) closeMix(); });
+
+  // ---------------- palettes: choosing, editing, your own paints ----------------
+  // The Mix dialog mixes from the active palette (picker at its top); the
+  // Palettes dialog over it lists, creates, edits and deletes palettes,
+  // and adds your own paints (palettes.js). Everything is saved on the
+  // device straight away.
+  var mixPalette = $("mixPalette"), mixPalettesBtn = $("mixPalettesBtn");
+  var palModal = $("palModal"), palListView = $("palListView"), palEditView = $("palEditView");
+  var paintEditView = $("paintEditView"), photoPickView = $("photoPickView");
+  var palList = $("palList"), palNewBtn = $("palNewBtn"), palExportBtn = $("palExportBtn"), palImportBtn = $("palImportBtn"), palDoneBtn = $("palDoneBtn");
+  var palName = $("palName"), palCount = $("palCount"), paintList = $("paintList"), paintAddBtn = $("paintAddBtn");
+  var palDeleteBtn = $("palDeleteBtn"), palEditDone = $("palEditDone");
+  var paintEditTitle = $("paintEditTitle"), paintName = $("paintName"), paintPigments = $("paintPigments"), pigChips = $("pigChips");
+  var paintColour = $("paintColour"), paintColourState = $("paintColourState"), paintPhotoBtn = $("paintPhotoBtn"), paintColourClear = $("paintColourClear");
+  var paintStrengthRow = $("paintStrengthRow"), paintStrength = $("paintStrength"), pvTube = $("pvTube"), pvTint = $("pvTint");
+  var paintMsg = $("paintMsg"), paintDeleteBtn = $("paintDeleteBtn"), paintCancel = $("paintCancel"), paintSave = $("paintSave");
+  var pickCanvas = $("pickCanvas"), pickSw = $("pickSw"), pickTxt = $("pickTxt"), pickCancel = $("pickCancel"), pickUse = $("pickUse");
+  var pickInput = $("pickInput"), importInput = $("importInput");
+
+  function persistPalettes(){ Palettes.save(Store).catch(storeFail); }
+  function fillPaletteSelect(){
+    mixPalette.innerHTML = "";
+    Palettes.list().forEach(function(p){
+      var o = document.createElement("option"); o.value = p.id; o.textContent = p.name;
+      mixPalette.appendChild(o);
+    });
+    mixPalette.value = Palettes.activeId();
+  }
+  mixPalette.addEventListener("change", function(){
+    Palettes.setActive(mixPalette.value);
+    persistPalettes();
+    if(lastRecipe) showRecipe(lastRecipe.lin, lastRecipe.what);
+  });
+
+  function showPalView(v){
+    palListView.hidden = v !== "list"; palEditView.hidden = v !== "edit";
+    paintEditView.hidden = v !== "paint"; photoPickView.hidden = v !== "pick";
+    palModal.querySelector(".pal-box").scrollTop = 0;
+  }
+  function openPalettes(){ renderPalList(); showPalView("list"); palModal.classList.add("show"); }
+  function closePalettes(){
+    palModal.classList.remove("show");
+    fillPaletteSelect();
+    if(lastRecipe && mixModal.classList.contains("show")) showRecipe(lastRecipe.lin, lastRecipe.what);
+  }
+  mixPalettesBtn.addEventListener("click", openPalettes);
+  palDoneBtn.addEventListener("click", closePalettes);
+  palModal.addEventListener("click", function(e){ if(e.target === palModal && !palListView.hidden) closePalettes(); });
+
+  function chip(css){ var c = document.createElement("span"); c.style.background = css; return c; }
+  function renderPalList(){
+    palList.innerHTML = "";
+    Palettes.list().forEach(function(pal){
+      var li = document.createElement("li"), row = document.createElement("div");
+      row.className = "pal-row" + (pal.id === Palettes.activeId() ? " on" : "");
+      var dot = document.createElement("span"); dot.className = "pal-dot";
+      var main = document.createElement("div"); main.className = "pal-main";
+      var name = document.createElement("span"); name.className = "pal-name"; name.textContent = pal.name;
+      var chips = document.createElement("span"); chips.className = "pal-chips";
+      pal.paints.map(Palettes.paintById).filter(Boolean).forEach(function(p){ chips.appendChild(chip(p.css)); });
+      main.appendChild(name); main.appendChild(chips);
+      var btn = document.createElement("button"); btn.className = "btn small";
+      btn.textContent = pal.builtin ? "Copy" : "Edit";
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        editPalette(pal.builtin ? Palettes.create(pal) : pal);
+      });
+      row.addEventListener("click", function(){ Palettes.setActive(pal.id); persistPalettes(); renderPalList(); });
+      row.appendChild(dot); row.appendChild(main); row.appendChild(btn);
+      li.appendChild(row); palList.appendChild(li);
+    });
+  }
+  palNewBtn.addEventListener("click", function(){ editPalette(Palettes.create(Palettes.active())); });
+
+  // ---- one palette: its name and which paints are in it ----
+  var editPal = null;
+  function editPalette(pal){
+    editPal = { id: pal.id, name: pal.name, paints: pal.paints.slice() };
+    palName.value = editPal.name;
+    renderPaintList();
+    showPalView("edit");
+  }
+  palName.addEventListener("input", function(){ editPal.name = palName.value; });
+  function renderPaintList(){
+    paintList.innerHTML = "";
+    var paints = Palettes.allPaints(), builtIn = paints.filter(function(p){ return p.builtin; }), mine = paints.filter(function(p){ return !p.builtin; });
+    function group(title, list){
+      var h = document.createElement("li"); h.className = "paint-group"; h.textContent = title; paintList.appendChild(h);
+      list.forEach(function(p){
+        var li = document.createElement("li"); li.className = "paint-row";
+        var lab = document.createElement("label");
+        var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = editPal.paints.indexOf(p.id) >= 0;
+        cb.addEventListener("change", function(){
+          var i = editPal.paints.indexOf(p.id);
+          if(cb.checked && i < 0) editPal.paints.push(p.id);
+          if(!cb.checked && i >= 0) editPal.paints.splice(i, 1);
+          renderPalCount();
+        });
+        var c = document.createElement("span"); c.className = "mix-chip"; c.style.background = p.css;
+        var txt = document.createElement("span"); txt.className = "paint-txt";
+        var nm = document.createElement("span"); nm.textContent = p.name + (p.approx ? " *" : "");
+        var pg = document.createElement("span"); pg.className = "paint-pig"; pg.textContent = p.pigments || "by colour";
+        txt.appendChild(nm); txt.appendChild(pg);
+        lab.appendChild(cb); lab.appendChild(c); lab.appendChild(txt);
+        li.appendChild(lab);
+        if(p.user){
+          var ed = document.createElement("button"); ed.className = "btn ghost small"; ed.textContent = "Edit";
+          ed.addEventListener("click", function(){ openPaintEditor(p.id); });
+          li.appendChild(ed);
+        }
+        paintList.appendChild(li);
+      });
+    }
+    group("Built in", builtIn);
+    if(mine.length) group("Your paints", mine);
+    renderPalCount();
+  }
+  function renderPalCount(){
+    var n = editPal.paints.length;
+    palCount.textContent = n ? n + (n === 1 ? " paint" : " paints") + " in this palette" + (n > 9 ? " · recipes use the 9 best suited to each colour" : "")
+                             : "Tick the paints you have.";
+    palEditDone.disabled = !n;
+  }
+  palEditDone.addEventListener("click", function(){
+    if(!editPal.paints.length) return;
+    Palettes.savePalette(editPal);
+    Palettes.setActive(editPal.id);
+    persistPalettes();
+    renderPalList();
+    showPalView("list");
+  });
+  palDeleteBtn.addEventListener("click", function(){
+    var pal = editPal;
+    askConfirm("Delete the palette “" + (pal.name || "My palette") + "”? Its paints stay in your list.", "Delete", function(){
+      Palettes.deletePalette(pal.id);
+      persistPalettes();
+      renderPalList();
+      showPalView("list");
+    });
+  });
+
+  // ---- one of your paints ----
+  var editPaint = null;
+  function openPaintEditor(id){
+    var rec = id ? Palettes.paintRecord(id) : null;
+    editPaint = rec || { name: "", pigments: "", variants: {}, colour: null, strength: 0 };
+    if(!editPaint.variants) editPaint.variants = {};
+    paintEditTitle.textContent = rec ? "Edit paint" : "Add a paint";
+    paintName.value = editPaint.name;
+    paintPigments.value = editPaint.pigments || "";
+    paintStrength.value = String(editPaint.strength || 0);
+    paintDeleteBtn.hidden = !rec;
+    updatePaint();
+    showPalView("paint");
+  }
+  paintAddBtn.addEventListener("click", function(){ openPaintEditor(null); });
+  function hex(rgb){ return "#" + rgb.map(function(v){ return (v < 16 ? "0" : "") + v.toString(16); }).join(""); }
+  function updatePaint(){
+    editPaint.name = paintName.value;
+    editPaint.pigments = paintPigments.value;
+    var r = Palettes.resolve(editPaint);
+    // the codes found, with a choice where one code covers several paints
+    pigChips.innerHTML = "";
+    r.chips.forEach(function(c){
+      var row = document.createElement("div"); row.className = "pig-chip" + (c.known ? "" : " unknown");
+      var b = document.createElement("b"); b.textContent = c.code;
+      row.appendChild(b);
+      if(c.variants){
+        var sel = document.createElement("select");
+        c.variants.forEach(function(v){ var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+        sel.value = c.variant;
+        sel.addEventListener("change", function(){ editPaint.variants[c.base] = sel.value; updatePaint(); });
+        row.appendChild(sel);
+      } else {
+        var t = document.createElement("span"); t.textContent = c.known ? c.name : "not in the pigment list";
+        row.appendChild(t);
+      }
+      pigChips.appendChild(row);
+    });
+    paintColourState.textContent = editPaint.colour ? "Set" : "Not set";
+    if(editPaint.colour) paintColour.value = hex(editPaint.colour);
+    paintColourClear.hidden = !editPaint.colour;
+    // strength only matters for a paint described by its colour alone
+    paintStrengthRow.hidden = !(r.ok && !r.chips.some(function(c){ return c.known; }));
+    pvTube.style.background = r.ok ? r.paint.css : "transparent";
+    pvTint.style.background = r.ok ? Mix.tint(r.paint, 0.15) : "transparent";
+    paintMsg.textContent = r.msg;
+    paintSave.disabled = !r.ok || !editPaint.name.trim();
+  }
+  paintName.addEventListener("input", updatePaint);
+  paintPigments.addEventListener("input", updatePaint);
+  paintColour.addEventListener("input", function(){
+    var v = paintColour.value;
+    editPaint.colour = [parseInt(v.slice(1, 3), 16), parseInt(v.slice(3, 5), 16), parseInt(v.slice(5, 7), 16)];
+    updatePaint();
+  });
+  paintColourClear.addEventListener("click", function(){ editPaint.colour = null; updatePaint(); });
+  paintStrength.addEventListener("change", function(){ editPaint.strength = Number(paintStrength.value) || 0; updatePaint(); });
+  paintCancel.addEventListener("click", function(){ renderPaintList(); showPalView("edit"); });
+  paintSave.addEventListener("click", function(){
+    var isNew = !editPaint.id;
+    editPaint.name = editPaint.name.trim();
+    var id = Palettes.savePaint(editPaint);
+    if(isNew && editPal.paints.indexOf(id) < 0) editPal.paints.push(id);   // a new paint goes into the palette being edited
+    persistPalettes();
+    renderPaintList();
+    showPalView("edit");
+  });
+  paintDeleteBtn.addEventListener("click", function(){
+    var rec = editPaint;
+    askConfirm("Delete “" + rec.name + "”? It's taken out of every palette.", "Delete", function(){
+      Palettes.deletePaint(rec.id);
+      editPal.paints = editPal.paints.filter(function(x){ return x !== rec.id; });
+      persistPalettes();
+      renderPaintList();
+      showPalView("edit");
+    });
+  });
+
+  // ---- the tube colour from a photo (a swatch, a manufacturer's chart) ----
+  var pickIm = null, pickColour = null;
+  paintPhotoBtn.addEventListener("click", function(){ pickInput.click(); });
+  pickInput.addEventListener("change", function(){
+    var f = pickInput.files && pickInput.files[0];
+    pickInput.value = "";
+    if(!f) return;
+    decodeToCanvas(f, 1600).then(function(im){
+      pickIm = im; pickColour = null;
+      pickCanvas.width = im.w; pickCanvas.height = im.h;
+      pickCanvas.getContext("2d").drawImage(im.canvas, 0, 0);
+      pickSw.style.background = "transparent"; pickTxt.textContent = "Tap the photo"; pickUse.disabled = true;
+      showPalView("pick");
+    }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
+  });
+  pickCanvas.addEventListener("pointerdown", function(e){
+    if(!pickIm) return;
+    e.preventDefault();
+    var r = pickCanvas.getBoundingClientRect();
+    var u = (e.clientX - r.left)/r.width, v = (e.clientY - r.top)/r.height;
+    var s = samplePatch(pickIm, u, v);
+    if(!s) return;
+    pickColour = [toSrgb(s.r), toSrgb(s.g), toSrgb(s.b)];
+    pickSw.style.background = "rgb(" + pickColour.join(",") + ")";
+    pickTxt.textContent = "This colour";
+    pickUse.disabled = false;
+  });
+  pickCancel.addEventListener("click", function(){ showPalView("paint"); });
+  pickUse.addEventListener("click", function(){
+    if(pickColour) editPaint.colour = pickColour;
+    pickIm = null;
+    updatePaint();
+    showPalView("paint");
+  });
+
+  // ---- export / import ----
+  palExportBtn.addEventListener("click", function(){
+    var data = JSON.stringify(Palettes.exportData(), null, 1);
+    deliver(new File([data], "comp-art-palettes-" + fileStamp() + ".json", { type: "application/json" }));
+  });
+  palImportBtn.addEventListener("click", function(){ importInput.click(); });
+  importInput.addEventListener("change", function(){
+    var f = importInput.files && importInput.files[0];
+    importInput.value = "";
+    if(!f) return;
+    f.text().then(function(txt){
+      var added = Palettes.importData(JSON.parse(txt));
+      if(!added){ toast("That file isn't a Comp-Art palettes export."); return; }
+      persistPalettes();
+      renderPalList();
+      toast("Added " + added.palettes + (added.palettes === 1 ? " palette" : " palettes") + " and " + added.paints + (added.paints === 1 ? " paint." : " paints."));
+    }).catch(function(){ toast("That file couldn't be read."); });
+  });
 
   // reference colour at the spot read on the compare / side-by-side views
   ccMixBtn.addEventListener("click", function(){
@@ -1628,7 +1912,8 @@
     state.reading = null; state.peeking = false; state.mode = "align";
     pinZoom.reset(); compareZoom.reset(); sideZoom.reset();
     render();
-    Store.clear().catch(function(){});
+    // the photos and their settings go; your palettes and paints stay
+    ["ref", "photo", "aligned", "meta"].forEach(function(k){ Store.remove(k).catch(function(){}); });
     try{ localStorage.removeItem(LEGACY_KEY); }catch(e){}
   }
   restartBtn.addEventListener("click", function(){
@@ -1658,6 +1943,7 @@
 
   function boot(){
     render();
+    Palettes.load(Store);
     // Ask for durable storage so the browser doesn't clear the saved photos
     // after a spell of non-use.
     if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }

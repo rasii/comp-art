@@ -316,6 +316,11 @@
 <div class="modal" id="mixModal" role="dialog" aria-modal="true" aria-labelledby="mixTitle">
   <div class="modal-box mix-box">
     <p class="mix-title" id="mixTitle">Mix from your paints</p>
+    <div class="mix-palrow">
+      <span class="mix-pallabel">From</span>
+      <select id="mixPalette" aria-label="Palette to mix from"></select>
+      <button class="btn small" id="mixPalettesBtn">Palettes…</button>
+    </div>
     <div class="cc-swatches mix-swatches"><div id="mixTargetSw"></div><div id="mixResultSw"></div></div>
     <div class="mix-swlabels">
       <span>Target <b id="mixTargetMun"></b></span>
@@ -332,6 +337,82 @@
   </div>
 </div>
 
+<!-- palettes: choose, make and edit palettes; add your own paints -->
+<div class="modal" id="palModal" role="dialog" aria-modal="true" aria-label="Palettes">
+  <div class="modal-box pal-box">
+
+    <div class="pal-view" id="palListView">
+      <p class="mix-title">Palettes</p>
+      <ul class="pal-list" id="palList"></ul>
+      <div class="row stretch">
+        <button class="btn small" id="palNewBtn">New palette</button>
+        <button class="btn small" id="palExportBtn">Export</button>
+        <button class="btn small" id="palImportBtn">Import</button>
+      </div>
+      <p class="mix-note">Your palettes and paints are kept on this device. Export saves them to a file, as a backup or to move them to another device; Import adds them back.</p>
+      <div class="row stretch"><button class="btn primary" id="palDoneBtn">Done</button></div>
+    </div>
+
+    <div class="pal-view" id="palEditView" hidden>
+      <label class="field"><span>Palette name</span><input type="text" id="palName" maxlength="40" autocomplete="off"></label>
+      <p class="pal-count" id="palCount"></p>
+      <ul class="paint-list" id="paintList"></ul>
+      <button class="btn small full" id="paintAddBtn">Add a paint…</button>
+      <div class="row stretch">
+        <button class="btn ghost" id="palDeleteBtn">Delete palette</button>
+        <button class="btn primary" id="palEditDone">Done</button>
+      </div>
+    </div>
+
+    <div class="pal-view" id="paintEditView" hidden>
+      <p class="mix-title" id="paintEditTitle">Add a paint</p>
+      <label class="field"><span>Name</span><input type="text" id="paintName" maxlength="60" autocomplete="off" placeholder="e.g. Gamblin Ultramarine Blue"></label>
+      <label class="field"><span>Pigments, from the tube label</span><input type="text" id="paintPigments" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="e.g. PB29, or PB15 PG7"></label>
+      <div class="pig-chips" id="pigChips"></div>
+      <div class="field">
+        <span>Tube colour <em>(optional)</em></span>
+        <div class="colour-row">
+          <input type="color" id="paintColour" value="#808080" aria-label="Tube colour">
+          <span class="colour-state" id="paintColourState">Not set</span>
+          <button class="btn small" id="paintPhotoBtn">From a photo</button>
+          <button class="btn ghost small" id="paintColourClear">Clear</button>
+        </div>
+      </div>
+      <label class="field" id="paintStrengthRow"><span>Tinting strength</span>
+        <select id="paintStrength">
+          <option value="0">Automatic (from how dark it is)</option>
+          <option value="1.2">Weak (earths, cobalts)</option>
+          <option value="3">Medium</option>
+          <option value="8">Strong (phthalos, dark tinters)</option>
+        </select>
+      </label>
+      <div class="paint-preview">
+        <div><span id="pvTube"></span>From the tube</div>
+        <div><span id="pvTint"></span>With white</div>
+      </div>
+      <p class="mix-note" id="paintMsg"></p>
+      <div class="row stretch">
+        <button class="btn ghost" id="paintDeleteBtn">Delete</button>
+        <button class="btn" id="paintCancel">Cancel</button>
+        <button class="btn primary" id="paintSave">Save</button>
+      </div>
+    </div>
+
+    <div class="pal-view" id="photoPickView" hidden>
+      <p class="mix-title">Tap the paint's colour</p>
+      <canvas id="pickCanvas"></canvas>
+      <div class="colour-row"><span class="sr-swatch" id="pickSw"></span><span class="colour-state" id="pickTxt">Tap the photo</span></div>
+      <div class="row stretch">
+        <button class="btn" id="pickCancel">Cancel</button>
+        <button class="btn primary" id="pickUse" disabled>Use this colour</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+<input type="file" id="pickInput" accept="image/*">
+<input type="file" id="importInput" accept=".json,application/json">
+
 <script src="version.js"></script>
 <script src="munsell-data.js"></script>
 <script src="munsell.js"></script>
@@ -340,6 +421,8 @@
 <script src="shapes.js"></script>
 <script src="mixbox.js"></script>
 <script src="mix.js"></script>
+<script src="pigments.js"></script>
+<script src="palettes.js"></script>
 <script src="store.js"></script>
 <script src="app.js"></script>
 </body>

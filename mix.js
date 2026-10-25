@@ -9,7 +9,11 @@
 //
 // The search tries every combination of up to four paints, optimises the
 // proportions to minimise the colour difference (CIEDE2000), and prefers
-// simpler mixes when they're nearly as close.
+// simpler mixes when they're nearly as close. A big palette is first cut
+// to the 9 paints most likely to reach the colour, so it stays quick.
+//
+// The built-in paints below are the Default palette. Your own paints and
+// palettes are in palettes.js; recipe() takes whichever paints are active.
 window.Mix = (function(){
   "use strict";
 
@@ -20,7 +24,7 @@ window.Mix = (function(){
     burntSienna: [123, 72, 0]
   };
 
-  // The palette: Winsor & Newton Artists' Oil Colour.
+  // The built-in paints (the Default palette): Winsor & Newton Artists' Oil Colour.
   // approx: the tube's pigment isn't in the model, so it's approximated
   // from similar pigments until it's calibrated from a swatch card.
   // strength: tinting strength relative to white. Mixbox's proportions are
@@ -39,18 +43,23 @@ window.Mix = (function(){
   ];
 
   var N = 7;   // Mixbox latent size
-  function latentOf(paint){
-    if(paint.latent) return paint.latent;
+  // latent of a blend [[rgb, weight], ...] (weights sum to 1)
+  function latentOfMix(mix){
     var z = new Array(N).fill(0);
-    paint.mix.forEach(function(part){
+    mix.forEach(function(part){
       var l = mixbox.rgbToLatent(part[0][0], part[0][1], part[0][2]);
       for(var i=0;i<N;i++) z[i] += part[1]*l[i];
     });
-    paint.latent = z;
-    paint.css = "rgb(" + mixbox.latentToRgb(z).slice(0, 3).join(",") + ")";
     return z;
   }
-  PALETTE.forEach(latentOf);
+  function cssOfLatent(z){ return "rgb(" + mixbox.latentToRgb(z).slice(0, 3).join(",") + ")"; }
+  // a paint {mix, strength, ...} made ready for mixing: its latent and colour
+  function prepare(paint){
+    paint.latent = latentOfMix(paint.mix);
+    paint.css = cssOfLatent(paint.latent);
+    return paint;
+  }
+  PALETTE.forEach(function(p){ p.builtin = true; prepare(p); });
 
   // ---------------- colour difference ----------------
   function srgbToLin(c){ return c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
@@ -121,6 +130,43 @@ window.Mix = (function(){
     return best;
   }
 
+  // A tint of a paint with titanium white: `vol` is the paint's share by
+  // volume (the model's proportion is scaled by tinting strength). CSS colour.
+  var WHITE = latentOfMix([[[255, 255, 255], 1]]);
+  function tint(paint, vol){
+    var a = vol*paint.strength, b = (1 - vol), w = a/(a + b), z = new Array(N);
+    for(var i=0;i<N;i++) z[i] = w*paint.latent[i] + (1 - w)*WHITE[i];
+    return cssOfLatent(z);
+  }
+  // Proportions of the given latents that come closest to a colour
+  // (linear-light sRGB), e.g. how much of each pigment makes a tube colour.
+  function fit(lats, targetLin){
+    if(lats.length === 1) return [1];
+    return optimise(lats, linToLab(targetLin[0], targetLin[1], targetLin[2])).w;
+  }
+
+  // For a big palette: the paints most likely to reach the colour, judged
+  // by the closest each gets alone or with any one other paint. The
+  // lightest paint (usually white) always stays, for tints.
+  var SHORTLIST = 9;
+  function shortlist(paints, target){
+    var n = paints.length, best = new Array(n).fill(Infinity);
+    for(var i=0;i<n;i++){
+      best[i] = Math.min(best[i], de2000(target, mixLab([paints[i].latent], [1])));
+      for(var j=i+1;j<n;j++){
+        var d = optimise([paints[i].latent, paints[j].latent], target).d;
+        if(d < best[i]) best[i] = d;
+        if(d < best[j]) best[j] = d;
+      }
+    }
+    var light = 0;
+    paints.forEach(function(p, i){ if(mixLab([p.latent], [1])[0] > mixLab([paints[light].latent], [1])[0]) light = i; });
+    var order = paints.map(function(_, i){ return i; }).sort(function(a, b){ return best[a] - best[b]; });
+    var keep = order.slice(0, SHORTLIST);
+    if(keep.indexOf(light) < 0){ keep.pop(); keep.push(light); }
+    return keep.map(function(i){ return paints[i]; });
+  }
+
   // ---------------- recipes ----------------
   // targetLin: linear-light sRGB [r, g, b]. Returns the recommended recipe:
   // the fewest paints that get very close (ΔE under 2, hard to tell apart
@@ -128,16 +174,18 @@ window.Mix = (function(){
   // Also returns the closest recipe overall if it's noticeably closer.
   var SIMPLER = 0.75;   // how much closeness (ΔE) one fewer paint is worth
   var VERY_CLOSE = 2;
-  function recipe(targetLin){
+  function recipe(targetLin, paints){
     var target = linToLab(targetLin[0], targetLin[1], targetLin[2]);
+    var pool = (paints && paints.length) ? paints : PALETTE;
+    if(pool.length > SHORTLIST) pool = shortlist(pool, target);
     var results = [];
     (function subsets(start, chosen){
       if(chosen.length){
-        var lats = chosen.map(function(i){ return PALETTE[i].latent; });
+        var lats = chosen.map(function(i){ return pool[i].latent; });
         var r = optimise(lats, target);
         // drop paints that ended up with (almost) nothing
         var parts = [];
-        chosen.forEach(function(idx, j){ if(r.w[j] >= 0.004) parts.push({ paint: PALETTE[idx], w: r.w[j] }); });
+        chosen.forEach(function(idx, j){ if(r.w[j] >= 0.004) parts.push({ paint: pool[idx], w: r.w[j] }); });
         if(parts.length === chosen.length){
           var sum = parts.reduce(function(s, p){ return s + p.w; }, 0);
           parts.forEach(function(p){ p.w /= sum; });
@@ -145,7 +193,7 @@ window.Mix = (function(){
         }
       }
       if(chosen.length === 4) return;
-      for(var i=start;i<PALETTE.length;i++) subsets(i + 1, chosen.concat(i));
+      for(var i=start;i<pool.length;i++) subsets(i + 1, chosen.concat(i));
     })(0, []);
     var veryClose = results.filter(function(r){ return r.de < VERY_CLOSE; });
     var best;
@@ -185,5 +233,5 @@ window.Mix = (function(){
     return r;
   }
 
-  return { palette: PALETTE, recipe: recipe };
+  return { palette: PALETTE, recipe: recipe, prepare: prepare, latentOfMix: latentOfMix, tint: tint, fit: fit, srgbToLin: srgbToLin };
 })();
