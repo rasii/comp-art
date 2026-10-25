@@ -1,9 +1,9 @@
 (function(){
   "use strict";
 
-  var WORK_DIM = 2000;     // long edge of the working reference and of the aligned output
+  var WORK_DIM = 3000;     // long edge of the working reference and of the aligned output
   var SRC_MAX  = 3000;     // long edge kept for the raw painting photo (perspective source)
-  var VIEW_MAX_ZOOM = 6;   // pinch-zoom limit on the compare / side-by-side views
+  var VIEW_MAX_ZOOM = 10;  // pinch-zoom limit on the compare / side-by-side / block-in views
   var PIN_MAX_ZOOM = 5;    // pinch-zoom limit on the align stage
   var OFF_MAX = 0.5;       // the painting can be shifted up to half the frame
   var LEGACY_KEY = "sightsize_v1"; // old localStorage save, migrated on first run
@@ -313,8 +313,8 @@
       ccPaintSw.style.background = "transparent";
       ccDiff.textContent = "No painting at this spot.";
     }
-    var side = 2*patchRadius(state.ref) + 1;
-    colorCard.title = "Hue and chroma are the nearest Munsell chip; value is measured. Each reading averages a " + side + "×" + side + " pixel patch.";
+    var side = rd.patch || 2*patchRadius(state.ref) + 1;
+    colorCard.title = "Hue and chroma are the nearest Munsell chip; value is measured. This reading averages a " + side + "×" + side + " pixel patch (smaller when zoomed in).";
   }
 
   // Marker at image-normalized (u,v), positioned in the frame's pixels so it
@@ -865,10 +865,19 @@
   // are unaffected by the on-screen opacity, grayscale, offset or zoom).
   function toLin(c){ c /= 255; return c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
   function toSrgb(l){ var c = l <= 0.0031308 ? 12.92*l : 1.055*Math.pow(l, 1/2.4) - 0.055; return Math.round(clamp(c, 0, 1)*255); }
+  // The patch: at most 1/300 of the image (smooths grain, JPEG blocks and
+  // canvas texture), and never more than the marker's centre dot on screen
+  // (the point you aim with), so zooming in reads finer detail, down to
+  // 3×3 pixels.
+  var RING_R = 3;            // css px: radius of the marker's centre dot
   function patchRadius(im){ return Math.max(1, Math.round(Math.max(im.w, im.h) / 300)); }
-  function samplePatch(im, u, v){
+  // radius for an image shown `shownW` css px wide
+  function patchFor(im, shownW){
+    return clamp(Math.round(RING_R*im.w/Math.max(1, shownW)), 1, patchRadius(im));
+  }
+  function samplePatch(im, u, v, radius){
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return null;
-    var cx = Math.floor(u*im.w), cy = Math.floor(v*im.h), r = patchRadius(im);
+    var cx = Math.floor(u*im.w), cy = Math.floor(v*im.h), r = radius || patchRadius(im);
     var x0 = Math.max(0, cx-r), y0 = Math.max(0, cy-r);
     var x1 = Math.min(im.w-1, cx+r), y1 = Math.min(im.h-1, cy+r);
     var d = im.canvas.getContext("2d").getImageData(x0, y0, x1-x0+1, y1-y0+1).data;
@@ -891,9 +900,10 @@
     var u = ((e.clientX - vr.left) / vr.width - c.x) / c.w;
     var v = ((e.clientY - vr.top) / vr.height - c.y) / c.h;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
-    var refLin = samplePatch(state.ref, u, v);
-    var curLin = samplePatch(state.aligned, u - state.offU, v - state.offV);
-    state.reading = { u: u, v: v, pointerType: e.pointerType, r: readColour(refLin), p: curLin ? readColour(curLin) : null };
+    var shown = vr.width*c.w, rr = patchFor(state.ref, shown), ra = patchFor(state.aligned, shown);
+    var refLin = samplePatch(state.ref, u, v, rr);
+    var curLin = samplePatch(state.aligned, u - state.offU, v - state.offV, ra);
+    state.reading = { u: u, v: v, pointerType: e.pointerType, patch: 2*rr + 1, r: readColour(refLin), p: curLin ? readColour(curLin) : null };
     renderReading();
   }
 
@@ -1133,7 +1143,7 @@
   // The photo's own colour at a tapped spot, as shown: enhanced when the
   // intensity is applied to the photo, grey in values mode.
   function photoLin(pt){
-    var s = samplePatch(state.ref, pt.u, pt.v);
+    var s = samplePatch(state.ref, pt.u, pt.v, pt.r);
     if(state.grayscale) return greyOf(s.r, s.g, s.b);
     if(enhanceOn()) return Shapes.boostChroma(s.r, s.g, s.b, state.shapes.chroma/100);
     return [s.r, s.g, s.b];
@@ -1374,7 +1384,7 @@
     if(!vr.width || !vr.height) return;            // not laid out (hidden)
     var u = ((e.clientX - vr.left)/vr.width - c.x)/c.w, v = ((e.clientY - vr.top)/vr.height - c.y)/c.h;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
-    state.shapesPoint = { u: u, v: v, pointerType: e.pointerType };
+    state.shapesPoint = { u: u, v: v, pointerType: e.pointerType, r: patchFor(state.ref, vr.width*c.w) };
     state.shapesPick = labelAt(R, state.shapesPoint);
     drawShapes();
     renderPalette();
@@ -1539,6 +1549,7 @@
   var paintStrengthRow = $("paintStrengthRow"), paintStrength = $("paintStrength"), pvTube = $("pvTube"), pvTint = $("pvTint");
   var paintMsg = $("paintMsg"), paintDeleteBtn = $("paintDeleteBtn"), paintCancel = $("paintCancel"), paintSave = $("paintSave");
   var pickCanvas = $("pickCanvas"), pickSw = $("pickSw"), pickTxt = $("pickTxt"), pickCancel = $("pickCancel"), pickUse = $("pickUse");
+  var pickFrame = $("pickFrame"), pickView = $("pickView"), photoPickMarker = $("photoPickMarker");
   var pickInput = $("pickInput"), importInput = $("importInput");
 
   function persistPalettes(){ Palettes.save(Store).catch(storeFail); }
@@ -1742,32 +1753,58 @@
   });
 
   // ---- the tube colour from a photo (a swatch, a manufacturer's chart) ----
-  var pickIm = null, pickColour = null;
+  // Pinch to zoom in (double-tap to zoom out), tap or drag to read: the
+  // ring shows the spot, and the patch read is what's inside the ring.
+  var pickIm = null, pickColour = null, pickPt = null;
+  var pickZoom = makeZoom([pickView], 16);
   paintPhotoBtn.addEventListener("click", function(){ pickInput.click(); });
   pickInput.addEventListener("change", function(){
     var f = pickInput.files && pickInput.files[0];
     pickInput.value = "";
     if(!f) return;
-    decodeToCanvas(f, 1600).then(function(im){
-      pickIm = im; pickColour = null;
+    decodeToCanvas(f, 3000).then(function(im){
+      pickIm = im; pickColour = null; pickPt = null;
       pickCanvas.width = im.w; pickCanvas.height = im.h;
       pickCanvas.getContext("2d").drawImage(im.canvas, 0, 0);
-      pickSw.style.background = "transparent"; pickTxt.textContent = "Tap the photo"; pickUse.disabled = true;
+      pickSw.style.background = "transparent"; pickTxt.textContent = "Tap the photo · pinch to zoom in"; pickUse.disabled = true;
+      photoPickMarker.hidden = true;
+      pickZoom.reset(); pickZoom.apply();
       showPalView("pick");
+      fitPickFrame();
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
-  pickCanvas.addEventListener("pointerdown", function(e){
+  // the frame takes the photo's shape, as wide as the dialog and at most 60% of the screen tall
+  function fitPickFrame(){
     if(!pickIm) return;
-    e.preventDefault();
-    var r = pickCanvas.getBoundingClientRect();
-    var u = (e.clientX - r.left)/r.width, v = (e.clientY - r.top)/r.height;
-    var s = samplePatch(pickIm, u, v);
+    pickFrame.style.width = ""; pickFrame.style.height = "";
+    var W = pickFrame.parentNode.clientWidth, ar = pickIm.w/pickIm.h, h = Math.min(W/ar, 0.6*window.innerHeight);
+    pickFrame.style.width = Math.round(h*ar) + "px"; pickFrame.style.height = Math.round(h) + "px";
+  }
+  function placePickMarker(){
+    if(!pickPt){ photoPickMarker.hidden = true; return; }
+    var fr = pickFrame.getBoundingClientRect(), vr = pickView.getBoundingClientRect();
+    photoPickMarker.style.left = (vr.left - fr.left + pickPt.u*vr.width) + "px";
+    photoPickMarker.style.top = (vr.top - fr.top + pickPt.v*vr.height) + "px";
+    photoPickMarker.classList.toggle("touch", pickPt.pointerType === "touch");
+    photoPickMarker.classList.toggle("below", pickPt.pointerType === "touch" && vr.top - fr.top + pickPt.v*vr.height < 96);
+    photoPickMarker.hidden = false;
+  }
+  function pickAt(e){
+    if(!pickIm) return;
+    var vr = pickView.getBoundingClientRect();
+    var u = (e.clientX - vr.left)/vr.width, v = (e.clientY - vr.top)/vr.height;
+    var s = samplePatch(pickIm, u, v, patchFor(pickIm, vr.width));
     if(!s) return;
+    pickPt = { u: u, v: v, pointerType: e.pointerType };
     pickColour = [toSrgb(s.r), toSrgb(s.g), toSrgb(s.b)];
-    pickSw.style.background = "rgb(" + pickColour.join(",") + ")";
+    var css = "rgb(" + pickColour.join(",") + ")";
+    pickSw.style.background = css;
+    photoPickMarker.querySelector(".pm-ring").style.background = css;
     pickTxt.textContent = "This colour";
     pickUse.disabled = false;
-  });
+    placePickMarker();
+  }
+  attachGestures(pickFrame, pickZoom, { start: pickAt, move: pickAt }, function(){ pickZoom.apply(); placePickMarker(); });
   pickCancel.addEventListener("click", function(){ showPalView("paint"); });
   pickUse.addEventListener("click", function(){
     if(pickColour) editPaint.colour = pickColour;
@@ -1836,14 +1873,22 @@
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
     return c;
   }
+  // (scaled down if needed to stay within iOS's largest canvas, 16.7 MP;
+  // the painting drawn at the reference's size, which an older, smaller
+  // aligned image may not match)
+  var CANVAS_MAX = 16000000;
   function sideBySideCanvas(){
-    var w = state.ref.w, h = state.ref.h, row = w <= h, gap = Math.round(0.02*Math.max(w, h));
+    var row = state.ref.w <= state.ref.h;
+    var W0 = row ? 2.02*state.ref.w : state.ref.w, H0 = row ? state.ref.h : 2.02*state.ref.h;
+    var s = Math.min(1, Math.sqrt(CANVAS_MAX/(W0*H0)));
+    var w = Math.round(state.ref.w*s), h = Math.round(state.ref.h*s), gap = Math.round(0.02*Math.max(w, h));
     var c = document.createElement("canvas");
     c.width = row ? 2*w + gap : w; c.height = row ? h : 2*h + gap;
     var ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(grayCopy(state.ref), 0, 0);
-    ctx.drawImage(paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap);
+    ctx.drawImage(grayCopy(state.ref), 0, 0, w, h);
+    ctx.drawImage(paintingCanvas(), row ? w + gap : 0, row ? 0 : h + gap, w, h);
     return c;
   }
   function fileStamp(){

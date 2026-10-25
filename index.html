@@ -400,7 +400,10 @@
 
     <div class="pal-view" id="photoPickView" hidden>
       <p class="mix-title">Tap the paint's colour</p>
-      <canvas id="pickCanvas"></canvas>
+      <div class="pick-frame" id="pickFrame">
+        <div class="zoom-view" id="pickView"><canvas id="pickCanvas"></canvas></div>
+        <div class="pick-marker" id="photoPickMarker" hidden><span class="pm-dot"></span><span class="pm-stem"></span><span class="pm-ring"></span></div>
+      </div>
       <div class="colour-row"><span class="sr-swatch" id="pickSw"></span><span class="colour-state" id="pickTxt">Tap the photo</span></div>
       <div class="row stretch">
         <button class="btn" id="pickCancel">Cancel</button>

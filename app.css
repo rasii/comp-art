@@ -446,7 +446,8 @@ select, .field input[type=text]{
 .paint-preview{ display:flex; gap:12px; }
 .paint-preview > div{ flex:1; display:flex; flex-direction:column; gap:4px; font-size:11.5px; color: var(--ink-dim); text-align:center; }
 .paint-preview span{ height:40px; border:1px solid var(--line); border-radius: var(--radius); background: transparent; }
-#pickCanvas{ width:100%; border-radius: var(--radius); touch-action:none; cursor:crosshair; background:#000; }
+.pick-frame{ position:relative; margin:0 auto; overflow:hidden; border-radius: var(--radius); background:#000; touch-action:none; cursor:crosshair; }
+#pickCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
 
 @media (min-width: 720px){
   .stage{ min-height: 420px; }
