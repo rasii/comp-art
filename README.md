@@ -42,7 +42,7 @@ screen, but works on any modern browser.
 | `munsell.js` | sRGB → Munsell (nearest renotation chip + measured value) and plain-words comparison |
 | `munsell-data.js` | Munsell renotation chip data (RIT MCSL `real.dat`) |
 | `store.js` | IndexedDB key/value store for the photos, corners, offsets and settings (the aligned painting isn't stored: it's made again from the photo and corners on opening) |
-| `sw.js` | Service worker: the app opens from its cache (at once, and offline); a new version installs in the background and a "Reload" notice appears |
+| `sw.js` | Service worker: the app opens from its cache (at once, and offline); a new version installs in the background and takes over when the app is next put away or brought back |
 | `version.js` | Version string shown in the header; bump it on every release (it also names the offline cache) |
 | `apple-touch-icon.png` | Home-screen icon |
 

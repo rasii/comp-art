@@ -3235,11 +3235,18 @@
 
   // Offline support: cache the app files so the home-screen app opens
   // without a network connection.
-  // The app opens from the cache (fast, and offline); a new version is
-  // fetched in the background and offered with a "Reload" notice.
+  // The app opens from the cache (fast, and offline). A new version is
+  // fetched in the background and takes over at a quiet moment: when the
+  // app is put away or comes back, and nothing is in progress.
   if("serviceWorker" in navigator){
-    var updateBar = $("updateBar");
-    $("updateReload").addEventListener("click", function(){ location.reload(); });
+    var updateReady = false;
+    function busyNow(){
+      return state.busy || state.adjusting || state.detecting || !!document.querySelector(".modal.show");
+    }
+    function applyUpdate(){
+      if(!updateReady) return;
+      if(document.hidden || !busyNow()){ updateReady = false; location.reload(); }
+    }
     window.addEventListener("load", function(){
       navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(function(reg){
         // a long-open home-screen app checks for a new version when it comes back
@@ -3247,9 +3254,10 @@
       }).catch(function(){});
       var had = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener("controllerchange", function(){
-        if(had) updateBar.hidden = false;        // a new version has taken over: ready on reload
+        if(had){ updateReady = true; if(document.hidden) applyUpdate(); }   // a new version has taken over
         had = true;
       });
+      document.addEventListener("visibilitychange", applyUpdate);
     });
   }
 })();

@@ -391,13 +391,6 @@ input[type=range]::-webkit-slider-thumb{
   opacity:0; pointer-events:none; transition: opacity .2s ease, transform .2s ease;
 }
 .toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
-.update-bar{
-  position: fixed; left:50%; bottom: calc(18px + env(safe-area-inset-bottom,0px)); transform: translateX(-50%);
-  display:flex; align-items:center; gap:12px; z-index:51;
-  background: #2A251F; border:1px solid var(--line); color: var(--ink);
-  padding: 9px 10px 9px 16px; border-radius: var(--radius); font-size:13px; box-shadow: 0 8px 24px rgba(0,0,0,.35);
-}
-.update-bar[hidden]{ display:none; }
 
 /* in-page confirm dialog (native confirm() is silently blocked in some
    embedded browsers and home-screen web apps) */

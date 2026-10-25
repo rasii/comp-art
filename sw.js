@@ -1,8 +1,9 @@
 // Service worker: keeps a copy of the app so it opens at once, and offline
 // (e.g. in the studio without wifi). The app's files are served from the
 // cache; a new version (a new version.js makes this a new worker) is
-// fetched whole in the background and takes over on the next reload (the
-// page shows a "Reload" notice). Fonts are cached on first use.
+// fetched whole in the background and takes over at a quiet moment (the
+// page reloads itself when put away or brought back). Fonts are cached on
+// first use.
 importScripts("version.js");
 var CACHE = "compart-" + self.APP_VERSION;
 var SHELL = [
