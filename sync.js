@@ -7,9 +7,11 @@
 //   index.json       the projects: {projects: {id: {name, nameT, created,
 //                    updated, photos}}, deleted: {id: time}, purged: {id: 1}}
 //   palettes.json    {t, paints, palettes} (the whole record, newest wins)
-//   p/<id>/doc.json  one project: {files: {ref|photo|aligned|thumb|meta:
-//                    {t, k?, gone?}}, meta, items: [{id, t, key, k, tk?}],
-//                    deleted: [stage ids]}
+//   p/<id>/doc.json  one project: {files: {ref|photo|aligned|thumb|meta|align:
+//                    {t, k?, gone?}}, meta, align, items: [{id, t, key, k,
+//                    tk?}], deleted: [stage ids]}. meta (the settings) and
+//                    align (the alignment) are records kept in the document;
+//                    the rest are images.
 //   p/<id>/<name>-<t>  the images, each version under its own name (so two
 //                    devices uploading at once can't mix them up)
 // Progress stages merge as a union (by id; the newer of a stage on both
@@ -25,7 +27,8 @@ window.Sync = (function(){
 
   // the sync server's address (the Worker's workers.dev address)
   var DEFAULT_URL = "https://comp-art-sync.rstigall-4f5.workers.dev/";
-  var SINGLE = ["ref", "photo", "aligned", "thumb", "meta"];
+  var SINGLE = ["ref", "photo", "aligned", "thumb", "meta", "align"];
+  var RECORD = { meta: 1, align: 1 };     // kept in doc.json, not as files
 
   var cfg = null, hooks = {}, gver = { palT: 0 };
   var vers = {}, versLoad = {};
@@ -54,10 +57,10 @@ window.Sync = (function(){
   function onWrite(id, k, v, removed){
     if(k && SINGLE.indexOf(k) >= 0){
       loadVers(id).then(function(V){
-        if(k === "meta"){
+        if(RECORD[k]){
           var sig = JSON.stringify(v);
-          if(V.meta && V.meta.sig === sig) return;         // the same settings again
-          V.meta = { t: nextT(V.meta), sig: sig };
+          if(V[k] && V[k].sig === sig) return;             // the same record again
+          V[k] = { t: nextT(V[k]), sig: sig };
         }
         else V[k] = removed ? { t: nextT(V[k]), gone: true } : { t: nextT(V[k]) };
         saveVers(id);
@@ -239,9 +242,9 @@ window.Sync = (function(){
     return loadVers(id).then(function(v){
       V = v;
       SINGLE.forEach(function(k){ before[k] = V[k]; });
-      return Promise.all([getJson(P + "doc.json"), Store.get(P + "progress"), Store.get(P + "meta")]);
+      return Promise.all([getJson(P + "doc.json"), Store.get(P + "progress"), Store.get(P + "meta"), Store.get(P + "align")]);
     }).then(function(r){
-      var cdoc = r[0] ? r[0].data : null, etag = r[0] ? r[0].etag : null, rec = r[1], lmeta = r[2];
+      var cdoc = r[0] ? r[0].data : null, etag = r[0] ? r[0].etag : null, rec = r[1], local = { meta: r[2], align: r[3] };
       var doc = cdoc ? clone(cdoc) : { v: 1, files: {}, meta: null, items: [], deleted: [] };
       doc.files = doc.files || {}; doc.items = doc.items || []; doc.deleted = doc.deleted || [];
       var ups = [], downs = [], gc = [], changed = { reload: false, stages: false };
@@ -251,8 +254,8 @@ window.Sync = (function(){
         var lv = before[k] || (keySet[P + k] ? { t: 1 } : null), cv = doc.files[k] || null;
         var lt = lv ? lv.t : 0, ct = cv ? cv.t : 0;
         if(lt > ct){
-          if(lv.gone){ if(cv && cv.k) gc.push(cv.k); doc.files[k] = { t: lt, gone: true }; if(k === "meta") doc.meta = null; return; }
-          if(k === "meta"){ if(lmeta){ doc.meta = clone(lmeta); doc.files.meta = { t: lt }; } return; }
+          if(lv.gone){ if(cv && cv.k) gc.push(cv.k); doc.files[k] = { t: lt, gone: true }; if(RECORD[k]) doc[k] = null; return; }
+          if(RECORD[k]){ if(local[k]){ doc[k] = clone(local[k]); doc.files[k] = { t: lt }; } return; }
           var name = k + "-" + lt;
           ups.push(function(){
             return Store.get(P + k).then(function(b){
@@ -271,10 +274,11 @@ window.Sync = (function(){
               changed.reload = true;
               return Store.remove(P + k);
             }
-            if(k === "meta"){
-              V.meta = { t: ct, sig: JSON.stringify(doc.meta) };
+            if(RECORD[k]){
+              if(!doc[k]) return;
+              V[k] = { t: ct, sig: JSON.stringify(doc[k]) };
               changed.reload = true;
-              return Store.set(P + "meta", doc.meta);
+              return Store.set(P + k, doc[k]);
             }
             return getBlob(P + cv.k).then(function(b){
               done(1);
@@ -284,7 +288,7 @@ window.Sync = (function(){
               return Store.set(P + k, b);
             });
           });
-          if(!cv.gone && k !== "meta") count(1);
+          if(!cv.gone && !RECORD[k]) count(1);
         }
       });
 

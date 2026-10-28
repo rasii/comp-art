@@ -97,6 +97,7 @@
   var enhanceRow = $("enhanceRow"), enhanceSwitch = $("enhanceSwitch"), shapesPhoto = $("shapesPhoto"), shapesMarker = $("shapesMarker");
 
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
+  var fullBtn = $("fullBtn"), fullBar = $("fullBar");
   var ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
   var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun"), ccRefName = $("ccRefName");
   var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
@@ -192,10 +193,23 @@
     if(!storeWarned) toast("Photos couldn't be saved on this device, but this session works fine.");
     storeWarned = true;
   }
+  // The alignment (the photo's corners, the last Align, the position nudge)
+  // is also kept as its own record, "align", which goes with the painting
+  // photo: it's written only when the alignment changed here, so changing a
+  // view setting on one device can't send that device's older alignment
+  // over a newer one from another (sync takes the newest of each record).
+  // alignLoaded: the alignment as the open project was loaded (null while
+  // it loads, when nothing is written).
+  var alignLoaded = null;
+  function alignRecord(){
+    return { corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, photoKey: state.photoKey, aligned: !!state.aligned };
+  }
   function persistMeta(){
     if(!PStore) return;
     Projects.touch(Projects.activeId());
     PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader }).catch(storeFail);
+    var a = alignRecord(), sa = JSON.stringify(a);
+    if(alignLoaded !== null && sa !== alignLoaded){ alignLoaded = sa; PStore.set("align", a).catch(storeFail); }
   }
   function persistBlob(key, blob){ return PStore ? PStore.set(key, blob).catch(storeFail) : Promise.resolve(); }
 
@@ -288,9 +302,12 @@
     // ---- shapes ----
     if(hasRef && m === "blocks") renderShapes();
 
-    // colour card: one card, shown in whichever view is active
-    var slot = (m === "side") ? sideCardSlot : compareCardSlot;
-    if(colorCard.parentElement !== slot) slot.appendChild(colorCard);
+    // full screen: the button in the picture's corner, and the controls kept on screen
+    renderFull(m);
+
+    // colour card: one card, shown in whichever view is active (floating, in full screen)
+    var slot = (state.full && (m === "compare" || m === "side")) ? fullBar : (m === "side") ? sideCardSlot : compareCardSlot;
+    if(colorCard.parentElement !== slot) slot.insertBefore(colorCard, slot.firstChild);
     ccEmpty.textContent = (m === "side") ? "Touch either image to read colours" : "Touch and hold the painting to read colours";
     renderReading();
   }
@@ -383,6 +400,35 @@
     if(W/H > ar) w = H*ar/W; else h = W/ar/H;
     return { x: (1-w)/2, y: (1-h)/2, w: w, h: h };
   }
+
+  // ---------------- full screen ----------------
+  // The picture takes the whole screen: header, tabs and controls hide, and
+  // the one control each view needs most floats over the picture (the
+  // opacity in Compare, the stage slider in Progress; the colour reading in
+  // Compare and Side by side, once there is one). Everything done on the
+  // picture itself (zoom, peek, readings) works as usual. In-memory only.
+  var FULL_PICTURE = { compare: "compareFrame", side: "sideFit", blocks: "shapesFrame", progress: "progFrame" };
+  // a control moves into the floating bar and back to where it was
+  function park(el){
+    if(el.parentElement === fullBar) return;
+    if(!el._home){ el._home = document.createComment("home"); el.parentNode.insertBefore(el._home, el); }
+    fullBar.appendChild(el);
+  }
+  function unpark(el){ if(el._home && el.parentElement === fullBar) el._home.parentNode.insertBefore(el, el._home); }
+  function renderFull(m){
+    var pic = FULL_PICTURE[m] ? $(FULL_PICTURE[m]) : null;
+    if(state.full && !pic) state.full = false;             // align: always with its controls
+    document.body.classList.toggle("full", !!state.full);
+    fullBtn.hidden = !pic;
+    var fit = pic && (pic.classList.contains("fit") ? pic : pic.closest(".fit"));
+    if(fit && fullBtn.parentElement !== fit) fit.appendChild(fullBtn);
+    fullBtn.title = state.full ? "Show the controls" : "Full screen";
+    fullBtn.setAttribute("aria-label", fullBtn.title);
+    var opacityRow = opacitySlider.closest(".ctrl-row"), scrub = progSlider.closest(".prog-scrub");
+    if(state.full && m === "compare") park(opacityRow); else unpark(opacityRow);
+    if(state.full && m === "progress") park(scrub); else unpark(scrub);
+  }
+  fullBtn.addEventListener("click", function(){ state.full = !state.full; render(); });
 
   // ---------------- lockstep pinch-zoom for a group of views ----------------
   // z/pu/pv are the same for every view in the group; pan is a fraction of
@@ -2235,6 +2281,7 @@
   confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
   document.addEventListener("keydown", function(e){
     if(e.key !== "Escape") return;
+    if(state.full && !document.querySelector(".modal.show")){ state.full = false; render(); return; }
     if(confirmModal.classList.contains("show")) closeConfirm();
     if(PU.onEscape()) return;
     if(videoModal.classList.contains("show")) closeVideo();
@@ -2326,6 +2373,7 @@
   // the other project. View settings (Block-in, intensity, export options)
   // carry over into a new project.
   function resetForProject(){
+    alignLoaded = null;
     stopPlay();
     if(videoModal.classList.contains("show")) closeVideo();
     Object.keys(progUrls).forEach(function(id){ URL.revokeObjectURL(progUrls[id]); });
@@ -2361,15 +2409,24 @@
   function loadProject(id){
     var ps = PStore;
     return Progress.init(ps).then(function(){
-      return Promise.all([ps.get("meta"), ps.get("ref"), ps.get("photo"), ps.get("aligned")]);
+      return Promise.all([ps.get("meta"), ps.get("ref"), ps.get("photo"), ps.get("aligned"), ps.get("align")]);
     }).then(function(res){
       if(PStore !== ps) return;                         // another project was opened meanwhile
-      var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3];
+      var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3], align = res[4];
+      // the alignment record, where there is one, over the copy in the settings
+      if(align && typeof align === "object"){
+        meta = Object.assign({}, meta);
+        ["corners", "lastCorners", "offU", "offV", "photoKey", "aligned"].forEach(function(k){ meta[k] = align[k]; });
+      }
       // a project without a reference yet keeps its own settings if it has
       // any, else the current ones (a new project carries them over)
       if(!refBlob){ if(res[0]) applyMeta(meta); return; }
       return loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob);
-    }).catch(function(){}).then(function(){ if(PStore === ps) render(); });
+    }).catch(function(){}).then(function(){
+      if(PStore !== ps) return;
+      alignLoaded = JSON.stringify(alignRecord());     // from here on, a change to the alignment is saved
+      render();
+    });
   }
 
   // ---------------- boot ----------------

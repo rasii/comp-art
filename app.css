@@ -392,6 +392,39 @@ input[type=range]::-webkit-slider-thumb{
 }
 .toast.show{ opacity:1; transform: translateX(-50%) translateY(-4px); }
 
+/* ---------- full screen: the picture, and a control or two floating over it ---------- */
+.fit{ position:relative; }
+.full-btn{
+  position:absolute; top:8px; right:8px; z-index:6;
+  width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center;
+  background: rgba(24,22,19,.62); border:1px solid rgba(237,230,217,.18); border-radius:50%;
+  color: var(--ink); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.full-btn[hidden]{ display:none; }
+.full-btn svg{ width:19px; height:19px; display:block; }
+.full-btn .full-off, body.full .full-btn .full-on{ display:none; }
+body.full .full-btn .full-off{ display:block; }
+body.full header, body.full nav.tabs, body.full .controls{ display:none !important; }
+body.full main{ padding:0; gap:0; max-width:none; }
+body.full main > section, body.full .step{ gap:0; }
+body.full .fit{ min-height:0; }
+body.full .fit.fit-pad{ padding:0; }
+body.full .full-btn{ top: calc(8px + env(safe-area-inset-top, 0px)); }
+.full-bar{ display:none; }
+body.full .full-bar{
+  display:flex; flex-direction:column; gap:8px;
+  position:fixed; z-index:30; left:50%; transform: translateX(-50%);
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px)); width: min(460px, calc(100% - 24px));
+  pointer-events:none;
+}
+body.full .full-bar > *{
+  pointer-events:auto; margin:0;
+  background: rgba(24,22,19,.82); border:1px solid var(--line); border-radius: var(--radius);
+  padding: 8px 12px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+/* the colour card only once there's a reading (no "touch and hold" hint over the picture) */
+body.full .full-bar #colorCard:has(#ccBody[hidden]){ display:none; }
+
 /* in-page confirm dialog (native confirm() is silently blocked in some
    embedded browsers and home-screen web apps) */
 .modal{
