@@ -238,13 +238,6 @@
           </div>
           <input type="range" id="detailSlider" min="0" max="100" step="10" value="50" aria-label="Broad to fine: flat masses, then brush strokes from big to small">
         </div>
-        <div class="ctrl-row opacity-row" id="chromaRow">
-          <div class="ctrl-label">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9H12Z" fill="currentColor" stroke="none"/></svg>
-            Intensity <span class="shapes-count" id="chromaLabel"></span>
-          </div>
-          <input type="range" id="chromaSlider" min="100" max="300" step="5" value="100" aria-label="Colour intensity">
-        </div>
         <div class="ctrl-row">
           <div class="ctrl-label">Average colour</div>
           <button class="switch on" id="fillSwitch" aria-label="Fill the masses with their paint colour"></button>
@@ -252,16 +245,19 @@
 
         <button class="more-toggle" id="blocksMoreBtn" aria-expanded="false" aria-controls="blocksMore">More options</button>
         <div class="more-body" id="blocksMore" hidden>
+          <div class="ctrl-row opacity-row" id="chromaRow">
+            <div class="ctrl-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 9 9H12Z" fill="currentColor" stroke="none"/></svg>
+              Intensity <span class="shapes-count" id="chromaLabel"></span>
+            </div>
+            <input type="range" id="chromaSlider" min="100" max="300" step="5" value="100" aria-label="Colour intensity">
+          </div>
           <div class="ctrl-row opacity-row">
             <div class="ctrl-label">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none"/></svg>
               Block-in opacity
             </div>
             <input type="range" id="shapesOpacitySlider" min="0" max="100" value="100" aria-label="Block-in opacity over the photo">
-          </div>
-          <div class="ctrl-row">
-            <div class="ctrl-label">Outlines</div>
-            <button class="switch" id="outlinesSwitch" aria-label="Show outlines"></button>
           </div>
           <div class="ctrl-row" id="enhanceRow">
             <div class="ctrl-label">Show intensity on the reference (all tabs)</div>
@@ -335,6 +331,8 @@
   <svg class="full-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
 </button>
 <div class="full-bar" id="fullBar"></div>
+<!-- the colour-reading loupe: shown above the fingertip while you hold -->
+<canvas class="loupe read-loupe" id="readLoupe" hidden></canvas>
 
 <div class="modal" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmMsg">
   <div class="modal-box">

@@ -257,6 +257,10 @@ input[type=file]{ display:none; }
   display:block !important; left:-3px; top:-3px; width:6px; height:6px; border-radius:50%;
   background:#fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6);
 }
+/* the reading loupe (touch): the two pictures around the spot at 2x, split
+   left/right, over everything; the marker waits until the finger lifts */
+.read-loupe{ position:fixed; z-index:40; }
+body.reading .pick-marker{ visibility:hidden; }
 /* near the top edge there's no room above the finger: flip the ring below */
 .pick-marker.touch.below .pm-ring{ top:48px; }
 .pick-marker.touch.below .pm-stem{ top:3px; }

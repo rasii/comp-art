@@ -39,8 +39,8 @@
     // enhancePhoto: apply it to the reference photo too.
     shapes: { opacity: 100, chroma: 100, enhancePhoto: false },
     // blocks: the breakdown itself. colours: palette size; detail: 0 flat
-    // masses, then brush strokes from big to small; outlines and fill.
-    blocks: { colours: 12, detail: 50, outlines: false, fill: true },
+    // masses, then brush strokes from big to small; fill.
+    blocks: { colours: 12, detail: 50, fill: true },
     shapesResult: null, // latest analysis (labels, average colours, outlines)
     shapesBusy: false,
     shapesPick: null,   // id of the tapped shape
@@ -91,7 +91,7 @@
   var coloursSlider = $("coloursSlider"), coloursLabel = $("coloursLabel");
   var shapesOpacitySlider = $("shapesOpacitySlider");
   var chromaRow = $("chromaRow"), chromaSlider = $("chromaSlider"), chromaLabel = $("chromaLabel");
-  var outlinesSwitch = $("outlinesSwitch"), fillSwitch = $("fillSwitch");
+  var fillSwitch = $("fillSwitch");
   var shapeSwatch = $("shapeSwatch"), shapeText = $("shapeText"), shapePrompt = $("shapePrompt"), shapeReadout = $("shapeReadout");
   var photoReadout = $("photoReadout"), photoSwatch = $("photoSwatch"), photoText = $("photoText"), photoMixBtn = $("photoMixBtn");
   var enhanceRow = $("enhanceRow"), enhanceSwitch = $("enhanceSwitch"), shapesPhoto = $("shapesPhoto"), shapesMarker = $("shapesMarker");
@@ -221,10 +221,9 @@
     // tabs and views
     Array.prototype.forEach.call(tabs.querySelectorAll("button"), function(b){
       var bm = b.dataset.mode;
-      b.classList.toggle("active", bm === m || (bm === "compare" && m === "side"));
-      if(bm === "blocks") b.disabled = !hasRef;                    // needs only the reference
-      else if(bm === "progress") b.disabled = !Progress.count();
-      else b.disabled = !hasAligned;
+      b.classList.toggle("active", bm === m || (bm === "compare" && (m === "side" || m === "align")));
+      if(bm === "progress") b.disabled = !Progress.count();
+      else b.disabled = !hasRef;      // Block-in needs only the reference; Compare starts with adding the painting
     });
     // the compare bar goes with whichever compare view is showing
     var barSlot = (m === "side") ? sideBarSlot : compareBarSlot;
@@ -548,7 +547,8 @@
 
   // ---------------- mode ----------------
   function setMode(m){
-    if((m === "compare" || m === "side") && !state.aligned) return;
+    // Compare before there's an aligned painting: the step that adds one
+    if((m === "compare" || m === "side") && !state.aligned){ if(!state.ref) return; m = "align"; }
     if(m === "blocks" && !state.ref) return;
     if(m === "progress" && !Progress.count()) return;
     if(m === "progress" && m !== state.mode) progIndex = Progress.count() - 1;
@@ -1010,6 +1010,69 @@
     m.lin = [lin.r, lin.g, lin.b];
     return m;
   }
+  // ---- the reading loupe ----
+  // While a finger holds a picture, a loupe above it shows the spot at 2x
+  // what's on screen: the left picture on the left half, the right one on
+  // the right, with the averaged patch outlined at the centre. Touch only
+  // (a mouse pointer hides nothing). left/right: {src, du, dv, under,
+  // alpha}, where src is the shown <img> or <canvas>, du/dv shift where
+  // it's sampled (the painting's position offset), and a layer shown over
+  // another (the block-in over the reference) gives that one as under and
+  // its own opacity as alpha.
+  var readLoupe = $("readLoupe"), READ_D = 140, READ_MAG = 2;
+  function showReadLoupe(e, view, frame, u, v, patch, left, right){
+    if(e.pointerType !== "touch"){ hideReadLoupe(); return; }
+    var dpr = window.devicePixelRatio || 1, D = READ_D, R = D/2;
+    if(readLoupe.width !== D*dpr){ readLoupe.width = D*dpr; readLoupe.height = D*dpr; }
+    var vr = view.getBoundingClientRect(), c = imageRect(frame);
+    var sw = vr.width*c.w*READ_MAG, sh = vr.height*c.h*READ_MAG;  // loupe px per picture width/height
+    var ctx = readLoupe.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, D, D);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(R, R, R, 0, Math.PI*2); ctx.clip();
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, D, D);
+    ctx.imageSmoothingQuality = "high";
+    // a picture placed so that (u, v) lands on the centre
+    function place(s, alpha){
+      var el = s && s.src, w = el && (el.naturalWidth || el.width), h = el && (el.naturalHeight || el.height);
+      if(!w || !h) return;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(el, R - (u - (s.du || 0))*sw, R - (v - (s.dv || 0))*sh, sw, sh);
+      ctx.globalAlpha = 1;
+    }
+    [left, right].forEach(function(s, i){
+      if(!s) return;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(i ? R : 0, 0, R, D); ctx.clip();
+      if(s.under) place(s.under, 1);
+      place(s, s.alpha === undefined ? 1 : s.alpha);
+      ctx.restore();
+    });
+    // the averaged patch, and the split above and below it
+    var half = Math.max(3, (patch || 3)/state.ref.w*sw/2);
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.55)";
+    ctx.strokeRect(R - half, R - half, 2*half, 2*half);
+    ctx.beginPath(); ctx.moveTo(R, 0); ctx.lineTo(R, R - half - 6); ctx.moveTo(R, R + half + 6); ctx.lineTo(R, D); ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(255,255,255,.95)";
+    ctx.strokeRect(R - half, R - half, 2*half, 2*half);
+    ctx.beginPath(); ctx.moveTo(R, 0); ctx.lineTo(R, R - half - 6); ctx.moveTo(R, R + half + 6); ctx.lineTo(R, D); ctx.stroke();
+    ctx.restore();
+    readLoupe.style.filter = state.grayscale ? "grayscale(1)" : "";
+    // above the finger (below it near the top), kept on screen sideways
+    var lift = 110, x = clamp(e.clientX, R + 6, window.innerWidth - R - 6), y = e.clientY - lift;
+    if(y - R < 6) y = e.clientY + lift;
+    readLoupe.style.left = x + "px";
+    readLoupe.style.top = y + "px";
+    readLoupe.hidden = false;
+    document.body.classList.add("reading");
+  }
+  function hideReadLoupe(){
+    if(readLoupe.hidden) return;
+    readLoupe.hidden = true;
+    document.body.classList.remove("reading");
+  }
+
   // Reads both images at the same spot under the pointer (the painting is
   // drawn shifted by the position offset, so it's sampled shifted back).
   function readAt(e, frame, view){
@@ -1029,6 +1092,9 @@
     state.reading = { u: u, v: v, pointerType: e.pointerType, patch: 2*rr + 1, r: readColour(refLin), p: curLin ? readColour(curLin) : null,
                       intensity: refIntensityOn() ? (state.shapes.chroma/100).toFixed(2).replace(/0$/, "") : null };
     renderReading();
+    var cmp = view === compareView;
+    showReadLoupe(e, view, frame, u, v, 2*rr + 1, { src: cmp ? compareRef : sideRef },
+                  { src: cmp ? compareCur : sideCur, du: state.offU, dv: state.offV });
   }
 
   // compare frame: hold to peek + read; drag to reposition when adjusting
@@ -1055,10 +1121,12 @@
       }
     },
     end: function(){
+      hideReadLoupe();
       if(posDrag){ posDrag = null; persistMeta(); }
       if(state.peeking){ state.peeking = false; render(); }
     },
     cancel: function(){
+      hideReadLoupe();
       posDrag = null;
       if(state.peeking){ state.peeking = false; render(); }
     }
@@ -1081,7 +1149,9 @@
   [ [sideRefFrame, sideRefView], [sideCurFrame, sideCurView] ].forEach(function(pair){
     attachGestures(pair[0], sideZoom, {
       start: function(e){ readAt(e, pair[0], pair[1]); },
-      move: function(e){ readAt(e, pair[0], pair[1]); }
+      move: function(e){ readAt(e, pair[0], pair[1]); },
+      end: hideReadLoupe,
+      cancel: hideReadLoupe
     }, render);
   });
 
@@ -1472,9 +1542,8 @@
     chromaSlider.disabled = state.grayscale;             // greys have no chroma
     chromaRow.classList.toggle("disabled", state.grayscale);
     chromaLabel.textContent = "· ×" + (state.shapes.chroma/100).toFixed(2).replace(/0$/, "");
-    // the shapes layer (outlines and fill) over the reference photo
+    // the shapes layer over the reference photo
     shapesCanvas.style.opacity = String(state.shapes.opacity/100);
-    outlinesSwitch.classList.toggle("on", state.blocks.outlines);
     fillSwitch.classList.toggle("on", state.blocks.fill);
     enhanceSwitch.classList.toggle("on", state.shapes.enhancePhoto);
     enhanceSwitch.disabled = state.grayscale;
@@ -1558,18 +1627,6 @@
         R.polys.forEach(function(poly){ ctx.fillStyle = shapeCss(R, poly.id); path(poly); ctx.fill(); });
       }
     }
-    ctx.lineJoin = "round"; ctx.lineCap = "round";
-    if(state.blocks.outlines){
-      ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 3.2*dpr;
-      R.polys.forEach(function(poly){ path(poly); ctx.stroke(); });
-      ctx.strokeStyle = "rgba(240,236,228,0.92)"; ctx.lineWidth = 1.6*dpr;
-      R.polys.forEach(function(poly){ path(poly); ctx.stroke(); });
-    }
-    if(state.shapesPick !== null){
-      ctx.strokeStyle = "#E39A4C"; ctx.lineWidth = 3*dpr;
-      var g = R.paint[state.shapesPick];   // every shape of the picked paint
-      R.polys.forEach(function(poly){ if(R.paint[poly.id] === g){ path(poly); ctx.stroke(); } });
-    }
     if(shapesCanvas.style.filter !== preview) shapesCanvas.style.filter = preview;
   }
 
@@ -1611,6 +1668,9 @@
     renderPalette();
     renderShapeReadout();
     renderHint();
+    var shownRef = { src: shapesPhoto.hidden ? shapesRef : shapesPhoto };
+    showReadLoupe(e, shapesView, shapesFrame, u, v, 2*state.shapesPoint.r + 1,
+                  shownRef, { src: shapesCanvas, under: shownRef, alpha: state.shapes.opacity/100 });
   }
   // Zooming only moves the picture (and the marker); the shapes are drawn
   // once and scaled, not redrawn for every finger movement.
@@ -1632,6 +1692,8 @@
   attachGestures(shapesFrame, shapesZoom, {
     start: function(e){ pickBeforeTap = state.shapesPick; pickShape(e); },
     move: pickShape,
+    end: hideReadLoupe,
+    cancel: hideReadLoupe,
     doubleTap: function(){
       if(pickBeforeTap === null) shapesZoom.reset();
       clearShapesPick();
@@ -1680,13 +1742,12 @@
   try{ if(localStorage.getItem("compart.blocksMore")){ blocksMore.hidden = false; blocksMoreBtn.setAttribute("aria-expanded", "true"); } }catch(e){}
   function toggleShapesOption(name){
     return function(){
-      var o = (name === "outlines" || name === "fill") ? state.blocks : state.shapes;
+      var o = name === "fill" ? state.blocks : state.shapes;
       o[name] = !o[name];
       render();
       persistMeta();
     };
   }
-  outlinesSwitch.addEventListener("click", toggleShapesOption("outlines"));
   fillSwitch.addEventListener("click", toggleShapesOption("fill"));
   enhanceSwitch.addEventListener("click", toggleShapesOption("enhancePhoto"));
   if(window.ResizeObserver) new ResizeObserver(function(){ if(state.mode === "blocks"){ shapesZoom.clampPan(); shapesZoom.apply(); drawShapes(); renderShapeReadout(); } }).observe(shapesFrame);
@@ -2465,7 +2526,7 @@
         var detail = b.detail === undefined ? 50 : clamp(Math.round((Number(b.detail) || 0)/10)*10, 0, 100);   // steps of 10
         // before v2.14 one slider set both: derive the colours it implied
         var colours = b.colours === undefined ? Math.round(6*Math.pow(40/6, detail/100)) : Number(b.colours);
-        state.blocks = { colours: clamp(Math.round((colours || 12)/2)*2, 6, 40), detail: detail, outlines: !!b.outlines, fill: b.fill !== false };   // steps of 2
+        state.blocks = { colours: clamp(Math.round((colours || 12)/2)*2, 6, 40), detail: detail, fill: b.fill !== false };   // steps of 2
       }
   }
 
