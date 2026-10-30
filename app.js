@@ -265,7 +265,7 @@
     else if(confirmAlignBtn.innerHTML !== confirmAlignHTML) confirmAlignBtn.innerHTML = confirmAlignHTML;
     // a new photo with the painting clock stopped: how long was painted before it
     var stages = Progress.items(), lastStage = stages[stages.length - 1];
-    var askLeadIn = m === "align" && hasRef && hasPhoto && !(lastStage && lastStage.key && lastStage.key === state.photoKey) && liveWorkMs() === null;
+    var askLeadIn = m === "align" && hasRef && hasPhoto && !(lastStage && lastStage.key && lastStage.key === state.photoKey) && liveSinceMs() === null;
     if(!askLeadIn && leadInMin) setLeadIn(0);
     leadInRow.hidden = !askLeadIn;
     if(hasRef && hasPhoto){
@@ -1933,26 +1933,32 @@
     var mins = Math.round(workMs(items, i)/60000), h = Math.floor(mins/60), m = mins % 60;
     return mins < 1 ? "under a minute" : ((h ? h + " h " : "") + (m ? m + " min" : "")).trim();
   }
-  // The painting time so far, still running: until WORK_GAP after the last
-  // photo or "Start painting", the time since then counts too. null after.
-  function liveWorkMs(){
+  // The painting clock: running until WORK_GAP after the last photo or
+  // "Start painting". Gives the time since then, or null once stopped.
+  function liveSinceMs(){
     var items = Progress.items(), n = items.length;
     if(!n) return null;
     var lastPhoto = items[n - 1].t, lastStart = progStarts.length ? progStarts[progStarts.length - 1] : 0;
-    var from = Math.max(lastPhoto, lastStart), since = Date.now() - from;
-    if(since < 0 || since > WORK_GAP) return null;
-    return workMs(items, n - 1) + since;
+    var since = Date.now() - Math.max(lastPhoto, lastStart);
+    return (since < 0 || since > WORK_GAP) ? null : since;
   }
+  // Beside "Start painting": the running time since the last photo (or
+  // start), and the total painting time, which runs with it.
   var liveTick = null;
   function renderLiveTimer(){
-    var ms = state.mode === "progress" && !document.hidden ? liveWorkMs() : null;
-    progLiveTimer.hidden = ms === null;
-    if(ms !== null){
-      var s = Math.floor(ms/1000), h = Math.floor(s/3600), m = Math.floor(s/60) % 60;
+    var items = Progress.items(), on = state.mode === "progress" && !document.hidden && items.length > 0;
+    var since = on ? liveSinceMs() : null;
+    progLiveTimer.hidden = since === null;
+    if(since !== null){
+      var s = Math.floor(since/1000), h = Math.floor(s/3600), m = Math.floor(s/60) % 60;
       progLiveTimer.textContent = h + ":" + (m < 10 ? "0" : "") + m + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
     }
-    if(ms !== null && !liveTick) liveTick = setInterval(renderLiveTimer, 1000);
-    if(ms === null && liveTick){ clearInterval(liveTick); liveTick = null; }
+    if(on){
+      var mins = Math.floor((workMs(items, items.length - 1) + (since || 0))/60000), th = Math.floor(mins/60), tm = mins % 60;
+      progStartNote.textContent = "Total " + (th ? th + " h " : "") + tm + " min";
+    }
+    if(since !== null && !liveTick) liveTick = setInterval(renderLiveTimer, 1000);
+    if(since === null && liveTick){ clearInterval(liveTick); liveTick = null; }
   }
   document.addEventListener("visibilitychange", renderLiveTimer);
 
@@ -2012,10 +2018,6 @@
     var since = progIndex === 0 ? "The first photo" + (progStarts.some(function(t){ return t < it.t; }) ? work : "")
       : stageWhen(it.t, items[progIndex - 1].t).since + " after the previous" + work;
     progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + since + "</span>";
-    // a session started and not yet photographed
-    var lastStart = progStarts.length ? progStarts[progStarts.length - 1] : 0;
-    progStartNote.textContent = lastStart > items[n - 1].t
-      ? "Session started at " + new Date(lastStart).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;
     progRefSwitch.classList.toggle("on", progRef);

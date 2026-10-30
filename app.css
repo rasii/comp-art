@@ -534,7 +534,7 @@ body.full .full-bar #colorCard:has(#ccBody[hidden]){ display:none; }
 .prog-start{ display:flex; align-items:center; gap:10px; }
 .prog-live{ font-size:15px; font-weight:600; font-variant-numeric: tabular-nums; color: var(--sienna); }
 .prog-live[hidden]{ display:none; }
-.prog-start-note{ font-size:12.5px; color: var(--ink-dim); }
+.prog-start-note{ font-size:12.5px; color: var(--ink-dim); white-space:nowrap; }
 .prog-scrub{ display:flex; align-items:center; gap:12px; }
 .prog-scrub .btn{ flex:0 0 auto; min-width:64px; }
 .prog-scrub input[type=range]{ flex:1; min-width:0; }
