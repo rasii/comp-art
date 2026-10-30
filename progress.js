@@ -44,7 +44,10 @@ window.Progress = (function(){
       list.forEach(function(it){ byId[it.id] = it; });
       (items || []).filter(valid).forEach(function(it){
         var here = byId[it.id];
-        if(!here || here.t < it.t){ byId[it.id] = { id: it.id, t: it.t, key: it.key || null }; delete blobs[it.id]; delete thumbs[it.id]; changed = true; }
+        if(!here || (here.m || here.t) < (it.m || it.t)){
+          byId[it.id] = { id: it.id, t: it.t, key: it.key || null }; if(it.m) byId[it.id].m = it.m;
+          delete blobs[it.id]; delete thumbs[it.id]; changed = true;
+        }
       });
       var next = Object.keys(byId).map(function(id){ return byId[id]; })
         .filter(function(it){ return deleted.indexOf(it.id) < 0; })
@@ -57,11 +60,17 @@ window.Progress = (function(){
   }
   function items(){ return list.slice(); }
   function count(){ return list.length; }
-  // a new stage, or the latest one replaced when it came from the same photo
-  function add(blob, key, thumb){
-    var last = list[list.length - 1], item, replaced = false;
-    if(last && key && last.key === key){ item = last; item.t = Date.now(); replaced = true; }
-    else { item = { id: uid(), t: Date.now(), key: key || null }; list.push(item); }
+  // a new stage, or the one from the same photo replaced. t: when the photo
+  // was taken (default now); a new stage goes in its place in time. Aligning
+  // the same photo again keeps the stage's time and marks it changed (m),
+  // which is what a sync compares.
+  function add(blob, key, thumb, t){
+    var same = key ? list.filter(function(it){ return it.key === key; })[0] : null, item, replaced = false;
+    if(same){ item = same; item.m = Math.max(Date.now(), (item.m || item.t) + 1); replaced = true; }
+    else {
+      item = { id: uid(), t: t || Date.now(), key: key || null }; list.push(item);
+      list.sort(function(a, b){ return a.t - b.t; });
+    }
     blobs[item.id] = blob;
     var jobs = [store.set("prog-" + item.id, blob), saveList()];
     if(thumb){ thumbs[item.id] = thumb; jobs.push(store.set("progt-" + item.id, thumb)); }

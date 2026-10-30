@@ -264,8 +264,8 @@
     if(state.busy){ if(confirmAlignBtn.textContent !== "Aligning…") confirmAlignBtn.textContent = "Aligning…"; }
     else if(confirmAlignBtn.innerHTML !== confirmAlignHTML) confirmAlignBtn.innerHTML = confirmAlignHTML;
     // a new photo with the painting clock stopped: how long was painted before it
-    var stages = Progress.items(), lastStage = stages[stages.length - 1];
-    var askLeadIn = m === "align" && hasRef && hasPhoto && !(lastStage && lastStage.key && lastStage.key === state.photoKey) && liveSinceMs() === null;
+    var aligned = !!state.photoKey && Progress.items().some(function(it){ return it.key === state.photoKey; });
+    var askLeadIn = m === "align" && hasRef && hasPhoto && !aligned && liveSinceMs() === null;
     if(!askLeadIn && leadInMin) setLeadIn(0);
     leadInRow.hidden = !askLeadIn;
     if(hasRef && hasPhoto){
@@ -973,13 +973,11 @@
       compareZoom.reset(); sideZoom.reset();
       state.busy = false;
       state.mode = state.cmpView;
-      // painting before this photo, as answered: a session start that long ago
-      if(leadIn) progStarts.push(Date.now() - leadIn*60000);
       setLeadIn(0);
       render();
       persistMeta();
       PStore.remove("aligned").catch(function(){});   // an older version's stored copy
-      addStage(im);
+      addStage(im, leadIn);
     }).catch(function(){
       state.busy = false;
       render();
@@ -1876,18 +1874,82 @@
       return canvasToBlob(c, "image/jpeg", 0.85);
     });
   }
+  // When a JPEG was taken, from its camera data (EXIF DateTimeOriginal, else
+  // DateTime), as a time in ms; null if it has none. Without a time zone
+  // offset in the file, the time is taken as local.
+  function exifTime(blob){
+    if(!blob || !blob.slice) return Promise.resolve(null);
+    return blob.slice(0, 256*1024).arrayBuffer().then(function(buf){
+      var d = new DataView(buf), n = d.byteLength;
+      if(n < 4 || d.getUint16(0) !== 0xFFD8) return null;
+      var p = 2;
+      while(p + 4 <= n && d.getUint8(p) === 0xFF){
+        var marker = d.getUint8(p + 1), len = d.getUint16(p + 2);
+        if(marker === 0xE1 && p + 10 <= n && d.getUint32(p + 4) === 0x45786966) return readTiff(d, p + 10, Math.min(n, p + 2 + len));
+        if(marker === 0xDA) break;          // the image data: no camera data before it
+        p += 2 + len;
+      }
+      return null;
+    }).catch(function(){ return null; });
+  }
+  function readTiff(d, base, end){
+    var le = d.getUint16(base) === 0x4949;
+    function u16(o){ return d.getUint16(base + o, le); }
+    function u32(o){ return d.getUint32(base + o, le); }
+    function ascii(entry){
+      var count = u32(entry + 4), off = count > 4 ? u32(entry + 8) : entry + 8, s = "";
+      for(var i = 0; i < count - 1 && base + off + i < end; i++) s += String.fromCharCode(d.getUint8(base + off + i));
+      return s;
+    }
+    function tags(ifd){
+      var out = {};
+      if(base + ifd + 2 > end) return out;
+      for(var i = 0, k = u16(ifd); i < k; i++){
+        var e = ifd + 2 + i*12;
+        if(base + e + 12 > end) break;
+        out[u16(e)] = e;
+      }
+      return out;
+    }
+    var ifd0 = tags(u32(4)), exif = ifd0[0x8769] ? tags(u32(ifd0[0x8769] + 8)) : {};
+    var when = exif[0x9003] ? ascii(exif[0x9003]) : (ifd0[0x0132] ? ascii(ifd0[0x0132]) : "");
+    var zone = exif[0x9011] ? ascii(exif[0x9011]) : "";
+    var m = /^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(when);
+    if(!m) return null;
+    var z = /^([+-])(\d\d):(\d\d)$/.exec(zone), t;
+    if(z) t = Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) - (z[1] === "-" ? -1 : 1)*(z[2]*60 + +z[3])*60000;
+    else t = new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+    return isFinite(t) ? t : null;
+  }
   // a new stage: the full-detail painting (or, if that can't be made, the
-  // aligned image as shown) and its thumbnail
-  function addStage(im){
+  // aligned image as shown) and its thumbnail, at the time the photo was
+  // taken where the photo says (else now). leadIn: minutes painted before it.
+  function addStage(im, leadIn){
+    var now = Date.now();
+    var timeP = PStore.get("photo").then(exifTime).catch(function(){ return null; }).then(function(t){
+      return (t && t > Date.UTC(2000, 0, 1) && t <= now + 5*60000) ? Math.min(t, now) : now;
+    });
     fullPainting().then(function(r){ return r.blob; }).catch(function(){ return stageBlob(im); })
-      .then(function(b){ return thumbOf(b).catch(function(){ return null; }).then(function(t){
-        if(t) PStore.set("thumb", t).catch(function(){});
-        return Progress.add(b, state.photoKey, t);
+      .then(function(b){ return Promise.all([thumbOf(b).catch(function(){ return null; }), timeP]).then(function(r){
+        var t = r[0];
+        return Progress.add(b, state.photoKey, t, r[1]).then(function(res){
+          // the project's picture: the latest stage
+          var items = Progress.items();
+          if(t && items[items.length - 1].id === res.item.id) PStore.set("thumb", t).catch(function(){});
+          return res;
+        });
       }); })
       .then(function(r){
+        // painting before this photo, as answered: a session start that long before it
+        if(leadIn && !r.replaced){
+          progStarts.push(r.item.t - leadIn*60000);
+          progStarts.sort(function(a, b){ return a - b; });
+          persistMeta();
+        }
         if(progThumbs[r.item.id]){ URL.revokeObjectURL(progThumbs[r.item.id]); delete progThumbs[r.item.id]; }
         if(progUrls[r.item.id]){ URL.revokeObjectURL(progUrls[r.item.id]); delete progUrls[r.item.id]; }
-        progIndex = Progress.count() - 1; progStripKey = null; progGains = null;
+        progIndex = Progress.items().map(function(it){ return it.id; }).indexOf(r.item.id);   // an older photo goes in its place in time
+        progStripKey = null; progGains = null;
         Projects.touch(Projects.activeId(), Progress.count());
         render();
       }).catch(storeFail);

@@ -52,6 +52,8 @@ window.Sync = (function(){
     return versLoad[id];
   }
   function saveVers(id){ return vers[id] ? Store.set("p/" + id + "/syncv", vers[id]).catch(function(){}) : Promise.resolve(); }
+  // a stage's version: when its picture last changed (m, from v2.51), else its time
+  function ver(it){ return it.m || it.t; }
   function nextT(prev){ return Math.max(Date.now(), (prev && prev.t || 0) + 1); }
   // every write the app makes to a project (through Projects.scoped)
   function onWrite(id, k, v, removed){
@@ -308,9 +310,10 @@ window.Sync = (function(){
           if(l) downs.push(function(){ return Promise.all([Store.remove(P + "prog-" + sid), Store.remove(P + "progt-" + sid)]); });
           return;
         }
-        if(l && (!c || l.t > c.t)){
-          var k = "prog-" + sid + "-" + l.t, tk = keySet[P + "progt-" + sid] ? "progt-" + sid + "-" + l.t : null;
+        if(l && (!c || ver(l) > ver(c))){
+          var k = "prog-" + sid + "-" + ver(l), tk = keySet[P + "progt-" + sid] ? "progt-" + sid + "-" + ver(l) : null;
           var item = { id: sid, t: l.t, key: l.key || null, k: k };
+          if(l.m) item.m = l.m;
           if(tk) item.tk = tk;
           if(c){ if(c.k && c.k !== k) gc.push(c.k); if(c.tk && c.tk !== tk) gc.push(c.tk); }
           out.push(item);
@@ -324,7 +327,7 @@ window.Sync = (function(){
             });
           });
         }
-        else if(c && (!l || c.t > l.t)){
+        else if(c && (!l || ver(c) > ver(l))){
           out.push(c);
           count(c.tk ? 2 : 1);
           downs.push(function(){
@@ -334,7 +337,7 @@ window.Sync = (function(){
               return (c.tk ? getBlob(P + c.tk) : Promise.resolve(null)).then(function(t){
                 if(c.tk) done(1);
                 return Promise.all([Store.set(P + "prog-" + sid, b), t ? Store.set(P + "progt-" + sid, t) : Store.remove(P + "progt-" + sid)]);
-              }).then(function(){ got.push({ id: sid, t: c.t, key: c.key || null }); });
+              }).then(function(){ var g = { id: sid, t: c.t, key: c.key || null }; if(c.m) g.m = c.m; got.push(g); });
             });
           });
         }
@@ -357,7 +360,7 @@ window.Sync = (function(){
           var items = Array.isArray(rec2) ? rec2 : (rec2 && rec2.items) || [], del2 = (rec2 && rec2.deleted) || [];
           D.forEach(function(x){ if(del2.indexOf(x) < 0) del2.push(x); });
           var by = {};
-          items.concat(got).forEach(function(it){ if(!by[it.id] || by[it.id].t < it.t) by[it.id] = it; });
+          items.concat(got).forEach(function(it){ if(!by[it.id] || ver(by[it.id]) < ver(it)) by[it.id] = it; });
           var next = Object.keys(by).map(function(x){ return by[x]; }).filter(function(it){ return del2.indexOf(it.id) < 0; })
             .sort(function(a, b){ return a.t - b.t; });
           Projects.setPhotos(id, next.length);
