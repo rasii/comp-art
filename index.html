@@ -86,6 +86,16 @@
             <button class="btn small" id="resetAlignBtn">Reset</button>
             <button class="btn small" id="retakeBtn">Retake photo</button>
           </div>
+          <div class="lead-in" id="leadInRow" hidden>
+            <p class="lead-in-label">Painted before this photo? <span>(optional, for the painting time)</span></p>
+            <div class="seg" id="leadInSeg" aria-label="Painting time before this photo">
+              <button data-min="0" class="on">No</button>
+              <button data-min="15">15 min</button>
+              <button data-min="30">30 min</button>
+              <button data-min="60">1 h</button>
+              <button data-min="90">1½ h</button>
+            </div>
+          </div>
           <button class="btn primary full" id="confirmAlignBtn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
             Align &amp; continue
@@ -308,6 +318,7 @@
         <div class="prog-strip" id="progStrip"></div>
         <div class="prog-start">
           <button class="btn small" id="progStartBtn" title="Mark the start of a painting session, so the time before your first photo counts">Start painting</button>
+          <span class="prog-live" id="progLiveTimer" title="Painting time so far, running" hidden></span>
           <span class="prog-start-note" id="progStartNote"></span>
         </div>
         <div class="ctrl-row">

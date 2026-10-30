@@ -68,6 +68,15 @@
   var pinOpacitySlider = $("pinOpacitySlider");
   var findEdgesBtn = $("findEdgesBtn"), zoomFitBtn = $("zoomFitBtn"), resetAlignBtn = $("resetAlignBtn"), retakeBtn = $("retakeBtn");
   var confirmAlignBtn = $("confirmAlignBtn"), confirmAlignHTML = confirmAlignBtn.innerHTML;
+  var leadInRow = $("leadInRow"), leadInSeg = $("leadInSeg"), leadInMin = 0;
+  function setLeadIn(min){
+    leadInMin = min;
+    Array.prototype.forEach.call(leadInSeg.children, function(b){ b.classList.toggle("on", Number(b.dataset.min) === min); });
+  }
+  leadInSeg.addEventListener("click", function(e){
+    var b = e.target.closest("button[data-min]");
+    if(b) setLeadIn(Number(b.dataset.min));
+  });
 
   var viewAlign = $("view-align"), viewCompare = $("view-compare"), viewSide = $("view-side");
   var compareFrame = $("compareFrame"), compareView = $("compareView"), compareRef = $("compareRef"), compareCur = $("compareCur");
@@ -254,6 +263,11 @@
     confirmAlignBtn.disabled = state.busy;
     if(state.busy){ if(confirmAlignBtn.textContent !== "Aligning…") confirmAlignBtn.textContent = "Aligning…"; }
     else if(confirmAlignBtn.innerHTML !== confirmAlignHTML) confirmAlignBtn.innerHTML = confirmAlignHTML;
+    // a new photo with the painting clock stopped: how long was painted before it
+    var stages = Progress.items(), lastStage = stages[stages.length - 1];
+    var askLeadIn = m === "align" && hasRef && hasPhoto && !(lastStage && lastStage.key && lastStage.key === state.photoKey) && liveWorkMs() === null;
+    if(!askLeadIn && leadInMin) setLeadIn(0);
+    leadInRow.hidden = !askLeadIn;
     if(hasRef && hasPhoto){
       setSrc(pinImg, state.photo);
       if(m === "align") requestRefIntensity(0);
@@ -297,6 +311,7 @@
 
     // ---- progress ----
     if(m === "progress") renderProgress();
+    renderLiveTimer();
 
     // ---- shapes ----
     if(hasRef && m === "blocks") renderShapes();
@@ -944,6 +959,7 @@
 
   confirmAlignBtn.addEventListener("click", function(){
     if(!state.photo || !state.ref || state.busy) return;
+    var leadIn = leadInRow.hidden ? 0 : leadInMin;
     state.busy = true;
     render();
     var cornersPx = cornersToPx(state.corners, state.photo.w, state.photo.h);
@@ -957,6 +973,9 @@
       compareZoom.reset(); sideZoom.reset();
       state.busy = false;
       state.mode = state.cmpView;
+      // painting before this photo, as answered: a session start that long ago
+      if(leadIn) progStarts.push(Date.now() - leadIn*60000);
+      setLeadIn(0);
       render();
       persistMeta();
       PStore.remove("aligned").catch(function(){});   // an older version's stored copy
@@ -1778,7 +1797,7 @@
   var viewProgress = $("view-progress"), progImg = $("progImg"), progInfo = $("progInfo");
   var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
   var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
-  var progStartBtn = $("progStartBtn"), progStartNote = $("progStartNote");
+  var progStartBtn = $("progStartBtn"), progStartNote = $("progStartNote"), progLiveTimer = $("progLiveTimer");
   var progSheetBtn = $("progSheetBtn"), progSpeed = $("progSpeed"), progSpeedLabel = $("progSpeedLabel"), progRefSwitch = $("progRefSwitch");
   var sheetPreview = $("sheetPreview");
   var videoModal = $("videoModal"), videoTitle = $("videoTitle"), videoCanvas = $("videoCanvas"), videoPreview = $("videoPreview");
@@ -1904,13 +1923,38 @@
   // A "Start painting" mark (progStarts) begins a session: the time from it
   // to the next photo counts, the time before it doesn't.
   var WORK_GAP = 3*60*60000;
-  function workTime(items, i){
+  function workMs(items, i){
     var end = items[i].t, marks = progStarts.filter(function(t){ return t < end; }).map(function(t){ return { t: t, start: true }; });
     var ev = items.slice(0, i + 1).concat(marks).sort(function(a, b){ return a.t - b.t; }), ms = 0;
     for(var k = 1; k < ev.length; k++){ var gap = ev[k].t - ev[k-1].t; if(!ev[k].start && gap <= WORK_GAP) ms += gap; }
-    var mins = Math.round(ms/60000), h = Math.floor(mins/60), m = mins % 60;
+    return ms;
+  }
+  function workTime(items, i){
+    var mins = Math.round(workMs(items, i)/60000), h = Math.floor(mins/60), m = mins % 60;
     return mins < 1 ? "under a minute" : ((h ? h + " h " : "") + (m ? m + " min" : "")).trim();
   }
+  // The painting time so far, still running: until WORK_GAP after the last
+  // photo or "Start painting", the time since then counts too. null after.
+  function liveWorkMs(){
+    var items = Progress.items(), n = items.length;
+    if(!n) return null;
+    var lastPhoto = items[n - 1].t, lastStart = progStarts.length ? progStarts[progStarts.length - 1] : 0;
+    var from = Math.max(lastPhoto, lastStart), since = Date.now() - from;
+    if(since < 0 || since > WORK_GAP) return null;
+    return workMs(items, n - 1) + since;
+  }
+  var liveTick = null;
+  function renderLiveTimer(){
+    var ms = state.mode === "progress" && !document.hidden ? liveWorkMs() : null;
+    progLiveTimer.hidden = ms === null;
+    if(ms !== null){
+      var s = Math.floor(ms/1000), h = Math.floor(s/3600), m = Math.floor(s/60) % 60;
+      progLiveTimer.textContent = h + ":" + (m < 10 ? "0" : "") + m + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
+    }
+    if(ms !== null && !liveTick) liveTick = setInterval(renderLiveTimer, 1000);
+    if(ms === null && liveTick){ clearInterval(liveTick); liveTick = null; }
+  }
+  document.addEventListener("visibilitychange", renderLiveTimer);
 
   // the lighting gains for every stage (small copies compared: the stored
   // thumbnails, so no full-size stage has to be decoded), cached
@@ -2023,7 +2067,7 @@
     var items = Progress.items(), last = items.length ? items[items.length - 1].t : 0, now = Date.now();
     if(progStarts.length && progStarts[progStarts.length - 1] > last) progStarts[progStarts.length - 1] = now;
     else progStarts.push(now);
-    persistMeta(); renderProgress();
+    persistMeta(); renderProgress(); renderLiveTimer();
   });
   progRefSwitch.addEventListener("click", function(){
     progRef = !progRef; persistMeta(); renderProgress();
