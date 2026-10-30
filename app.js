@@ -985,18 +985,19 @@
   function toLin(c){ c /= 255; return c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
   function toSrgb(l){ var c = l <= 0.0031308 ? 12.92*l : 1.055*Math.pow(l, 1/2.4) - 0.055; return Math.round(clamp(c, 0, 1)*255); }
   // The patch: at most 1/300 of the image (smooths grain, JPEG blocks and
-  // canvas texture), and never more than the marker's centre dot on screen
-  // (the point you aim with), so zooming in reads finer detail, down to
-  // 3×3 pixels.
+  // canvas texture), and otherwise as wide as the marker's centre dot on
+  // screen (the point you aim with), so zooming in reads finer detail, down
+  // to a single pixel.
   var RING_R = 3;            // css px: radius of the marker's centre dot
   function patchRadius(im){ return Math.max(1, Math.round(Math.max(im.w, im.h) / 300)); }
   // radius for an image shown `shownW` css px wide
   function patchFor(im, shownW){
-    return clamp(Math.round(RING_R*im.w/Math.max(1, shownW)), 1, patchRadius(im));
+    var side = 2*RING_R*im.w/Math.max(1, shownW);          // the dot's width in image pixels
+    return clamp(Math.round((side - 1)/2), 0, patchRadius(im));   // the nearest odd square: 2r+1
   }
   function samplePatch(im, u, v, radius){
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return null;
-    var cx = Math.floor(u*im.w), cy = Math.floor(v*im.h), r = radius || patchRadius(im);
+    var cx = Math.floor(u*im.w), cy = Math.floor(v*im.h), r = radius == null ? patchRadius(im) : radius;
     var x0 = Math.max(0, cx-r), y0 = Math.max(0, cy-r);
     var x1 = Math.min(im.w-1, cx+r), y1 = Math.min(im.h-1, cy+r);
     var d = im.canvas.getContext("2d").getImageData(x0, y0, x1-x0+1, y1-y0+1).data;
@@ -1033,12 +1034,19 @@
     ctx.beginPath(); ctx.arc(R, R, R, 0, Math.PI*2); ctx.clip();
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, D, D);
     ctx.imageSmoothingQuality = "high";
-    // a picture placed so that (u, v) lands on the centre
+    // a picture placed so that (u, v) lands on the centre. Only the part
+    // inside the loupe is drawn: zoomed in, the whole picture at loupe
+    // scale is tens of thousands of pixels across, which Safari's canvas
+    // is slow to resample even though nearly all of it is clipped away.
     function place(s, alpha){
       var el = s && s.src, w = el && (el.naturalWidth || el.width), h = el && (el.naturalHeight || el.height);
       if(!w || !h) return;
+      var ox = R - (u - (s.du || 0))*sw, oy = R - (v - (s.dv || 0))*sh;   // where the picture's corner falls
+      var x0 = clamp(-ox*w/sw, 0, w), x1 = clamp((D - ox)*w/sw, 0, w);
+      var y0 = clamp(-oy*h/sh, 0, h), y1 = clamp((D - oy)*h/sh, 0, h);
+      if(x1 <= x0 || y1 <= y0) return;
       ctx.globalAlpha = alpha;
-      ctx.drawImage(el, R - (u - (s.du || 0))*sw, R - (v - (s.dv || 0))*sh, sw, sh);
+      ctx.drawImage(el, x0, y0, x1 - x0, y1 - y0, ox + x0*sw/w, oy + y0*sh/h, (x1 - x0)*sw/w, (y1 - y0)*sh/h);
       ctx.globalAlpha = 1;
     }
     [left, right].forEach(function(s, i){

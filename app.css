@@ -232,6 +232,10 @@ input[type=file]{ display:none; }
 /* pinch-zoomed together across the compare and side-by-side frames */
 .zoom-view{ position:absolute; inset:0; transform-origin: 0 0; }
 .frame img.gray{ filter: grayscale(1) contrast(1.03); }
+/* the painting over the reference: its own layer, so peeking (opacity 0)
+   and back is a fade, not a redraw (Safari otherwise drops an invisible
+   image and has to decode and repaint it at full size when zoomed in) */
+#compareCur{ will-change: opacity; }
 #compareFrame{ touch-action: none; cursor: pointer; -webkit-user-select: none; user-select: none; }
 #compareFrame.adjusting{ cursor: move; outline: 2px solid var(--sienna); outline-offset: -2px; }
 .side-frame{ touch-action: none; cursor: crosshair; -webkit-user-select: none; user-select: none; }
