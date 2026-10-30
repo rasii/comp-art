@@ -376,6 +376,12 @@ window.PalettesUI = function(A){
   photoMixBtn.addEventListener("click", function(){
     if(state.shapesPoint) showRecipe(photoLin(state.shapesPoint), state.grayscale ? "the photo's value here" : "the photo's colour here");
   });
+  // tapping the colour beside a Mix button does the same
+  [["ccRefSw", ccMixBtn], ["shapeSwatch", shapeMixBtn], ["photoSwatch", photoMixBtn]].forEach(function(p){
+    var sw = document.getElementById(p[0]);
+    sw.classList.add("mix-swatch");
+    sw.addEventListener("click", function(){ p[1].click(); });
+  });
 
   // from the ⋯ menu: the palettes, with no recipe to come back to
   function openPalettesFromMenu(){ lastRecipe = null; openPalettes(); }

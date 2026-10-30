@@ -316,9 +316,13 @@ body.reading .pick-marker{ visibility:hidden; }
 .mix-btn:active{ background: var(--panel-2); }
 .mix-btn[hidden]{ display:none; }
 .shape-readout .mix-btn{ margin-left:auto; }
+.mix-swatch{ cursor:pointer; }
 .mix-box{ width: min(420px, 100%); gap:10px; max-height: calc(100dvh - 48px); overflow-y:auto; }
 .mix-title{ font-family:"Fraunces", Georgia, serif; font-size:17px !important; font-weight:600; }
-.mix-swatches{ height:56px; }
+/* on a short screen (a phone on its side) the box scrolls rather than
+   squeezing its parts; the colour strip would otherwise shrink to nothing */
+.mix-box > *{ flex-shrink:0; }
+.mix-swatches{ height:112px; }
 .mix-swatches > div + div{ border-left:2px solid var(--panel); }
 .mix-swlabels{ display:flex; font-size:11px; color: var(--ink-dim); margin-top:-6px; }
 .mix-swlabels span{ flex:1; text-align:center; }

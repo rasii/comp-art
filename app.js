@@ -497,6 +497,12 @@
       if(single.ignore && single.ignore(e)) return;
       e.preventDefault();
       capturePointer(frame, e);
+      // middle mouse button drags the zoomed picture
+      if(e.pointerType === "mouse" && e.button === 1){
+        ptrs = {}; ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
+        begin(); frame.style.cursor = "grabbing";
+        return;
+      }
       ptrs[e.pointerId] = { x: e.clientX, y: e.clientY };
       if(count() === 1){
         var now = Date.now();
@@ -526,6 +532,7 @@
     function end(e){
       if(!ptrs[e.pointerId]) return;
       delete ptrs[e.pointerId];
+      frame.style.cursor = "";
       if(gesture){
         if(count() >= 1) begin(); else gesture = null; // remaining finger pans
       } else if(single.end){
@@ -534,6 +541,8 @@
     }
     frame.addEventListener("pointerup", end);
     frame.addEventListener("pointercancel", end);
+    // stop the browser's middle-click autoscroll
+    frame.addEventListener("mousedown", function(e){ if(e.button === 1) e.preventDefault(); });
 
     frame.addEventListener("wheel", function(e){
       if(single.wheelIgnore && single.wheelIgnore()) return;
