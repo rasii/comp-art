@@ -207,7 +207,7 @@
   function persistMeta(){
     if(!PStore) return;
     Projects.touch(Projects.activeId());
-    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader }).catch(storeFail);
+    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader, progStarts: progStarts }).catch(storeFail);
     var a = alignRecord(), sa = JSON.stringify(a);
     if(alignLoaded !== null && sa !== alignLoaded){ alignLoaded = sa; PStore.set("align", a).catch(storeFail); }
   }
@@ -1778,6 +1778,7 @@
   var viewProgress = $("view-progress"), progImg = $("progImg"), progInfo = $("progInfo");
   var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
   var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
+  var progStartBtn = $("progStartBtn"), progStartNote = $("progStartNote");
   var progSheetBtn = $("progSheetBtn"), progSpeed = $("progSpeed"), progSpeedLabel = $("progSpeedLabel"), progRefSwitch = $("progRefSwitch");
   var sheetPreview = $("sheetPreview");
   var videoModal = $("videoModal"), videoTitle = $("videoTitle"), videoCanvas = $("videoCanvas"), videoPreview = $("videoPreview");
@@ -1789,6 +1790,7 @@
   var progIndex = -1, progTimer = null, progUrls = {}, progThumbs = {}, progStripKey = null, progEven = false;
   // video / contact sheet options: time per photo (steps) and whether the reference comes last
   var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false, progHeader = false;
+  var progStarts = [];   // times "Start painting" was pressed
   function perPhoto(){ return SPEEDS[progSpeedIdx]; }
   function secs(x){ return String(x) + " s"; }
   var progGains = null, progGainsKey = null, progShownKey = null;
@@ -1897,6 +1899,18 @@
     var since = mins < 1 ? "Under a minute" : (days ? days + (days === 1 ? " day " : " days ") : "") + (hrs ? hrs + " h " : "") + (!days && m ? m + " min" : "");
     return { when: when, since: since.trim() };
   }
+  // Estimated painting time up to stage i: the gaps between photos added up,
+  // leaving out any gap longer than WORK_GAP (taken to be time away).
+  // A "Start painting" mark (progStarts) begins a session: the time from it
+  // to the next photo counts, the time before it doesn't.
+  var WORK_GAP = 3*60*60000;
+  function workTime(items, i){
+    var end = items[i].t, marks = progStarts.filter(function(t){ return t < end; }).map(function(t){ return { t: t, start: true }; });
+    var ev = items.slice(0, i + 1).concat(marks).sort(function(a, b){ return a.t - b.t; }), ms = 0;
+    for(var k = 1; k < ev.length; k++){ var gap = ev[k].t - ev[k-1].t; if(!ev[k].start && gap <= WORK_GAP) ms += gap; }
+    var mins = Math.round(ms/60000), h = Math.floor(mins/60), m = mins % 60;
+    return mins < 1 ? "under a minute" : ((h ? h + " h " : "") + (m ? m + " min" : "")).trim();
+  }
 
   // the lighting gains for every stage (small copies compared: the stored
   // thumbnails, so no full-size stage has to be decoded), cached
@@ -1949,10 +1963,15 @@
     if(progSlider.value != progIndex) progSlider.value = progIndex;
     progSlider.disabled = n < 2; progPlay.disabled = n < 2;
     var w = stageWhen(it.t, items[0].t);
-    // how long since the photo before, and since the first
-    var since = progIndex === 0 ? "The first photo"
-      : stageWhen(it.t, items[progIndex - 1].t).since + " after the previous" + (progIndex > 1 ? " · " + w.since.toLowerCase() + " after the first" : "");
+    // how long since the photo before, and the painting time so far
+    var work = " · about " + workTime(items, progIndex) + " of painting so far";
+    var since = progIndex === 0 ? "The first photo" + (progStarts.some(function(t){ return t < it.t; }) ? work : "")
+      : stageWhen(it.t, items[progIndex - 1].t).since + " after the previous" + work;
     progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + since + "</span>";
+    // a session started and not yet photographed
+    var lastStart = progStarts.length ? progStarts[progStarts.length - 1] : 0;
+    progStartNote.textContent = lastStart > items[n - 1].t
+      ? "Session started at " + new Date(lastStart).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;
     progRefSwitch.classList.toggle("on", progRef);
@@ -1999,6 +2018,13 @@
     progPlay.textContent = "Pause";
   });
   progEvenSwitch.addEventListener("click", function(){ progEven = !progEven; persistMeta(); renderProgress(); });
+  // a session's start; pressed again before a photo, it moves to now
+  progStartBtn.addEventListener("click", function(){
+    var items = Progress.items(), last = items.length ? items[items.length - 1].t : 0, now = Date.now();
+    if(progStarts.length && progStarts[progStarts.length - 1] > last) progStarts[progStarts.length - 1] = now;
+    else progStarts.push(now);
+    persistMeta(); renderProgress();
+  });
   progRefSwitch.addEventListener("click", function(){
     progRef = !progRef; persistMeta(); renderProgress();
     if(exportModal.classList.contains("show")) prepareStageFiles();
@@ -2284,7 +2310,6 @@
     var ctx = sheet.getContext("2d");
     ctx.fillStyle = "#181613"; ctx.fillRect(0, 0, W, H + top);
     ctx.textBaseline = "middle";
-    var first = items[0].t;
     var gainsP = progEven && items.length > 1 ? ensureGains() : Promise.resolve(null);
     function cell(i, img, G, label, sub){
       var col = i % cols, row = Math.floor(i/cols);
@@ -2311,7 +2336,7 @@
           if(run !== sheetRun) throw new Error("cancelled");
           return Progress.blob(it.id).then(decodeBlob).then(function(img){
             var d = new Date(it.t);
-            cell(i, img, G ? G[i] : null, "Stage " + (i + 1), d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + (i ? " · " + stageWhen(it.t, first).since : ""));
+            cell(i, img, G ? G[i] : null, "Stage " + (i + 1), d.toLocaleDateString(undefined, { day: "numeric", month: "short" }) + (i ? " · " + workTime(items, i) + " painting" : ""));
             videoBar.style.width = Math.round((i + 1)/count*100) + "%";
           });
         });
@@ -2491,6 +2516,7 @@
     }).then(function(res){
       if(PStore !== ps) return;                         // another project was opened meanwhile
       var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3], align = res[4];
+      progStarts = [];                                  // a project's own, never carried over
       // the alignment record, where there is one, over the copy in the settings
       if(align && typeof align === "object"){
         meta = Object.assign({}, meta);
@@ -2529,6 +2555,7 @@
       progEven = !!meta.progEven;
       progRef = !!meta.progRef;
       progHeader = !!meta.progHeader;
+      progStarts = Array.isArray(meta.progStarts) ? meta.progStarts.filter(function(t){ return typeof t === "number" && isFinite(t); }) : [];
       if(meta.progSpeed !== undefined) progSpeedIdx = clamp(Math.round(Number(meta.progSpeed) || 0), 0, SPEEDS.length - 1);
       if(meta.shapes && typeof meta.shapes === "object"){
         var s = meta.shapes;
