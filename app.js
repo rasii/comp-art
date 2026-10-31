@@ -106,7 +106,7 @@
   var enhanceRow = $("enhanceRow"), enhanceSwitch = $("enhanceSwitch"), shapesPhoto = $("shapesPhoto"), shapesMarker = $("shapesMarker");
 
   var colorCard = $("colorCard"), compareCardSlot = $("compareCardSlot"), sideCardSlot = $("sideCardSlot");
-  var fullBtn = $("fullBtn"), fullBar = $("fullBar");
+  var fullBtn = $("fullBtn"), fullBar = $("fullBar"), shapeReadouts = $("shapeReadouts");
   var ccEmpty = $("ccEmpty"), ccBody = $("ccBody");
   var ccRefMun = $("ccRefMun"), ccPaintMun = $("ccPaintMun"), ccRefName = $("ccRefName");
   var ccRefSw = $("ccRefSw"), ccPaintSw = $("ccPaintSw"), ccDiff = $("ccDiff");
@@ -419,7 +419,7 @@
   // The picture takes the whole screen: header, tabs and controls hide, and
   // the one control each view needs most floats over the picture (the
   // opacity in Compare, the stage slider in Progress; the colour reading in
-  // Compare and Side by side, once there is one). Everything done on the
+  // Compare, Side by side and Block-in, once there is one). Everything done on the
   // picture itself (zoom, peek, readings) works as usual. In-memory only.
   var FULL_PICTURE = { compare: "compareFrame", side: "sideFit", blocks: "shapesFrame", progress: "progFrame" };
   // a control moves into the floating bar and back to where it was
@@ -441,6 +441,7 @@
     var opacityRow = opacitySlider.closest(".ctrl-row"), scrub = progSlider.closest(".prog-scrub");
     if(state.full && m === "compare") park(opacityRow); else unpark(opacityRow);
     if(state.full && m === "progress") park(scrub); else unpark(scrub);
+    if(state.full && m === "blocks") park(shapeReadouts); else unpark(shapeReadouts);
   }
   fullBtn.addEventListener("click", function(){ state.full = !state.full; render(); });
 
@@ -1984,17 +1985,23 @@
   // leaving out any gap longer than WORK_GAP (taken to be time away).
   // A "Start painting" mark (progStarts) begins a session: the time from it
   // to the next photo counts, the time before it doesn't.
+  // The session is the run of counted gaps that ends at stage i.
   var WORK_GAP = 3*60*60000;
-  function workMs(items, i){
+  function workSpans(items, i){
     var end = items[i].t, marks = progStarts.filter(function(t){ return t < end; }).map(function(t){ return { t: t, start: true }; });
-    var ev = items.slice(0, i + 1).concat(marks).sort(function(a, b){ return a.t - b.t; }), ms = 0;
-    for(var k = 1; k < ev.length; k++){ var gap = ev[k].t - ev[k-1].t; if(!ev[k].start && gap <= WORK_GAP) ms += gap; }
-    return ms;
+    var ev = items.slice(0, i + 1).concat(marks).sort(function(a, b){ return a.t - b.t; }), ms = 0, sess = 0;
+    for(var k = 1; k < ev.length; k++){
+      var gap = ev[k].t - ev[k-1].t;
+      if(!ev[k].start && gap <= WORK_GAP){ ms += gap; sess += gap; } else sess = 0;
+    }
+    return { total: ms, session: sess };
   }
-  function workTime(items, i){
-    var mins = Math.round(workMs(items, i)/60000), h = Math.floor(mins/60), m = mins % 60;
+  function workMs(items, i){ return workSpans(items, i).total; }
+  function minsText(ms){
+    var mins = Math.round(ms/60000), h = Math.floor(mins/60), m = mins % 60;
     return mins < 1 ? "under a minute" : ((h ? h + " h " : "") + (m ? m + " min" : "")).trim();
   }
+  function workTime(items, i){ return minsText(workMs(items, i)); }
   // The painting clock: running until WORK_GAP after the last photo or
   // "Start painting". Gives the time since then, or null once stopped.
   function liveSinceMs(){
@@ -2075,10 +2082,11 @@
     if(progSlider.value != progIndex) progSlider.value = progIndex;
     progSlider.disabled = n < 2; progPlay.disabled = n < 2;
     var w = stageWhen(it.t, items[0].t);
-    // how long since the photo before, and the painting time so far
-    var work = " · about " + workTime(items, progIndex) + " of painting so far";
-    var since = progIndex === 0 ? "The first photo" + (progStarts.some(function(t){ return t < it.t; }) ? work : "")
-      : stageWhen(it.t, items[progIndex - 1].t).since + " after the previous" + work;
+    // how far into its painting session, and the painting time so far
+    var spans = workSpans(items, progIndex), work = " · about " + minsText(spans.total) + " of painting so far";
+    var sess = minsText(spans.session);
+    var since = progIndex === 0 ? "The first photo" + (spans.total ? work : "")
+      : (spans.session ? sess.charAt(0).toUpperCase() + sess.slice(1) + " into this session" : "First photo of a new session") + work;
     progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + since + "</span>";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;

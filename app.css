@@ -340,6 +340,10 @@ body.reading .pick-marker{ visibility:hidden; }
 .mix-note{ font-size:11.5px !important; color: var(--ink-dim); line-height:1.45 !important; }
 .shape-readout{ display:flex; align-items:center; gap:10px; min-height:32px; font-size:13px; }
 .shape-readout[hidden]{ display:none; }
+/* the paint and photo readings together (one box over the picture in full screen) */
+.shape-readouts{ display:flex; flex-direction:column; gap:14px; }
+.shape-readouts:not(:has(> .shape-readout:not([hidden]))){ display:none; }
+body.full .full-bar .shape-readouts{ gap:8px; }
 .sr-swatch{ flex:0 0 auto; width:32px; height:32px; border-radius: var(--radius); border:1px solid var(--line); background: transparent; }
 .sr-text{ color: var(--ink-dim); }
 .sr-text b{ color: var(--ink); font-weight:600; }
