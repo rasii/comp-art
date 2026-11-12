@@ -211,12 +211,12 @@
   // it loads, when nothing is written).
   var alignLoaded = null;
   function alignRecord(){
-    return { corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, photoKey: state.photoKey, aligned: !!state.aligned };
+    return { corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, photoKey: state.photoKey, aligned: !!state.aligned, fromStage: !!state.fromStage };
   }
   function persistMeta(){
     if(!PStore) return;
     Projects.touch(Projects.activeId());
-    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader, progStarts: progStarts }).catch(storeFail);
+    PStore.set("meta", { v: 2, corners: state.corners, lastCorners: state.lastCorners, offU: state.offU, offV: state.offV, shapes: state.shapes, blocks: state.blocks, photoKey: state.photoKey, aligned: !!state.aligned, fromStage: !!state.fromStage, cmpView: state.cmpView, progEven: progEven, progRef: progRef, progSpeed: progSpeedIdx, progHeader: progHeader, progStarts: progStarts, progDur: progDur }).catch(storeFail);
     var a = alignRecord(), sa = JSON.stringify(a);
     if(alignLoaded !== null && sa !== alignLoaded){ alignLoaded = sa; PStore.set("align", a).catch(storeFail); }
   }
@@ -241,7 +241,7 @@
       var on = b.dataset.view === m;
       b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
     });
-    alignBackBtn.hidden = !hasAligned;
+    alignBackBtn.hidden = !(hasAligned || undoPhoto);
     show(viewAlign, m === "align");
     show(viewCompare, m === "compare");
     show(viewSide, m === "side");
@@ -597,7 +597,20 @@
   // Align is a step: a new photo of the painting, or adjusting the current one's corners
   newPhotoBtn.addEventListener("click", function(){ setMode("align"); curInput.click(); });
   adjustAlignBtn.addEventListener("click", function(){ setMode("align"); });
-  alignBackBtn.addEventListener("click", function(){ if(state.aligned) setMode(state.cmpView); });
+  var undoPhoto = null;
+  alignBackBtn.addEventListener("click", function(){
+    var u = undoPhoto;
+    if(u){
+      undoPhoto = null; detectSeq++; state.detecting = false;
+      if(state.photo !== u.photo) dropImage(state.photo);
+      state.photo = u.photo; state.aligned = u.aligned; state.corners = u.corners; state.cornerSure = null;
+      state.photoKey = u.photoKey; state.fromStage = u.fromStage; state.offU = u.offU; state.offV = u.offV;
+      var ps = PStore;
+      u.blob.then(function(b){ if(b && PStore === ps) persistBlob("photo", b); });
+      persistMeta();
+    }
+    if(state.aligned) setMode(state.cmpView);
+  });
   grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; state.shapesPick = null; render(); });
 
   // ---------------- loading photos ----------------
@@ -624,11 +637,12 @@
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
   function useReference(f, im){
+      undoPhoto = null;
       dropImage(state.ref); dropImage(state.photo); dropImage(state.aligned);
       state.ref = im;
       newShapesSource();
       clearProgress();
-      state.aligned = null; state.photo = null; state.corners = null;
+      state.aligned = null; state.photo = null; state.corners = null; state.fromStage = false;
       state.offU = 0; state.offV = 0; state.reading = null;
       state.mode = "align";
       render();
@@ -647,8 +661,16 @@
     curInput.value = "";
     if(!f) return;
     decodeToCanvas(f, SRC_MAX).then(function(im){
+      // the aligned photo this replaces, kept until the new one is aligned,
+      // for "Cancel, back to Compare"
+      if(!undoPhoto && state.aligned && state.photo){
+        undoPhoto = { photo: state.photo, aligned: state.aligned, corners: state.corners, photoKey: state.photoKey, fromStage: !!state.fromStage,
+                      offU: state.offU, offV: state.offV, blob: PStore.get("photo").catch(function(){ return null; }) };
+        state.photo = null; state.aligned = null;
+      }
       var reused = setPhoto(im, null);
       state.photoKey = Date.now().toString(36);    // a new painting photo: aligning it adds a stage
+      state.fromStage = false;
       dropImage(state.aligned);
       state.aligned = null; state.reading = null;
       state.mode = "align";
@@ -965,11 +987,12 @@
     render();
     var cornersPx = cornersToPx(state.corners, state.photo.w, state.photo.h);
     warpAsync(state.photo, cornersPx, state.ref.w, state.ref.h).then(function(im){
+      if(undoPhoto){ dropImage(undoPhoto.photo); dropImage(undoPhoto.aligned); undoPhoto = null; }
       dropImage(state.aligned);
       state.aligned = im;
       state.offU = 0; state.offV = 0;
       state.adjusting = false; state.opacityBeforeAdjust = null;
-      state.lastCorners = { ar: state.photo.w/state.photo.h, pts: state.corners.map(copyPt) };
+      if(!state.fromStage) state.lastCorners = { ar: state.photo.w/state.photo.h, pts: state.corners.map(copyPt) };
       state.reading = null;
       compareZoom.reset(); sideZoom.reset();
       state.busy = false;
@@ -1809,6 +1832,7 @@
   // video / contact sheet options: time per photo (steps) and whether the reference comes last
   var SPEEDS = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3], progSpeedIdx = 4, progRef = false, progHeader = false;
   var progStarts = [];   // times "Start painting" was pressed
+  var progDur = {};      // painting times set by hand: {stage id: ms}
   function perPhoto(){ return SPEEDS[progSpeedIdx]; }
   function secs(x){ return String(x) + " s"; }
   var progGains = null, progGainsKey = null, progShownKey = null;
@@ -1985,18 +2009,25 @@
   // leaving out any gap longer than WORK_GAP (taken to be time away).
   // A "Start painting" mark (progStarts) begins a session: the time from it
   // to the next photo counts, the time before it doesn't.
-  // The session is the run of counted gaps that ends at stage i.
+  // Each stage's time is what was counted since the photo before it; a time
+  // set by hand (progDur, by stage id) takes its place.
   var WORK_GAP = 3*60*60000;
-  function workSpans(items, i){
-    var end = items[i].t, marks = progStarts.filter(function(t){ return t < end; }).map(function(t){ return { t: t, start: true }; });
-    var ev = items.slice(0, i + 1).concat(marks).sort(function(a, b){ return a.t - b.t; }), ms = 0, sess = 0;
-    for(var k = 1; k < ev.length; k++){
-      var gap = ev[k].t - ev[k-1].t;
-      if(!ev[k].start && gap <= WORK_GAP){ ms += gap; sess += gap; } else sess = 0;
+  function stageEstimates(items){
+    var marks = progStarts.map(function(t){ return { t: t, start: true }; });
+    var ev = items.map(function(it){ return { t: it.t }; }).concat(marks).sort(function(a, b){ return a.t - b.t || (a.start ? -1 : 1); });
+    var out = [], ms = 0;
+    for(var k = 0; k < ev.length; k++){
+      var gap = k ? ev[k].t - ev[k-1].t : 0;
+      if(k && !ev[k].start && gap <= WORK_GAP) ms += gap;
+      if(!ev[k].start){ out.push(ms); ms = 0; }
     }
-    return { total: ms, session: sess };
+    return out;
   }
-  function workMs(items, i){ return workSpans(items, i).total; }
+  function stageMs(items){
+    var est = stageEstimates(items);
+    return items.map(function(it, i){ return progDur[it.id] !== undefined ? progDur[it.id] : est[i]; });
+  }
+  function workMs(items, i){ return stageMs(items).slice(0, i + 1).reduce(function(a, b){ return a + b; }, 0); }
   function minsText(ms){
     var mins = Math.round(ms/60000), h = Math.floor(mins/60), m = mins % 60;
     return mins < 1 ? "under a minute" : ((h ? h + " h " : "") + (m ? m + " min" : "")).trim();
@@ -2082,11 +2113,12 @@
     if(progSlider.value != progIndex) progSlider.value = progIndex;
     progSlider.disabled = n < 2; progPlay.disabled = n < 2;
     var w = stageWhen(it.t, items[0].t);
-    // how far into its painting session, and the painting time so far
-    var spans = workSpans(items, progIndex), work = " · about " + minsText(spans.total) + " of painting so far";
-    var sess = minsText(spans.session);
-    var since = progIndex === 0 ? "The first photo" + (spans.total ? work : "")
-      : (spans.session ? sess.charAt(0).toUpperCase() + sess.slice(1) + " into this session" : "First photo of a new session") + work;
+    // the painting time for this stage (tap to change it) and so far
+    var durs = stageMs(items), sofar = durs.slice(0, progIndex + 1).reduce(function(a, b){ return a + b; }, 0);
+    var mine = durs[progIndex], set = progDur[it.id] !== undefined;
+    var since = "This stage: <button class=\"prog-time\" id=\"progTimeBtn\" title=\"Change the painting time for this stage\">"
+      + (mine || set ? minsText(mine) : "no time") + (set ? " (set)" : "") + "</button>"
+      + (sofar ? " · about " + minsText(sofar) + " of painting so far" : "");
     progInfo.innerHTML = "<b>Stage " + (progIndex + 1) + " of " + n + "</b> · " + w.when + "<br><span>" + since + "</span>";
     progEvenSwitch.classList.toggle("on", progEven);
     progEvenSwitch.disabled = n < 2;
@@ -2147,21 +2179,84 @@
   });
   progSpeed.addEventListener("input", function(){ progSpeedIdx = Number(progSpeed.value); renderProgress(); });
   progSpeed.addEventListener("change", persistMeta);
+  // a stage's painting time by hand, for a session that wasn't started
+  var stageTimeModal = $("stageTimeModal"), stageTimeTitle = $("stageTimeTitle"), stageTimeH = $("stageTimeH"), stageTimeM = $("stageTimeM");
+  var stageTimeNote = $("stageTimeNote"), stageTimeReset = $("stageTimeReset"), stageTimeOk = $("stageTimeOk"), stageTimeCancel = $("stageTimeCancel");
+  var timingId = null;
+  progInfo.addEventListener("click", function(e){
+    if(!e.target.closest("#progTimeBtn")) return;
+    var items = Progress.items(), it = items[progIndex];
+    if(!it) return;
+    stopPlay();
+    timingId = it.id;
+    var mins = Math.round(stageMs(items)[progIndex]/60000);
+    stageTimeTitle.textContent = "Painting time for stage " + (progIndex + 1);
+    stageTimeH.value = Math.floor(mins/60); stageTimeM.value = mins % 60;
+    var est = stageEstimates(items)[progIndex];
+    stageTimeNote.textContent = "Estimated from your photos: " + (est ? minsText(est) : "none") + ".";
+    stageTimeReset.hidden = progDur[it.id] === undefined;
+    stageTimeModal.classList.add("show");
+  });
+  function closeStageTime(){ stageTimeModal.classList.remove("show"); timingId = null; }
+  function setStageTime(ms){
+    if(!timingId) return;
+    if(ms === null) delete progDur[timingId]; else progDur[timingId] = ms;
+    closeStageTime();
+    persistMeta(); renderProgress(); renderLiveTimer();
+  }
+  stageTimeOk.addEventListener("click", function(){
+    var h = Math.max(0, Math.floor(Number(stageTimeH.value) || 0)), m = Math.max(0, Math.floor(Number(stageTimeM.value) || 0));
+    setStageTime((h*60 + m)*60000);
+  });
+  stageTimeReset.addEventListener("click", function(){ setStageTime(null); });
+  stageTimeCancel.addEventListener("click", closeStageTime);
+  stageTimeModal.addEventListener("click", function(e){ if(e.target === stageTimeModal) closeStageTime(); });
+  [stageTimeH, stageTimeM].forEach(function(el){ el.addEventListener("keydown", function(e){ if(e.key === "Enter") stageTimeOk.click(); }); });
   progDeleteBtn.addEventListener("click", function(){
     var it = Progress.items()[progIndex];
     if(!it) return;
     askConfirm("Delete stage " + (progIndex + 1) + "? This can't be undone.", "Delete", function(){
+      var wasLast = progIndex === Progress.count() - 1, wasShown = wasLast && it.key === state.photoKey;
       stopPlay();
       if(progUrls[it.id]){ URL.revokeObjectURL(progUrls[it.id]); delete progUrls[it.id]; }
       if(progThumbs[it.id]){ URL.revokeObjectURL(progThumbs[it.id]); delete progThumbs[it.id]; }
       Progress.remove(it.id).catch(function(){});
+      if(progDur[it.id] !== undefined){ delete progDur[it.id]; persistMeta(); }
       Projects.touch(Projects.activeId(), Progress.count());
       progStripKey = null; progGains = null; progShownKey = null;
       if(progIndex >= Progress.count()) progIndex = Progress.count() - 1;
       if(!Progress.count()) state.mode = state.aligned ? "compare" : "align";
       render();
+      if(wasLast && Progress.count()) showLastStage(wasShown);
     });
   });
+  // After the last stage is deleted: the project's picture becomes the new
+  // last stage, and so does Compare's painting if it was showing the deleted
+  // one. That stage's own picture (already straightened, in the reference's
+  // shape) becomes the painting photo, with its corners at the edges; the
+  // last alignment's corners stay, for the next new photo.
+  function showLastStage(compareToo){
+    var ps = PStore, items = Progress.items(), last = items[items.length - 1];
+    Progress.thumb(last.id).then(function(t){ if(t && PStore === ps) PStore.set("thumb", t).catch(function(){}); }).catch(function(){});
+    if(!compareToo || !state.ref) return;
+    Progress.blob(last.id).then(function(b){
+      if(!b || PStore !== ps) return;
+      return decodeToCanvas(b, SRC_MAX).then(function(im){
+        if(PStore !== ps) return;
+        setPhoto(im, defaultCorners());
+        state.photoKey = last.key; state.fromStage = true;
+        state.offU = 0; state.offV = 0; state.reading = null;
+        return warpAsync(im, cornersToPx(state.corners, im.w, im.h), state.ref.w, state.ref.h).then(function(al){
+          if(PStore !== ps) return;
+          dropImage(state.aligned); state.aligned = al;
+          compareZoom.reset(); sideZoom.reset();
+          persistBlob("photo", b);
+          persistMeta();
+          render();
+        });
+      });
+    }).catch(function(){ toast("Couldn't show the previous stage in Compare."); });
+  }
 
   // the cached pictures of the stages go (a stage may have changed)
   function forgetStageCaches(){
@@ -2506,6 +2601,7 @@
     if(videoModal.classList.contains("show")) closeVideo();
     if(exportModal.classList.contains("show")) closeExport();
     if(nameModal.classList.contains("show")) closeName();
+    if(stageTimeModal.classList.contains("show")) closeStageTime();
     if(!SU.closeIfOpen() && projModal.classList.contains("show")) closeProjects();
     if(menuModal.classList.contains("show")) closeMenu();
   });
@@ -2626,17 +2722,18 @@
     openProject(id).then(function(){ persistMeta(); });
   }
   function loadProject(id){
+    undoPhoto = null;
     var ps = PStore;
     return Progress.init(ps).then(function(){
       return Promise.all([ps.get("meta"), ps.get("ref"), ps.get("photo"), ps.get("aligned"), ps.get("align")]);
     }).then(function(res){
       if(PStore !== ps) return;                         // another project was opened meanwhile
       var meta = res[0] || {}, refBlob = res[1], photoBlob = res[2], alignedBlob = res[3], align = res[4];
-      progStarts = [];                                  // a project's own, never carried over
+      progStarts = []; progDur = {};                    // a project's own, never carried over
       // the alignment record, where there is one, over the copy in the settings
       if(align && typeof align === "object"){
         meta = Object.assign({}, meta);
-        ["corners", "lastCorners", "offU", "offV", "photoKey", "aligned"].forEach(function(k){ meta[k] = align[k]; });
+        ["corners", "lastCorners", "offU", "offV", "photoKey", "aligned", "fromStage"].forEach(function(k){ meta[k] = align[k]; });
       }
       // a project without a reference yet keeps its own settings if it has
       // any, else the current ones (a new project carries them over)
@@ -2667,11 +2764,16 @@
       state.lastCorners = (meta.lastCorners && validCorners(meta.lastCorners.pts)) ? meta.lastCorners : null;
       state.offU = Number(meta.offU) || 0; state.offV = Number(meta.offV) || 0;
       state.photoKey = typeof meta.photoKey === "string" ? meta.photoKey : null;
+      state.fromStage = !!meta.fromStage;
       state.cmpView = meta.cmpView === "side" ? "side" : "compare";
       progEven = !!meta.progEven;
       progRef = !!meta.progRef;
       progHeader = !!meta.progHeader;
       progStarts = Array.isArray(meta.progStarts) ? meta.progStarts.filter(function(t){ return typeof t === "number" && isFinite(t); }) : [];
+      progDur = {};
+      if(meta.progDur && typeof meta.progDur === "object") Object.keys(meta.progDur).forEach(function(id){
+        var v = meta.progDur[id]; if(typeof v === "number" && isFinite(v) && v >= 0) progDur[id] = v;
+      });
       if(meta.progSpeed !== undefined) progSpeedIdx = clamp(Math.round(Number(meta.progSpeed) || 0), 0, SPEEDS.length - 1);
       if(meta.shapes && typeof meta.shapes === "object"){
         var s = meta.shapes;
@@ -2708,7 +2810,7 @@
           // was aligned with (the last Align: corners dragged since then
           // without aligning again don't count; older projects: the corners)
           if(!corners || !wasAligned) return;
-          var at = (confirmed && Math.abs(confirmed.ar - im.w/im.h) < 0.01) ? confirmed.pts : corners;
+          var at = (confirmed && !meta.fromStage && Math.abs(confirmed.ar - im.w/im.h) < 0.01) ? confirmed.pts : corners;
           return warpAsync(im, cornersToPx(at, im.w, im.h), ref.w, ref.h).then(function(al){
             if(PStore === ps){ dropImage(state.aligned); state.aligned = al; }
           });
@@ -2721,6 +2823,11 @@
       }).then(function(){
         if(PStore !== ps) return;
         if(state.aligned) state.mode = state.cmpView;
+        // Compare still on a photo whose stage was deleted (before v2.54 a
+        // deleted last stage stayed there): the last stage instead
+        var items = Progress.items();
+        if(state.aligned && state.photoKey && items.length && Progress.anyDeleted()
+           && items.every(function(it){ return it.key; }) && !items.some(function(it){ return it.key === state.photoKey; })) showLastStage(true);
         // a project copied from the single painting has opened: the old copy can go
         if(state.ref) Projects.cleanupLegacy();
       });

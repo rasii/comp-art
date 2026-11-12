@@ -387,6 +387,23 @@
   </div>
 </div>
 
+<!-- a stage's painting time, set by hand -->
+<div class="modal" id="stageTimeModal" role="dialog" aria-modal="true" aria-labelledby="stageTimeTitle">
+  <div class="modal-box">
+    <p class="mix-title" id="stageTimeTitle">Painting time</p>
+    <div class="row stretch">
+      <label class="field"><span>Hours</span><input type="number" id="stageTimeH" min="0" max="99" step="1" inputmode="numeric"></label>
+      <label class="field"><span>Minutes</span><input type="number" id="stageTimeM" min="0" max="59" step="5" inputmode="numeric"></label>
+    </div>
+    <p class="mix-note" id="stageTimeNote"></p>
+    <button class="btn full" id="stageTimeReset">Use the estimate</button>
+    <div class="row stretch">
+      <button class="btn" id="stageTimeCancel">Cancel</button>
+      <button class="btn primary" id="stageTimeOk">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- the ⋯ menu -->
 <div class="modal" id="menuModal" role="dialog" aria-modal="true" aria-label="More">
   <div class="modal-box menu-box">

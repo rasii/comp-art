@@ -59,6 +59,7 @@ window.Progress = (function(){
     });
   }
   function items(){ return list.slice(); }
+  function anyDeleted(){ return deleted.length > 0; }
   function count(){ return list.length; }
   // a new stage, or the one from the same photo replaced. t: when the photo
   // was taken (default now); a new stage goes in its place in time. Aligning
@@ -246,6 +247,6 @@ window.Progress = (function(){
     return { promise: promise, cancel: function(){ cancelled = true; if(rec && rec.state !== "inactive") rec.stop(); } };
   }
 
-  return { merge: merge, init: init, items: items, count: count, add: add, remove: remove, clear: clear, blob: blob, cached: cached, thumb: thumb, setThumb: setThumb,
+  return { merge: merge, init: init, items: items, count: count, anyDeleted: anyDeleted, add: add, remove: remove, clear: clear, blob: blob, cached: cached, thumb: thumb, setThumb: setThumb,
            loadAll: loadAll, gains: gains, adjust: adjust, videoType: videoType, timeline: timeline, record: record };
 })();
