@@ -26,14 +26,18 @@
     opacityBeforeAdjust: null,
     mode: "align",
     cmpView: "compare", // which compare view the Compare tab opens: "compare" (overlay) or "side"
-    grayscale: false,
+    grayscale: false, // black & white: the "gray" look, where the tab has it
+    // the View menu: look "normal" | "gray" | "values" | "squint" | "off"
+    // (where the painting is off from the reference), and its options;
+    // mirror flips the picture left to right. Kept across tabs, in memory.
+    look: "normal", valueSteps: 3, offBy: "value", mirror: false, squint: 100,   // squint: % of the strongest
     opacity: 100,    // painting opacity on the compare view
     peeking: false,  // finger held on the compare image: painting hidden
     reading: null,   // last colour reading {u, v, pointerType, r, p}
     busy: false,     // alignment being baked
     photoKey: null,  // identifies the painting photo (a stage per photo, see Progress)
     // Block-in tab: the reference painted with a limited palette. Values vs
-    // colour follows the black & white button (state.grayscale).
+    // colour follows black & white (state.grayscale).
     // shapes: how the picture is shown. opacity of the block-in over the
     // photo; chroma: colour intensity, % of the photo's own chroma;
     // enhancePhoto: apply it to the reference photo too.
@@ -50,7 +54,7 @@
   // ---------------- element refs ----------------
   var $ = function(id){ return document.getElementById(id); };
   var tabs = $("tabs"), stepHint = $("stepHint");
-  var grayBtn = $("grayBtn"), menuBtn = $("menuBtn");
+  var menuBtn = $("menuBtn");
   var projectBtn = $("projectBtn"), projectName = $("projectName");
   var projModal = $("projModal"), projList = $("projList"), projNewBtn = $("projNewBtn"), projDone = $("projDone");
   var nameModal = $("nameModal"), nameInput = $("nameInput"), nameOk = $("nameOk"), nameCancel = $("nameCancel"), nameTitle = $("nameTitle");
@@ -247,9 +251,6 @@
     show(viewSide, m === "side");
     show(viewShapes, m === "blocks");
     show(viewProgress, m === "progress");
-    grayBtn.hidden = (m === "align");
-    grayBtn.classList.toggle("on", state.grayscale);
-    grayBtn.setAttribute("aria-pressed", state.grayscale ? "true" : "false");
 
     renderHint();
 
@@ -286,8 +287,14 @@
     // ---- compare / side ----
     if(hasRef && hasAligned){
       if(m === "compare" || m === "side") requestRefIntensity(0);   // (made once, shared by every tab)
-      showRef(compareRef); setSrc(compareCur, state.aligned);
-      showRef(sideRef);    setSrc(sideCur, state.aligned);
+      var look = lookNow(), lr = null, lc = null;
+      if(m === "compare" || m === "side"){
+        if(look === "values"){ lr = valuesImage(state.ref); lc = valuesImage(state.aligned); }
+        else if(look === "off" && !posDrag) lc = offImage();
+        else if(look === "off") lc = compareCur._im === state.aligned ? null : compareCur._im;   // the last map, while dragging
+      }
+      if(lr){ setSrc(compareRef, lr); setSrc(sideRef, lr); } else { showRef(compareRef); showRef(sideRef); }
+      setSrc(compareCur, lc || state.aligned); setSrc(sideCur, lc || state.aligned);
       if(m === "side") layoutSide();
     }
     if(opacitySlider.value != state.opacity) opacitySlider.value = state.opacity;
@@ -296,13 +303,19 @@
     compareFrame.classList.toggle("adjusting", state.adjusting);
     show(resetPosBtn, state.adjusting || state.offU !== 0 || state.offV !== 0);
     // the offset is a fraction of the photo, which is letterboxed in its frame
+    // mirrored: the pictures flip about the frame's centre, and so does the offset
+    var mir = mirrorNow(), flip = mir ? " scaleX(-1)" : "";
     function shiftIn(frame){
-      if(!state.offU && !state.offV) return "";
+      if(!state.offU && !state.offV) return flip;
       var c = imageRect(frame);
-      return "translate(" + (state.offU*c.w*100) + "%," + (state.offV*c.h*100) + "%)";
+      return "translate(" + ((mir ? -1 : 1)*state.offU*c.w*100) + "%," + (state.offV*c.h*100) + "%)" + flip;
     }
     compareCur.style.transform = shiftIn(compareFrame);
     sideCur.style.transform = shiftIn(sideCurFrame);
+    compareRef.style.transform = flip; sideRef.style.transform = flip;
+    var cq = imageRect(compareFrame), sq = imageRect(sideRefFrame);
+    compareRef.style.filter = compareCur.style.filter = squintFilter(Math.max(cq.w*compareFrame.clientWidth, cq.h*compareFrame.clientHeight));
+    sideRef.style.filter = sideCur.style.filter = squintFilter(Math.max(sq.w*sideRefFrame.clientWidth, sq.h*sideRefFrame.clientHeight));
     [compareRef, compareCur, sideRef, sideCur].forEach(function(img){ img.classList.toggle("gray", state.grayscale); });
     // re-fit pan to the frame's current size (only measurable while shown)
     if(m === "compare") compareZoom.clampPan();
@@ -318,6 +331,7 @@
 
     // full screen: the button in the picture's corner, and the controls kept on screen
     renderFull(m);
+    renderView(m);
 
     // colour card: one card, shown in whichever view is active (floating, in full screen)
     var slot = (state.full && (m === "compare" || m === "side")) ? fullBar : (m === "side") ? sideCardSlot : compareCardSlot;
@@ -396,7 +410,7 @@
   }
   function positionMarker(mk, frame, view, rd){
     var fr = frame.getBoundingClientRect(), vr = view.getBoundingClientRect(), c = imageRect(frame);
-    var x = vr.left - (fr.left + frame.clientLeft) + (c.x + rd.u*c.w)*vr.width;
+    var x = vr.left - (fr.left + frame.clientLeft) + (c.x + (mirrorNow() ? 1 - rd.u : rd.u)*c.w)*vr.width;
     var y = vr.top  - (fr.top  + frame.clientTop)  + (c.y + rd.v*c.h)*vr.height;
     var touch = rd.pointerType === "touch";
     mk.classList.toggle("touch", touch);
@@ -444,6 +458,179 @@
     if(state.full && m === "blocks") park(shapeReadouts); else unpark(shapeReadouts);
   }
   fullBtn.addEventListener("click", function(){ state.full = !state.full; render(); });
+
+  // ---------------- the View menu: ways of looking at the picture ----------------
+  // One button over the picture opens it; while anything but the normal
+  // look is on, a label says what, and its ✕ goes back to normal. Black &
+  // white is one of the looks (it also turns Block-in to values, and
+  // Progress and its exports to black & white). Values and where it's off
+  // are pictures made from the reference and the painting, shown in their
+  // place; squint is a blur. Colour readings still read the real colours.
+  var viewBtn = $("viewBtn"), viewChip = $("viewChip"), viewChipOpen = $("viewChipOpen"), viewChipText = $("viewChipText");
+  var viewLegend = $("viewLegend"), viewChipX = $("viewChipX"), viewMenu = $("viewMenu"), viewLooks = $("viewLooks");
+  var valuesRow = $("valuesRow"), valuesSeg = $("valuesSeg"), offRow = $("offRow"), offSeg = $("offSeg"), mirrorSwitch = $("mirrorSwitch");
+  var squintRow = $("squintRow"), squintSlider = $("squintSlider");
+  var ALL_LOOKS = ["normal", "gray", "values", "squint", "off"];
+  var LOOKS = { compare: ALL_LOOKS, side: ALL_LOOKS, blocks: ["normal", "gray", "squint"], progress: ["normal", "gray", "squint"] };
+  var LOOK_NAMES = { gray: "Black & white", values: "Values", squint: "Squint", off: "Where it's off" };
+  var OFF_DARK = [40, 120, 255], OFF_LIGHT = [255, 170, 0], OFF_COLOUR = [235, 40, 120];
+  function looksHere(){ return LOOKS[state.mode] || []; }
+  function lookNow(){ return looksHere().indexOf(state.look) >= 0 ? state.look : "normal"; }
+  function mirrorNow(){ return state.mirror && looksHere().length > 0; }
+  function setLook(look){
+    state.look = look;
+    var gray = look === "gray";
+    if(gray !== state.grayscale){ state.grayscale = gray; state.shapesPick = null; }
+    render();
+  }
+  function renderView(m){
+    var pic = LOOKS[m] && FULL_PICTURE[m] ? $(FULL_PICTURE[m]) : null;
+    var fit = pic && (pic.classList.contains("fit") ? pic : pic.closest(".fit"));
+    viewBtn.hidden = !fit;
+    if(!fit){ closeViewMenu(); viewChip.hidden = true; return; }
+    [viewBtn, viewChip, viewMenu].forEach(function(el){ if(el.parentElement !== fit) fit.appendChild(el); });
+    var look = lookNow(), here = looksHere(), mir = mirrorNow();
+    var text = look === "normal" ? "" : LOOK_NAMES[look] + (look === "values" ? " · " + state.valueSteps : look === "squint" && state.squint < 100 ? " · " + state.squint + "%" : "");
+    if(mir) text = text ? text + " · mirrored" : "Mirrored";
+    viewChip.hidden = !text;
+    viewChipText.textContent = text;
+    function key(c, label){ return "<i style=\"background:rgb(" + c.join(",") + ")\"></i>" + label; }
+    viewLegend.innerHTML = look !== "off" ? "" : state.offBy === "value" ? key(OFF_DARK, "darker") + " " + key(OFF_LIGHT, "lighter") : key(OFF_COLOUR, "colour off");
+    viewBtn.classList.toggle("on", !!text);
+    Array.prototype.forEach.call(viewLooks.children, function(b){
+      b.hidden = here.indexOf(b.dataset.look) < 0;
+      b.classList.toggle("on", b.dataset.look === look);
+    });
+    valuesRow.hidden = look !== "values";
+    offRow.hidden = look !== "off";
+    squintRow.hidden = look !== "squint";
+    if(squintSlider.value != state.squint) squintSlider.value = state.squint;
+    Array.prototype.forEach.call(valuesSeg.children, function(b){ b.classList.toggle("on", Number(b.dataset.steps) === state.valueSteps); });
+    Array.prototype.forEach.call(offSeg.children, function(b){ b.classList.toggle("on", b.dataset.by === state.offBy); });
+    mirrorSwitch.classList.toggle("on", state.mirror);
+  }
+  function openViewMenu(){ viewMenu.hidden = false; viewBtn.setAttribute("aria-expanded", "true"); }
+  function closeViewMenu(){ if(viewMenu.hidden) return; viewMenu.hidden = true; viewBtn.setAttribute("aria-expanded", "false"); }
+  function toggleViewMenu(){ if(viewMenu.hidden) openViewMenu(); else closeViewMenu(); }
+  viewBtn.addEventListener("click", toggleViewMenu);
+  viewChipOpen.addEventListener("click", toggleViewMenu);
+  viewChipX.addEventListener("click", function(){ state.mirror = false; closeViewMenu(); setLook("normal"); });
+  viewLooks.addEventListener("click", function(e){ var b = e.target.closest("button[data-look]"); if(b) setLook(b.dataset.look); });
+  valuesSeg.addEventListener("click", function(e){ var b = e.target.closest("button[data-steps]"); if(b){ state.valueSteps = Number(b.dataset.steps); render(); } });
+  offSeg.addEventListener("click", function(e){ var b = e.target.closest("button[data-by]"); if(b){ state.offBy = b.dataset.by; render(); } });
+  mirrorSwitch.addEventListener("click", function(){ state.mirror = !state.mirror; render(); });
+  squintSlider.addEventListener("input", function(){ state.squint = Number(squintSlider.value); render(); });
+  // a touch anywhere else closes the menu
+  document.addEventListener("pointerdown", function(e){
+    if(!viewMenu.hidden && !viewMenu.contains(e.target) && !viewBtn.contains(e.target) && !viewChip.contains(e.target)) closeViewMenu();
+  }, true);
+
+  // ---- the pictures for the looks, made once per image and setting ----
+  var LOOK_DIM = 1600;      // values and where it's off: long side
+  var OFF_DIM = 200;        // where it's off: compared at this size, so texture and grain don't count
+  var lookSeq = 0, lookCache = {}, lin8Lut = null, valLut = null, VAL_N = 2048;
+  function lookId(im){ return im._lookId || (im._lookId = ++lookSeq); }
+  function cachedLook(slot, key, make){
+    var c = lookCache[slot];
+    if(c && c.key === key) return c.im;
+    if(c) dropImage(c.im);
+    var im = make();
+    lookCache[slot] = { key: key, im: im };
+    return im;
+  }
+  // Squint: a blur of the shown picture, at most 1/90 of its long side
+  // (state.squint is the % of that), so the detail goes and the big shapes stay
+  function squintFilter(longSide){
+    var px = longSide/90*state.squint/100;
+    return lookNow() === "squint" && px >= 0.1 ? "blur(" + px.toFixed(1) + "px)" : "";
+  }
+  function forgetLooks(){ Object.keys(lookCache).forEach(function(k){ dropImage(lookCache[k].im); }); lookCache = {}; }
+  function asImage(c){ return { canvas: c, w: c.width, h: c.height }; }
+  // resized in steps of 2 (each step down averages, each step up smooths);
+  // always a new canvas
+  function stepResize(src, w, h, tw, th){
+    var cur = src;
+    for(;;){
+      var nw = tw < w ? Math.max(tw, Math.round(w/2)) : Math.min(tw, w*2), nh = th < h ? Math.max(th, Math.round(h/2)) : Math.min(th, h*2);
+      if(nw === w && nh === h && cur !== src) return cur;
+      var c = document.createElement("canvas"); c.width = nw; c.height = nh;
+      var x = c.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+      x.drawImage(cur, 0, 0, nw, nh);
+      cur = c; w = nw; h = nh;
+    }
+  }
+  function sizeFor(im, dim){ var s = Math.min(1, dim/Math.max(im.w, im.h)); return { w: Math.max(1, Math.round(im.w*s)), h: Math.max(1, Math.round(im.h*s)) }; }
+  function lin8(){ if(!lin8Lut){ lin8Lut = new Float32Array(256); for(var i = 0; i < 256; i++) lin8Lut[i] = toLin(i); } return lin8Lut; }
+  function valueLut(){ if(!valLut){ valLut = new Float32Array(VAL_N + 1); for(var i = 0; i <= VAL_N; i++) valLut[i] = Munsell.valueFromY(i/VAL_N*100); } return valLut; }
+  // Values: each pixel's Munsell value in 3 or 5 equal bands, shown as the
+  // band's middle grey
+  function valuesImage(im){
+    var n = state.valueSteps;
+    return cachedLook(im === state.ref ? "valuesRef" : "valuesCur", lookId(im) + ":" + n, function(){
+      var z = sizeFor(im, LOOK_DIM), c = stepResize(im.canvas, im.w, im.h, z.w, z.h);
+      var ctx = c.getContext("2d"), img = ctx.getImageData(0, 0, z.w, z.h), d = img.data, L = lin8(), V = valueLut(), grey = [];
+      for(var k = 0; k < n; k++) grey.push(toSrgb(Munsell.yFromValue((k + 0.5)*10/n)/100));
+      for(var i = 0; i < d.length; i += 4){
+        var y = 0.2126*L[d[i]] + 0.7152*L[d[i+1]] + 0.0722*L[d[i+2]];
+        var b = Math.min(n - 1, Math.floor(V[Math.min(VAL_N, Math.round(y*VAL_N))]*n/10));
+        d[i] = d[i+1] = d[i+2] = grey[b];
+      }
+      ctx.putImageData(img, 0, 0);
+      return asImage(c);
+    });
+  }
+  // Where it's off: the painting in soft greys, tinted where it differs
+  // from the reference under it (by value: blue darker, amber lighter; by
+  // colour: magenta, for hue and intensity whatever the value). In the
+  // painting's own coordinates, so it moves with the position offset.
+  // How far apart two colours are in hue and intensity alone: the painting's
+  // colour is first brought to the reference's lightness (so being lighter
+  // or darker, which Value shows, doesn't count), then compared with the
+  // CIE94 weights (a difference in a strong colour shows less than the
+  // same difference in a greyish one, as the eye sees it).
+  function colourOff(p, r){
+    var k = Math.max(r.L, 10)/Math.max(p.L, 10), pa = p.a*k, pb = p.b*k;
+    var cr = Math.hypot(r.a, r.b), dC = Math.hypot(pa, pb) - cr;
+    var dH2 = Math.max(0, (pa - r.a)*(pa - r.a) + (pb - r.b)*(pb - r.b) - dC*dC);
+    return Math.hypot(dC/(1 + 0.045*cr), Math.sqrt(dH2)/(1 + 0.015*cr));
+  }
+  function offImage(){
+    var ref = state.ref, cur = state.aligned, by = state.offBy;
+    var key = lookId(ref) + ":" + lookId(cur) + ":" + by + ":" + state.offU.toFixed(4) + ":" + state.offV.toFixed(4);
+    return cachedLook("off", key, function(){
+      var base = cachedLook("offBase", lookId(cur), function(){
+        var z = sizeFor(cur, LOOK_DIM), c = stepResize(cur.canvas, cur.w, cur.h, z.w, z.h);
+        var ctx = c.getContext("2d"), img = ctx.getImageData(0, 0, z.w, z.h), d = img.data, L = lin8();
+        for(var i = 0; i < d.length; i += 4){
+          var g = 0.2126*L[d[i]] + 0.7152*L[d[i+1]] + 0.0722*L[d[i+2]];
+          d[i] = d[i+1] = d[i+2] = Math.round(90 + 0.55*toSrgb(g));
+        }
+        ctx.putImageData(img, 0, 0);
+        return asImage(c);
+      });
+      var z = sizeFor(ref, OFF_DIM), sw = z.w, sh = z.h;
+      var rd = stepResize(ref.canvas, ref.w, ref.h, sw, sh).getContext("2d").getImageData(0, 0, sw, sh).data;
+      var cd = stepResize(cur.canvas, cur.w, cur.h, sw, sh).getContext("2d").getImageData(0, 0, sw, sh).data;
+      var heat = document.createElement("canvas"); heat.width = sw; heat.height = sh;
+      var hx = heat.getContext("2d"), hi = hx.createImageData(sw, sh), hd = hi.data, L = lin8();
+      var du = Math.round(state.offU*sw), dv = Math.round(state.offV*sh);
+      for(var y = 0; y < sh; y++) for(var x = 0; x < sw; x++){
+        var rx = x + du, ry = y + dv;               // the reference under this spot of the painting
+        if(rx < 0 || ry < 0 || rx >= sw || ry >= sh) continue;
+        var i = (y*sw + x)*4, j = (ry*sw + rx)*4, a, col;
+        var p = Munsell.labOf(L[cd[i]], L[cd[i+1]], L[cd[i+2]]), r = Munsell.labOf(L[rd[j]], L[rd[j+1]], L[rd[j+2]]);
+        if(by === "value"){ var dV = p.value - r.value; a = clamp((Math.abs(dV) - 0.4)/1.6, 0, 1); col = dV < 0 ? OFF_DARK : OFF_LIGHT; }
+        else { a = clamp((colourOff(p, r) - 2.5)/9.5, 0, 1); col = OFF_COLOUR; }
+        hd[i] = col[0]; hd[i+1] = col[1]; hd[i+2] = col[2]; hd[i+3] = Math.round(a*180);
+      }
+      hx.putImageData(hi, 0, 0);
+      var c = document.createElement("canvas"); c.width = base.w; c.height = base.h;
+      var ctx = c.getContext("2d");
+      ctx.drawImage(base.canvas, 0, 0);
+      ctx.drawImage(stepResize(heat, sw, sh, base.w, base.h), 0, 0);
+      return asImage(c);
+    });
+  }
 
   // ---------------- lockstep pinch-zoom for a group of views ----------------
   // z/pu/pv are the same for every view in the group; pan is a fraction of
@@ -611,7 +798,6 @@
     }
     if(state.aligned) setMode(state.cmpView);
   });
-  grayBtn.addEventListener("click", function(){ state.grayscale = !state.grayscale; state.shapesPick = null; render(); });
 
   // ---------------- loading photos ----------------
   // forNew: the photo starts a new project, made only once a photo is picked
@@ -637,7 +823,7 @@
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
   function useReference(f, im){
-      undoPhoto = null;
+      undoPhoto = null; forgetLooks();
       dropImage(state.ref); dropImage(state.photo); dropImage(state.aligned);
       state.ref = im;
       newShapesSource();
@@ -1083,6 +1269,7 @@
     ctx.save();
     ctx.beginPath(); ctx.arc(R, R, R, 0, Math.PI*2); ctx.clip();
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, D, D);
+    if(mirrorNow()){ ctx.translate(D, 0); ctx.scale(-1, 1); }     // as the picture shows it
     ctx.imageSmoothingQuality = "high";
     // a picture placed so that (u, v) lands on the centre. Only the part
     // inside the loupe is drawn: zoomed in, the whole picture at loupe
@@ -1139,6 +1326,7 @@
     if(!vr.width || !vr.height) return;            // not laid out (hidden)
     var u = ((e.clientX - vr.left) / vr.width - c.x) / c.w;
     var v = ((e.clientY - vr.top) / vr.height - c.y) / c.h;
+    if(mirrorNow()) u = 1 - u;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     var shown = vr.width*c.w, rr = patchFor(state.ref, shown), ra = patchFor(state.aligned, shown);
     var refLin = samplePatch(state.ref, u, v, rr);
@@ -1171,7 +1359,7 @@
     move: function(e){
       if(posDrag){
         var rect = compareView.getBoundingClientRect(), c = imageRect(compareFrame);
-        state.offU = clamp(posDrag.u0 + (e.clientX - posDrag.x) / (rect.width*c.w), -OFF_MAX, OFF_MAX);
+        state.offU = clamp(posDrag.u0 + (mirrorNow() ? -1 : 1)*(e.clientX - posDrag.x) / (rect.width*c.w), -OFF_MAX, OFF_MAX);
         state.offV = clamp(posDrag.v0 + (e.clientY - posDrag.y) / (rect.height*c.h), -OFF_MAX, OFF_MAX);
         render();
       } else if(state.peeking){
@@ -1180,7 +1368,7 @@
     },
     end: function(){
       hideReadLoupe();
-      if(posDrag){ posDrag = null; persistMeta(); }
+      if(posDrag){ posDrag = null; persistMeta(); if(lookNow() === "off") render(); }
       if(state.peeking){ state.peeking = false; render(); }
     },
     cancel: function(){
@@ -1650,6 +1838,8 @@
     var c = imageRect(shapesFrame), st = shapesImg.style;
     st.left = (c.x*100) + "%"; st.top = (c.y*100) + "%";
     st.width = (c.w*100) + "%"; st.height = (c.h*100) + "%";
+    st.transform = mirrorNow() ? "scaleX(-1)" : "";
+    st.filter = squintFilter(Math.max(shapesImg.clientWidth, shapesImg.clientHeight));
   }
   function drawShapes(){
     layoutShapesImg();
@@ -1719,6 +1909,7 @@
     var vr = shapesView.getBoundingClientRect(), c = imageRect(shapesFrame);
     if(!vr.width || !vr.height) return;            // not laid out (hidden)
     var u = ((e.clientX - vr.left)/vr.width - c.x)/c.w, v = ((e.clientY - vr.top)/vr.height - c.y)/c.h;
+    if(mirrorNow()) u = 1 - u;
     if(u < 0 || u >= 1 || v < 0 || v >= 1) return;
     state.shapesPoint = { u: u, v: v, pointerType: e.pointerType, r: patchFor(state.ref, vr.width*c.w) };
     state.shapesPick = labelAt(R, state.shapesPoint);
@@ -1816,7 +2007,7 @@
   // them, play, delete, save all, and the timelapse video. The history
   // belongs to the reference: a new reference or "Start new painting"
   // clears it (both ask first, with the chance to save the photos).
-  var viewProgress = $("view-progress"), progImg = $("progImg"), progInfo = $("progInfo");
+  var viewProgress = $("view-progress"), progFrame = $("progFrame"), progImg = $("progImg"), progInfo = $("progInfo");
   var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
   var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
   var progStartBtn = $("progStartBtn"), progStartNote = $("progStartNote"), progLiveTimer = $("progLiveTimer");
@@ -2127,6 +2318,9 @@
     progSpeedLabel.textContent = "· " + secs(perPhoto());
     progVideoBtn.textContent = "Make timelapse video · about " + Math.round(Progress.timeline(n, progRef, perPhoto()).duration) + " s";
     progImg.classList.toggle("gray", state.grayscale);
+    progImg.style.transform = mirrorNow() ? "scaleX(-1)" : "";
+    var pc = imageRect(progFrame);
+    progImg.style.filter = squintFilter(Math.max(pc.w*progFrame.clientWidth, pc.h*progFrame.clientHeight));
     // the large view
     var key = it.id + ":" + (progEven ? "e" : "o") + ":" + n;
     if(key !== progShownKey){
@@ -2595,12 +2789,14 @@
   confirmModal.addEventListener("click", function(e){ if(e.target === confirmModal) closeConfirm(); });
   document.addEventListener("keydown", function(e){
     if(e.key !== "Escape") return;
+    if(!viewMenu.hidden){ closeViewMenu(); return; }
     if(state.full && !document.querySelector(".modal.show")){ state.full = false; render(); return; }
     if(confirmModal.classList.contains("show")) closeConfirm();
     if(PU.onEscape()) return;
     if(videoModal.classList.contains("show")) closeVideo();
     if(exportModal.classList.contains("show")) closeExport();
     if(nameModal.classList.contains("show")) closeName();
+    if(archiveModal.classList.contains("show")){ closeArchive(); return; }
     if(stageTimeModal.classList.contains("show")) closeStageTime();
     if(!SU.closeIfOpen() && projModal.classList.contains("show")) closeProjects();
     if(menuModal.classList.contains("show")) closeMenu();
@@ -2722,7 +2918,7 @@
     openProject(id).then(function(){ persistMeta(); });
   }
   function loadProject(id){
-    undoPhoto = null;
+    undoPhoto = null; forgetLooks();
     var ps = PStore;
     return Progress.init(ps).then(function(){
       return Promise.all([ps.get("meta"), ps.get("ref"), ps.get("photo"), ps.get("aligned"), ps.get("align")]);
@@ -2879,9 +3075,11 @@
       var btns = document.createElement("div"); btns.className = "proj-btns";
       var rn = document.createElement("button"); rn.className = "btn small"; rn.textContent = "Rename";
       rn.addEventListener("click", function(e){ e.stopPropagation(); askName(p); });
+      var ar = document.createElement("button"); ar.className = "btn small"; ar.textContent = "Archive";
+      ar.addEventListener("click", function(e){ e.stopPropagation(); askArchive(p); });
       var del = document.createElement("button"); del.className = "btn small ghost"; del.textContent = "Delete";
       del.addEventListener("click", function(e){ e.stopPropagation(); askDelete(p); });
-      btns.appendChild(rn); btns.appendChild(del);
+      btns.appendChild(rn); btns.appendChild(ar); btns.appendChild(del);
       row.addEventListener("click", function(){
         closeProjects();
         if(p.id !== Projects.activeId()) openProject(p.id);
@@ -2950,6 +3148,135 @@
       render();
     }).catch(function(){ toast("The project couldn't be deleted. Try again."); });
   }
+
+  // ---- archive: a project as one .zip file (zip.js), and back ----
+  // Inside: project.json (the settings, the alignment, the stages' times and
+  // anything set by hand), the reference and painting photos as they were
+  // taken, and every stage (stages/01.jpg …) with its thumbnail. Opening
+  // one makes a new project (a new id: sync keeps deleted ids deleted).
+  var ARCHIVE_FORMAT = 1, ARCHIVE_FILES = ["ref", "photo", "aligned", "thumb"];
+  var ARCHIVE_NAMES = { ref: "reference", photo: "painting", aligned: "aligned", thumb: "thumb" };
+  var archiveModal = $("archiveModal"), archiveTitle = $("archiveTitle"), archiveStatus = $("archiveStatus");
+  var archiveSave = $("archiveSave"), archiveRemove = $("archiveRemove"), archiveDone = $("archiveDone");
+  var projOpenBtn = $("projOpenBtn"), archiveInput = $("archiveInput");
+  var archiving = null, archiveFile = null;
+  function extOf(type){ return /jpe?g/.test(type) ? "jpg" : /png/.test(type) ? "png" : /hei[cf]/.test(type) ? "heic" : /webp/.test(type) ? "webp" : "bin"; }
+  function safeFileName(n){ return String(n).replace(/[\\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "Painting"; }
+  function sizeText(n){ var m = n/1048576; return (m < 10 ? m.toFixed(1) : Math.round(m)) + " MB"; }
+  function buildArchive(id){
+    var p = Projects.get(id), ps = Projects.scoped(id);
+    return Promise.all(["meta", "align", "progress"].concat(ARCHIVE_FILES).map(function(k){ return ps.get(k); })).then(function(r){
+      var prog = r[2], items = Array.isArray(prog) ? prog : (prog && prog.items) || [], files = [];
+      var info = { app: "Comp-Art", format: ARCHIVE_FORMAT, version: self.APP_VERSION, name: p.name, created: p.created, archived: Date.now(),
+                   meta: r[0] || null, align: r[1] || null, files: {}, stages: [] };
+      ARCHIVE_FILES.forEach(function(k, i){
+        var b = r[3 + i];
+        if(!b) return;
+        var name = ARCHIVE_NAMES[k] + "." + extOf(b.type || "");
+        info.files[k] = { file: name, type: b.type || "" };
+        files.push({ name: name, data: b });
+      });
+      return Promise.all(items.map(function(it){ return Promise.all([ps.get("prog-" + it.id), ps.get("progt-" + it.id)]); })).then(function(bs){
+        items.forEach(function(it, i){
+          if(!bs[i][0]) return;
+          var num = (i < 9 ? "0" : "") + (i + 1), st = { id: it.id, t: it.t, key: it.key || null, file: "stages/" + num + ".jpg", type: bs[i][0].type || "image/jpeg" };
+          if(it.m) st.m = it.m;
+          files.push({ name: st.file, data: bs[i][0] });
+          if(bs[i][1]){ st.thumb = "stages/thumbs/" + num + ".jpg"; files.push({ name: st.thumb, data: bs[i][1] }); }
+          info.stages.push(st);
+        });
+        files.unshift({ name: "project.json", data: JSON.stringify(info, null, 1) });
+        return Zip.make(files);
+      }).then(function(zip){ return new File([zip], safeFileName(p.name) + " · Comp-Art.zip", { type: "application/zip" }); });
+    });
+  }
+  // an archive file → a new project with everything in it; resolves to its id
+  function restoreArchive(file){
+    return Zip.read(file).then(function(entries){
+      // the archive's folder, if the files were zipped again inside one
+      var pj = Object.keys(entries).filter(function(n){ return /(^|\/)project\.json$/.test(n); })[0];
+      if(!pj) throw new Error("not an archive");
+      var dir = pj.slice(0, pj.length - "project.json".length);
+      function entry(n){ return n ? entries[dir + n] || null : null; }
+      function typed(b, type){ return type && b.type !== type ? new Blob([b], { type: type }) : b; }
+      return entry("project.json").text().then(function(txt){
+        var info = JSON.parse(txt);
+        if(!info || info.app !== "Comp-Art" || !Array.isArray(info.stages) || !info.files || !info.files.ref || !entry(info.files.ref.file)) throw new Error("not an archive");
+        var name = String(info.name || "Restored painting");
+        if(Projects.list().some(function(p){ return p.name === name; })) name += " (restored)";
+        var id = Projects.create(name), ps = Projects.scoped(id), jobs = [], items = [];
+        ARCHIVE_FILES.forEach(function(k){
+          var f = info.files[k], b = f && entry(f.file);
+          if(b) jobs.push(ps.set(k, typed(b, f.type)));
+        });
+        info.stages.forEach(function(st){
+          var b = entry(st.file);
+          if(!b || !st.id) return;
+          var it = { id: String(st.id), t: Number(st.t) || Date.now(), key: st.key || null };
+          if(st.m) it.m = Number(st.m);
+          items.push(it);
+          jobs.push(ps.set("prog-" + it.id, typed(b, st.type || "image/jpeg")));
+          var tb = entry(st.thumb);
+          if(tb) jobs.push(ps.set("progt-" + it.id, typed(tb, "image/jpeg")));
+        });
+        items.sort(function(a, b){ return a.t - b.t; });
+        if(info.meta) jobs.push(ps.set("meta", info.meta));
+        if(info.align) jobs.push(ps.set("align", info.align));
+        jobs.push(ps.set("progress", { items: items, deleted: [] }));
+        return Promise.all(jobs).then(function(){ Projects.setPhotos(id, items.length); return id; });
+      });
+    });
+  }
+  function askArchive(p){
+    archiving = p; archiveFile = null;
+    archiveTitle.textContent = "Archive “" + p.name + "”";
+    archiveStatus.textContent = "Getting it ready…";
+    archiveSave.disabled = true; archiveRemove.hidden = true;
+    archiveModal.classList.add("show");
+    buildArchive(p.id).then(function(f){
+      if(archiving !== p) return;
+      archiveFile = f; archiveSave.disabled = false;
+      archiveStatus.textContent = "Ready · " + sizeText(f.size);
+    }).catch(function(){ if(archiving === p) archiveStatus.textContent = "The archive couldn't be made. Try again."; });
+  }
+  function closeArchive(){ archiveModal.classList.remove("show"); archiving = null; archiveFile = null; }
+  // saved: the share sheet (iPad) or a download, from this tap
+  archiveSave.addEventListener("click", function(){
+    var f = archiveFile, p = archiving;
+    if(!f) return;
+    function saved(where){
+      if(archiving !== p) return;
+      archiveStatus.textContent = where === "download" ? "Saved to your Downloads folder · " + sizeText(f.size) + ". Keep it somewhere safe." : "Saved · " + sizeText(f.size) + ".";
+      archiveRemove.hidden = false;
+    }
+    var touch = navigator.maxTouchPoints > 0;
+    if(touch && navigator.canShare && navigator.canShare({ files: [f] })){
+      navigator.share({ files: [f] }).then(function(){ saved("share"); })
+        .catch(function(e){ if(!e || e.name !== "AbortError"){ download(f); saved("download"); } });
+    } else { download(f); saved("download"); }
+  });
+  archiveRemove.addEventListener("click", function(){
+    var p = archiving;
+    if(!p) return;
+    askConfirm("Remove “" + p.name + "” from this app? It stays in the archive file" + (Sync.on() ? ", and goes from your other devices too" : "") + ".",
+      "Remove", function(){ closeArchive(); deleteProject(p.id); });
+  });
+  archiveDone.addEventListener("click", closeArchive);
+  archiveModal.addEventListener("click", function(e){ if(e.target === archiveModal) closeArchive(); });
+  projOpenBtn.addEventListener("click", function(){ archiveInput.click(); });
+  archiveInput.addEventListener("change", function(){
+    var f = archiveInput.files && archiveInput.files[0];
+    archiveInput.value = "";
+    if(!f) return;
+    toast("Opening the archive…");
+    restoreArchive(f).then(function(id){
+      closeProjects();
+      openProject(id);
+      toast("Opened “" + Projects.get(id).name + "”");
+    }).catch(function(e){
+      toast(e && e.message === "not an archive" ? "That file isn't a Comp-Art archive." : "The archive couldn't be opened.");
+    });
+  });
 
   // ---- the ⋯ menu ----
   function closeMenu(){ menuModal.classList.remove("show"); }

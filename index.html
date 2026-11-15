@@ -30,9 +30,6 @@
     <p id="stepHint">reference → painting → compare</p>
   </div>
   <div class="header-btns">
-  <button class="icon-btn" id="grayBtn" title="Check values (black &amp; white)" aria-label="Check values in black and white" aria-pressed="false" hidden>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 0 0 17Z" fill="currentColor" stroke="none"/></svg>
-  </button>
   <button class="icon-btn" id="menuBtn" title="More" aria-label="More">
     <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
   </button>
@@ -312,7 +309,10 @@
     </div>
     <div class="controls">
       <div class="panel">
-        <p class="prog-info" id="progInfo"></p>
+        <div class="prog-head">
+          <p class="prog-info" id="progInfo"></p>
+          <button class="btn ghost small" id="progDeleteBtn" title="Delete this stage">Delete</button>
+        </div>
         <div class="prog-scrub">
           <button class="btn small" id="progPlay">Play</button>
           <input type="range" id="progSlider" min="0" max="0" step="1" value="0" aria-label="Stage">
@@ -329,7 +329,6 @@
         </div>
         <div class="divider"></div>
         <button class="btn primary full" id="progExportBtn">Share &amp; export…</button>
-        <button class="btn ghost full small" id="progDeleteBtn">Delete this stage</button>
       </div>
     </div>
    </div>
@@ -343,6 +342,41 @@
      (moved there by render); the bar holds the one or two controls kept on
      screen (the colour reading and opacity in Compare, the stage slider in
      Progress), moved in from their panels and back. -->
+<!-- the View menu: ways of looking at the picture. The button, the label
+     of what's on and the menu sit over the picture (moved there by render). -->
+<button class="full-btn view-btn" id="viewBtn" title="View" aria-label="View: black &amp; white, values, squint, where it's off, mirror" aria-haspopup="true" aria-expanded="false" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+</button>
+<div class="view-chip" id="viewChip" hidden>
+  <button class="view-chip-open" id="viewChipOpen" title="View options"><span id="viewChipText"></span><span class="view-legend" id="viewLegend"></span></button>
+  <button class="view-chip-x" id="viewChipX" title="Back to normal" aria-label="Back to normal">✕</button>
+</div>
+<div class="view-menu" id="viewMenu" role="dialog" aria-label="View" hidden>
+  <p class="view-menu-title">Look</p>
+  <div class="view-looks" id="viewLooks">
+    <button data-look="normal">Normal</button>
+    <button data-look="gray">Black &amp; white</button>
+    <button data-look="values">Values</button>
+    <button data-look="squint">Squint</button>
+    <button data-look="off">Where it's off</button>
+  </div>
+  <div class="ctrl-row" id="valuesRow" hidden>
+    <div class="ctrl-label">Value steps</div>
+    <div class="seg" id="valuesSeg"><button data-steps="3">3</button><button data-steps="5">5</button></div>
+  </div>
+  <div class="ctrl-row opacity-row" id="squintRow" hidden>
+    <div class="ctrl-label">Amount</div>
+    <input type="range" id="squintSlider" min="0" max="100" step="1" value="100" aria-label="How much to squint">
+  </div>
+  <div class="ctrl-row" id="offRow" hidden>
+    <div class="ctrl-label">Off by</div>
+    <div class="seg" id="offSeg"><button data-by="value">Value</button><button data-by="colour">Colour</button></div>
+  </div>
+  <div class="ctrl-row">
+    <div class="ctrl-label">Mirror</div>
+    <button class="switch" id="mirrorSwitch" aria-label="Mirror the picture left to right"></button>
+  </div>
+</div>
 <button class="full-btn" id="fullBtn" title="Full screen" aria-label="Full screen" hidden>
   <svg class="full-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
   <svg class="full-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
@@ -367,11 +401,27 @@
   <div class="modal-box proj-box">
     <div class="proj-head">
       <p class="mix-title" id="projTitle">Projects</p>
-      <button class="btn primary small" id="projNewBtn">New project</button>
+      <div class="row">
+        <button class="btn small" id="projOpenBtn" title="Bring back a project from its archive file">Open archive…</button>
+        <button class="btn primary small" id="projNewBtn">New project</button>
+      </div>
+      <input type="file" id="archiveInput" accept=".zip,application/zip" hidden>
     </div>
     <ul class="proj-list" id="projList"></ul>
     <p class="mix-note">Each project keeps its own reference, painting photos and progress. Palettes are shared by all of them. Everything is kept on this device, and on your sync account when Sync is on (up to 10 projects).</p>
     <div class="row stretch"><button class="btn" id="projDone">Done</button></div>
+  </div>
+</div>
+
+<!-- archive: a project saved as one .zip file, to open again later -->
+<div class="modal" id="archiveModal" role="dialog" aria-modal="true" aria-labelledby="archiveTitle">
+  <div class="modal-box">
+    <p class="mix-title" id="archiveTitle">Archive</p>
+    <p class="mix-note">One .zip file with the reference, the painting photo, every progress stage and the painting times. Open it again any time with Open archive… in Projects.</p>
+    <p id="archiveStatus">Getting it ready…</p>
+    <button class="btn primary full" id="archiveSave" disabled>Save archive</button>
+    <button class="btn full" id="archiveRemove" hidden>Remove it from this app</button>
+    <div class="row stretch"><button class="btn" id="archiveDone">Done</button></div>
   </div>
 </div>
 
@@ -633,6 +683,7 @@
 <script src="palettes.js"></script>
 <script src="progress.js"></script>
 <script src="projects.js"></script>
+<script src="zip.js"></script>
 <script src="store.js"></script>
 <script src="sync.js"></script>
 <script src="palettes-ui.js"></script>

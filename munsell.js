@@ -142,5 +142,12 @@ window.Munsell = (function(){
     return "Painting is " + (parts.length ? parts.join(", ") + " and " + last : last) + ".";
   }
 
-  return { fromLinearRGB: fromLinearRGB, describe: describe };
+  // Lab and Munsell value, without the chip search (for whole pictures)
+  function labOf(r, g, b){
+    var xyz = mul(ADAPT, mul(RGB2XYZ, [r*100, g*100, b*100]));
+    var lab = xyzToLab(xyz[0], xyz[1], xyz[2]);
+    lab.value = valueFromY(xyz[1]);
+    return lab;
+  }
+  return { fromLinearRGB: fromLinearRGB, describe: describe, labOf: labOf, valueFromY: valueFromY, yFromValue: yFromValue };
 })();
