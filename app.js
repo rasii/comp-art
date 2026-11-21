@@ -231,6 +231,7 @@
   // ---------------- render ----------------
   // Derives every visible thing from state. Safe to call often.
   function render(){
+    if(holdRender) return;              // a quiet reload is under way: the screen stays as it was
     var m = state.mode, hasRef = !!state.ref, hasPhoto = !!state.photo, hasAligned = !!state.aligned;
 
     // tabs and views
@@ -3021,7 +3022,8 @@
   // projects clears what's in memory (nothing stored is touched) and loads
   // the other project. View settings (Block-in, intensity, export options)
   // carry over into a new project.
-  function resetForProject(){
+  // keepRef: the reference (and so Block-in's shapes, picked colour and zoom) stays
+  function resetForProject(keepRef){
     alignLoaded = null;
     stopPlay();
     if(videoModal.classList.contains("show")) closeVideo();
@@ -3029,9 +3031,9 @@
     Object.keys(progThumbs).forEach(function(id){ URL.revokeObjectURL(progThumbs[id]); });
     progUrls = {}; progThumbs = {}; progIndex = -1; progStripKey = null; progGains = null; progShownKey = null;
     progFilesReady = false; fullCache = null;
-    dropImage(state.ref); dropImage(state.photo); dropImage(state.aligned);
-    state.ref = null; state.photo = null; state.aligned = null; state.photoKey = null;
-    newShapesSource();
+    if(!keepRef){ dropImage(state.ref); state.ref = null; newShapesSource(); }
+    dropImage(state.photo); dropImage(state.aligned);
+    state.photo = null; state.aligned = null; state.photoKey = null;
     state.corners = null; state.cornerSure = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
     if(stageView){ dropImage(stageView.im); stageView = null; }
@@ -3050,13 +3052,59 @@
     render();
     return loadProject(id);
   }
+  // The open project changed on another device (sync): loaded again without
+  // showing it. Nothing is drawn until it's in, then the same tab, full
+  // screen, zoom and position, stage and colour reading come back. When the
+  // reference itself didn't change it stays, so Block-in isn't worked out again.
+  var holdRender = false;
+  function reloadOpenProject(refChanged){
+    var id = openId, ps = PStore, keepRef = !refChanged && !!state.ref;
+    var was = { mode: state.mode, full: state.full, reading: state.reading, photoKey: state.photoKey,
+                progId: (Progress.items()[progIndex] || {}).id, stage: stageView,
+                zooms: [pinZoom, compareZoom, sideZoom].map(function(z){ return { z: z.z, pu: z.pu, pv: z.pv }; }) };
+    stageView = null;                                   // kept aside (resetForProject would drop it)
+    holdRender = true;
+    var safety = setTimeout(function(){ holdRender = false; render(); }, 20000);
+    resetForProject(keepRef);
+    return loadProject(id, keepRef).then(function(){
+      if(PStore !== ps) return;
+      var m = was.mode, items = Progress.items(), ids = items.map(function(it){ return it.id; });
+      if(m === "blocks" && state.ref) state.mode = "blocks";
+      else if(m === "progress" && items.length) state.mode = "progress";
+      else if((m === "compare" || m === "side") && state.aligned) state.mode = m;
+      if(state.mode === "compare" || state.mode === "side") state.cmpView = state.mode;
+      state.full = !!was.full && !!FULL_PICTURE[state.mode];
+      if(was.progId && ids.indexOf(was.progId) >= 0) progIndex = ids.indexOf(was.progId);
+      // an older stage was being looked at in Compare: still, unless it's gone
+      var sv = was.stage;
+      if(sv && ids.indexOf(sv.id) >= 0 && state.aligned){ sv.live = state.aligned; state.aligned = sv.im; stageView = sv; sv = null; }
+      if(sv) dropImage(sv.im);
+      if(keepRef){
+        [pinZoom, compareZoom, sideZoom].forEach(function(z, i){
+          if(i === 0 && state.photoKey !== was.photoKey) return;     // another photo on Align
+          z.z = was.zooms[i].z; z.pu = was.zooms[i].pu; z.pv = was.zooms[i].pv;
+        });
+        // the colour reading, with the painting read again at the same spot
+        var rd = was.reading;
+        if(rd && state.aligned && (state.mode === "compare" || state.mode === "side")){
+          var off = shownOff(), cur = samplePatch(state.aligned, rd.u - off.u, rd.v - off.v, (rd.patch - 1)/2);
+          state.reading = Object.assign({}, rd, { p: cur ? readColour(cur) : null });
+        }
+      }
+    }).catch(function(){}).then(function(){
+      clearTimeout(safety);
+      holdRender = false;
+      render();
+    });
+  }
+
   // an empty project (when the last one was deleted); "New project" waits
   // for its reference instead (pickReference)
   function newProject(){
     var id = Projects.create();
     openProject(id).then(function(){ persistMeta(); });
   }
-  function loadProject(id){
+  function loadProject(id, keepRef){
     undoPhoto = null; forgetLooks();
     var ps = PStore;
     return Progress.init(ps).then(function(){
@@ -3073,7 +3121,7 @@
       // a project without a reference yet keeps its own settings if it has
       // any, else the current ones (a new project carries them over)
       if(!refBlob){ if(res[0]) applyMeta(meta); return; }
-      return loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob);
+      return loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob, keepRef && state.ref);
     }).catch(function(){}).then(function(){
       if(PStore !== ps) return;
       alignLoaded = JSON.stringify(alignRecord());     // from here on, a change to the alignment is saved
@@ -3128,12 +3176,11 @@
   }
 
   // (loadProject, continued)
-  function loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob){
+  function loadProjectData(ps, meta, refBlob, photoBlob, alignedBlob, keptRef){
       applyMeta(meta);
-      return decodeToCanvas(refBlob, WORK_DIM).then(function(ref){
+      return (keptRef ? Promise.resolve(keptRef) : decodeToCanvas(refBlob, WORK_DIM)).then(function(ref){
         if(PStore !== ps) return;
-        state.ref = ref;
-        newShapesSource();
+        if(!keptRef){ state.ref = ref; newShapesSource(); }
         var jobs = [];
         var corners = validCorners(meta.corners) ? meta.corners : null, wasAligned = !!(meta.aligned || alignedBlob);
         var confirmed = meta.lastCorners && validCorners(meta.lastCorners.pts) ? meta.lastCorners : null;
@@ -3432,7 +3479,7 @@
   var SU = SyncUI({
     $: $, toast: toast, askConfirm: askConfirm, fmtDay: fmtDay, show: show, state: state, render: render,
     openProject: openProject, newProject: newProject, renderProjects: renderProjects, projThumbUrls: projThumbUrls, projModal: projModal,
-    openId: function(){ return openId; }, forgetStageCaches: forgetStageCaches,
+    openId: function(){ return openId; }, forgetStageCaches: forgetStageCaches, reloadOpenProject: reloadOpenProject,
     fillPaletteSelect: PU.fillPaletteSelect, renderPalList: PU.renderPalList, palModal: PU.palModal, palListView: PU.palListView,
     menuSync: menuSync, confirmModal: confirmModal, exportModal: exportModal, mixModal: mixModal, videoModal: videoModal
   });

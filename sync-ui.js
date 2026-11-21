@@ -18,7 +18,7 @@ window.SyncUI = function(A){
       changed: function(id, what){
         dropProjThumb(id);
         if(id === A.openId()){
-          if(what.reload) reloadOpenProject();
+          if(what.reload) reloadOpenProject(!!(what.keys && what.keys.ref));
           else if(what.stages){
             A.forgetStageCaches();          // a stage may have been replaced (same stage, new image)
             render();
@@ -46,19 +46,16 @@ window.SyncUI = function(A){
   function dropProjThumb(id){ if(projThumbUrls[id]){ URL.revokeObjectURL(projThumbUrls[id]); delete projThumbUrls[id]; } }
   // the open project changed on another device: open it again, in the same
   // view, once nothing is in progress here
-  var reloadWaiting = false;
-  function reloadOpenProject(){
+  var reloadWaiting = false, refWaiting = false;
+  function reloadOpenProject(refChanged){
+    refWaiting = refWaiting || refChanged;
     if(reloadWaiting) return;
     var busy = state.adjusting || videoModal.classList.contains("show") || exportModal.classList.contains("show") ||
                mixModal.classList.contains("show") || confirmModal.classList.contains("show");
-    if(busy){ reloadWaiting = true; setTimeout(function(){ reloadWaiting = false; reloadOpenProject(); }, 4000); return; }
-    var mode = state.mode;
-    openProject(A.openId()).then(function(){
-      if(mode === "blocks" && state.ref) state.mode = "blocks";
-      else if(mode === "progress" && Progress.count()) state.mode = "progress";
-      else if((mode === "compare" || mode === "side") && state.aligned) state.mode = mode;
-      render();
-    });
+    if(busy){ reloadWaiting = true; setTimeout(function(){ reloadWaiting = false; reloadOpenProject(false); }, 4000); return; }
+    var ref = refWaiting;
+    refWaiting = false;
+    A.reloadOpenProject(ref);           // quietly, keeping the view (app.js)
   }
 
   var syncModal = $("syncModal"), syncOff = $("syncOff"), syncOn = $("syncOn"), syncSeg = $("syncSeg");

@@ -249,7 +249,7 @@ window.Sync = (function(){
       var cdoc = r[0] ? r[0].data : null, etag = r[0] ? r[0].etag : null, rec = r[1], local = { meta: r[2], align: r[3] };
       var doc = cdoc ? clone(cdoc) : { v: 1, files: {}, meta: null, items: [], deleted: [] };
       doc.files = doc.files || {}; doc.items = doc.items || []; doc.deleted = doc.deleted || [];
-      var ups = [], downs = [], gc = [], changed = { reload: false, stages: false };
+      var ups = [], downs = [], gc = [], changed = { reload: false, stages: false, keys: {} };
 
       // the reference, painting photo, aligned image, thumbnail and settings
       SINGLE.forEach(function(k){
@@ -273,20 +273,20 @@ window.Sync = (function(){
             if(V[k] !== before[k]) return;           // changed here meanwhile: that wins next time
             if(cv.gone){
               V[k] = { t: ct, gone: true };
-              changed.reload = true;
+              changed.reload = true; changed.keys[k] = true;
               return Store.remove(P + k);
             }
             if(RECORD[k]){
               if(!doc[k]) return;
               V[k] = { t: ct, sig: JSON.stringify(doc[k]) };
-              changed.reload = true;
+              changed.reload = true; changed.keys[k] = true;
               return Store.set(P + k, doc[k]);
             }
             return getBlob(P + cv.k).then(function(b){
               done(1);
               if(!b || V[k] !== before[k]) return;
               V[k] = { t: ct };
-              changed.reload = true;
+              changed.reload = true; changed.keys[k] = true;
               return Store.set(P + k, b);
             });
           });
