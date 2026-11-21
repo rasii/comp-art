@@ -246,8 +246,8 @@
           <input type="range" id="detailSlider" min="0" max="100" step="10" value="50" aria-label="Broad to fine: flat masses, then brush strokes from big to small">
         </div>
         <div class="ctrl-row">
-          <div class="ctrl-label">Average colour</div>
-          <button class="switch on" id="fillSwitch" aria-label="Fill the masses with their paint colour"></button>
+          <div class="ctrl-label">Show block-in</div>
+          <button class="switch on" id="fillSwitch" aria-label="Show the block-in over the reference"></button>
         </div>
 
         <button class="more-toggle" id="blocksMoreBtn" aria-expanded="false" aria-controls="blocksMore">More options</button>
@@ -311,7 +311,10 @@
       <div class="panel">
         <div class="prog-head">
           <p class="prog-info" id="progInfo"></p>
-          <button class="btn ghost small" id="progDeleteBtn" title="Delete this stage">Delete</button>
+          <div class="prog-head-btns">
+            <button class="btn small" id="progCompareBtn" title="Look at this stage in Compare (or double-tap the picture or its thumbnail)">Compare</button>
+            <button class="btn ghost small" id="progDeleteBtn" title="Delete this stage">Delete</button>
+          </div>
         </div>
         <div class="prog-scrub">
           <button class="btn small" id="progPlay">Play</button>
@@ -350,6 +353,11 @@
 <div class="view-chip" id="viewChip" hidden>
   <button class="view-chip-open" id="viewChipOpen" title="View options"><span id="viewChipText"></span><span class="view-legend" id="viewLegend"></span></button>
   <button class="view-chip-x" id="viewChipX" title="Back to normal" aria-label="Back to normal">✕</button>
+</div>
+<!-- an older stage in Compare (from Progress): which, and back to the latest -->
+<div class="view-chip stage-chip" id="stageChip" hidden>
+  <span class="stage-chip-text" id="stageChipText"></span>
+  <button class="view-chip-x" id="stageChipX" title="Back to your latest photo" aria-label="Back to your latest photo">✕</button>
 </div>
 <div class="view-menu" id="viewMenu" role="dialog" aria-label="View" hidden>
   <p class="view-menu-title">Look</p>

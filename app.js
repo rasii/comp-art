@@ -3,7 +3,9 @@
 
   var WORK_DIM = 3000;     // long edge of the working reference and of the aligned output
   var SRC_MAX  = 3000;     // long edge kept for the raw painting photo (perspective source)
-  var VIEW_MAX_ZOOM = 10;  // pinch-zoom limit on the compare / side-by-side / block-in views
+  var VIEW_MAX_ZOOM = 10;  // pinch-zoom limit on the compare / side-by-side / block-in views...
+  var MAX_SCREEN_PX = 6;   // ...or less: zoomed until a photo pixel covers this many screen pixels (more
+                           // shows no more detail, and on an iPad in full screen costs a lot of memory)
   var PIN_MAX_ZOOM = 5;    // pinch-zoom limit on the align stage
   var OFF_MAX = 0.5;       // the painting can be shifted up to half the frame
   var LEGACY_KEY = "sightsize_v1"; // old localStorage save, migrated on first run
@@ -269,7 +271,8 @@
     var askLeadIn = m === "align" && hasRef && hasPhoto && !aligned && liveSinceMs() === null;
     if(!askLeadIn && leadInMin) setLeadIn(0);
     leadInRow.hidden = !askLeadIn;
-    if(hasRef && hasPhoto){
+    if(m === "align") ensurePhoto();
+    if(hasRef && hasPhoto && !state.photo.released){
       setSrc(pinImg, state.photo);
       if(m === "align") requestRefIntensity(0);
       showRef(pinRefImg);
@@ -301,14 +304,17 @@
     compareCur.style.opacity = state.peeking ? "0" : String(state.opacity/100);
     adjustSwitch.classList.toggle("on", state.adjusting);
     compareFrame.classList.toggle("adjusting", state.adjusting);
-    show(resetPosBtn, state.adjusting || state.offU !== 0 || state.offV !== 0);
+    show(resetPosBtn, !stageView && (state.adjusting || state.offU !== 0 || state.offV !== 0));
+    adjustSwitch.disabled = !!stageView;                 // an older stage keeps the alignment it was saved with
+    adjustSwitch.closest(".ctrl-row").classList.toggle("disabled", !!stageView);
     // the offset is a fraction of the photo, which is letterboxed in its frame
     // mirrored: the pictures flip about the frame's centre, and so does the offset
     var mir = mirrorNow(), flip = mir ? " scaleX(-1)" : "";
+    var off = shownOff();
     function shiftIn(frame){
-      if(!state.offU && !state.offV) return flip;
+      if(!off.u && !off.v) return flip;
       var c = imageRect(frame);
-      return "translate(" + ((mir ? -1 : 1)*state.offU*c.w*100) + "%," + (state.offV*c.h*100) + "%)" + flip;
+      return "translate(" + ((mir ? -1 : 1)*off.u*c.w*100) + "%," + (off.v*c.h*100) + "%)" + flip;
     }
     compareCur.style.transform = shiftIn(compareFrame);
     sideCur.style.transform = shiftIn(sideCurFrame);
@@ -338,6 +344,37 @@
     if(colorCard.parentElement !== slot) slot.insertBefore(colorCard, slot.firstChild);
     ccEmpty.textContent = (m === "side") ? "Touch either image to read colours" : "Touch and hold the painting to read colours";
     renderReading();
+    saveSession();
+  }
+
+  // The screen as it is (tab, full screen, the View menu) for this browser
+  // tab, so a page that reloads (iPadOS restarts one that ran out of memory,
+  // or was away a long time) comes back the same.
+  // (read once at start, and not written until it's been put back: the
+  // first screens drawn while starting up would replace it)
+  var SESSION_KEY = "comp-art-view", sessionSaved = "", sessionReady = false, bootSession = null;
+  try{ bootSession = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null"); }catch(e){}
+  function saveSession(){
+    if(!openId || !sessionReady) return;
+    var v = JSON.stringify({ project: openId, mode: state.mode, full: !!state.full, look: state.look, mirror: state.mirror,
+                             squint: state.squint, valueSteps: state.valueSteps, offBy: state.offBy });
+    if(v === sessionSaved) return;
+    sessionSaved = v;
+    try{ sessionStorage.setItem(SESSION_KEY, v); }catch(e){}
+  }
+  function restoreSession(){
+    var v = bootSession;
+    sessionReady = true; bootSession = null;
+    if(!v || v.project !== openId) return;
+    if(ALL_LOOKS.indexOf(v.look) >= 0){ state.look = v.look; state.grayscale = v.look === "gray"; }
+    state.mirror = !!v.mirror;
+    if(typeof v.squint === "number") state.squint = clamp(Math.round(v.squint), 0, 100);
+    if(v.valueSteps === 3 || v.valueSteps === 5) state.valueSteps = v.valueSteps;
+    if(v.offBy === "value" || v.offBy === "colour") state.offBy = v.offBy;
+    var m = v.mode, ok = (m === "compare" || m === "side") ? !!state.aligned : m === "blocks" ? !!state.ref : m === "progress" ? Progress.count() > 0 : false;
+    if(ok){ state.mode = m; if(m === "compare" || m === "side") state.cmpView = m; }
+    if(ok && v.full && FULL_PICTURE[m]) state.full = true;
+    releasePhoto();
   }
 
   // header hint for the current tab
@@ -445,8 +482,10 @@
   function unpark(el){ if(el._home && el.parentElement === fullBar) el._home.parentNode.insertBefore(el, el._home); }
   function renderFull(m){
     var pic = FULL_PICTURE[m] ? $(FULL_PICTURE[m]) : null;
-    if(state.full && !pic) state.full = false;             // align: always with its controls
-    document.body.classList.toggle("full", !!state.full);
+    // align: always with its controls. state.full itself stays, so a moment
+    // on Align (a project reloading after a sync) doesn't end full screen;
+    // going to Align yourself does (setMode)
+    document.body.classList.toggle("full", !!state.full && !!pic);
     fullBtn.hidden = !pic;
     var fit = pic && (pic.classList.contains("fit") ? pic : pic.closest(".fit"));
     if(fit && fullBtn.parentElement !== fit) fit.appendChild(fullBtn);
@@ -487,7 +526,7 @@
     var pic = LOOKS[m] && FULL_PICTURE[m] ? $(FULL_PICTURE[m]) : null;
     var fit = pic && (pic.classList.contains("fit") ? pic : pic.closest(".fit"));
     viewBtn.hidden = !fit;
-    if(!fit){ closeViewMenu(); viewChip.hidden = true; return; }
+    if(!fit){ closeViewMenu(); viewChip.hidden = true; stageChip.hidden = true; return; }
     [viewBtn, viewChip, viewMenu].forEach(function(el){ if(el.parentElement !== fit) fit.appendChild(el); });
     var look = lookNow(), here = looksHere(), mir = mirrorNow();
     var text = look === "normal" ? "" : LOOK_NAMES[look] + (look === "values" ? " · " + state.valueSteps : look === "squint" && state.squint < 100 ? " · " + state.squint + "%" : "");
@@ -508,6 +547,15 @@
     Array.prototype.forEach.call(valuesSeg.children, function(b){ b.classList.toggle("on", Number(b.dataset.steps) === state.valueSteps); });
     Array.prototype.forEach.call(offSeg.children, function(b){ b.classList.toggle("on", b.dataset.by === state.offBy); });
     mirrorSwitch.classList.toggle("on", state.mirror);
+    // an older stage in Compare: its label, to the left of the view label
+    var stageShown = !!stageView && (m === "compare" || m === "side");
+    stageChip.hidden = !stageShown;
+    if(stageShown){
+      if(stageChip.parentElement !== fit) fit.appendChild(stageChip);
+      var items = Progress.items(), at = items.map(function(it){ return it.id; }).indexOf(stageView.id);
+      stageChipText.textContent = "Stage " + (at + 1) + " of " + items.length;
+      stageChip.style.right = (100 + (viewChip.hidden ? 0 : viewChip.offsetWidth + 6)) + "px";
+    }
   }
   function openViewMenu(){ viewMenu.hidden = false; viewBtn.setAttribute("aria-expanded", "true"); }
   function closeViewMenu(){ if(viewMenu.hidden) return; viewMenu.hidden = true; viewBtn.setAttribute("aria-expanded", "false"); }
@@ -520,6 +568,44 @@
   offSeg.addEventListener("click", function(e){ var b = e.target.closest("button[data-by]"); if(b){ state.offBy = b.dataset.by; render(); } });
   mirrorSwitch.addEventListener("click", function(){ state.mirror = !state.mirror; render(); });
   squintSlider.addEventListener("input", function(){ state.squint = Number(squintSlider.value); render(); });
+  // ---- an older stage in Compare (Progress › Compare, or a double-tap) ----
+  // The stage's own picture (aligned when it was taken) stands in for the
+  // painting, for a look: the latest photo, its alignment and position wait
+  // untouched, and nothing is saved or synced. ✕ on its label, Align, or
+  // opening a project again goes back. stageView: {id, im, live}.
+  var stageView = null, stageChip = $("stageChip"), stageChipText = $("stageChipText"), stageChipX = $("stageChipX");
+  function shownOff(){ return stageView ? { u: 0, v: 0 } : { u: state.offU, v: state.offV }; }
+  function compareStage(i){
+    var it = Progress.items()[i], ps = PStore;
+    if(!it) return;
+    stopPlay();
+    if(it.key && it.key === state.photoKey){ exitStageView(); setMode(state.cmpView); return; }   // the latest photo itself
+    Progress.blob(it.id).then(function(b){
+      if(!b || PStore !== ps) return;
+      return decodeToCanvas(b, WORK_DIM).then(function(im){
+        if(PStore !== ps) return;
+        var live = stageView ? stageView.live : state.aligned;
+        if(stageView) dropImage(stageView.im);
+        if(state.adjusting) adjustSwitch.click();
+        stageView = { id: it.id, im: im, live: live };
+        state.aligned = im; state.reading = null;
+        setMode(state.cmpView);
+        render();
+      });
+    }).catch(function(){ toast("That stage couldn't be shown in Compare."); });
+  }
+  function exitStageView(){
+    if(!stageView) return;
+    var sv = stageView;
+    stageView = null;
+    state.aligned = sv.live; state.reading = null;
+    dropImage(sv.im);
+  }
+  stageChipX.addEventListener("click", function(){
+    exitStageView();
+    if(!state.aligned) setMode("align"); else render();
+  });
+
   // a touch anywhere else closes the menu
   document.addEventListener("pointerdown", function(e){
     if(!viewMenu.hidden && !viewMenu.contains(e.target) && !viewBtn.contains(e.target) && !viewChip.contains(e.target)) closeViewMenu();
@@ -596,7 +682,7 @@
   }
   function offImage(){
     var ref = state.ref, cur = state.aligned, by = state.offBy;
-    var key = lookId(ref) + ":" + lookId(cur) + ":" + by + ":" + state.offU.toFixed(4) + ":" + state.offV.toFixed(4);
+    var off = shownOff(), key = lookId(ref) + ":" + lookId(cur) + ":" + by + ":" + off.u.toFixed(4) + ":" + off.v.toFixed(4);
     return cachedLook("off", key, function(){
       var base = cachedLook("offBase", lookId(cur), function(){
         var z = sizeFor(cur, LOOK_DIM), c = stepResize(cur.canvas, cur.w, cur.h, z.w, z.h);
@@ -613,7 +699,7 @@
       var cd = stepResize(cur.canvas, cur.w, cur.h, sw, sh).getContext("2d").getImageData(0, 0, sw, sh).data;
       var heat = document.createElement("canvas"); heat.width = sw; heat.height = sh;
       var hx = heat.getContext("2d"), hi = hx.createImageData(sw, sh), hd = hi.data, L = lin8();
-      var du = Math.round(state.offU*sw), dv = Math.round(state.offV*sh);
+      var du = Math.round(off.u*sw), dv = Math.round(off.v*sh);
       for(var y = 0; y < sh; y++) for(var x = 0; x < sw; x++){
         var rx = x + du, ry = y + dv;               // the reference under this spot of the painting
         if(rx < 0 || ry < 0 || rx >= sw || ry >= sh) continue;
@@ -638,14 +724,16 @@
   // content() (the image's rect in the frame, for a letterboxed image), pan
   // keeps the image covering the frame on any axis where it's bigger than
   // the frame, and centred where it's still smaller.
-  function makeZoom(views, maxZoom, content){
+  // maxZoom: a number, or a function giving it (worked out when used)
+  function makeZoom(views, maxZoomOf, content){
+    function maxZoom(){ return typeof maxZoomOf === "function" ? maxZoomOf() : maxZoomOf; }
     var zm = { z: 1, pu: 0, pv: 0 };
     function clampAxis(p, z, a, len){
       if(z*len <= 1) return 0.5 - z*(a + len/2);
       return clamp(p, 1 - z*(a + len), -z*a);
     }
     zm.clampPan = function(){
-      zm.z = clamp(zm.z, 1, maxZoom);
+      zm.z = clamp(zm.z, 1, maxZoom());
       var c = content ? content() : { x: 0, y: 0, w: 1, h: 1 };
       zm.pu = clampAxis(zm.pu, zm.z, c.x, c.w);
       zm.pv = clampAxis(zm.pv, zm.z, c.y, c.h);
@@ -657,7 +745,7 @@
     zm.reset = function(){ zm.z = 1; zm.pu = 0; zm.pv = 0; };
     // zoom about a point (px, in the frame) by a factor
     zm.zoomAt = function(rect, x, y, factor){
-      var newZ = clamp(zm.z*factor, 1, maxZoom);
+      var newZ = clamp(zm.z*factor, 1, maxZoom());
       var cu = (x/rect.width - zm.pu)/zm.z, cv = (y/rect.height - zm.pv)/zm.z;
       zm.z = newZ;
       zm.pu = x/rect.width - cu*newZ;
@@ -666,7 +754,7 @@
     };
     // gesture from a start snapshot g to a new midpoint/distance
     zm.gesture = function(rect, g, mid, dist){
-      var newZ = (dist > 0 && g.d0 > 0) ? clamp(g.z0 * dist/g.d0, 1, maxZoom) : zm.z;
+      var newZ = (dist > 0 && g.d0 > 0) ? clamp(g.z0 * dist/g.d0, 1, maxZoom()) : zm.z;
       var cu = (g.mid0.x/rect.width - g.pu0)/g.z0, cv = (g.mid0.y/rect.height - g.pv0)/g.z0;
       zm.z = newZ;
       zm.pu = mid.x/rect.width - cu*newZ;
@@ -677,9 +765,18 @@
     return zm;
   }
   var pinZoom = makeZoom([pinView], PIN_MAX_ZOOM);
-  var compareZoom = makeZoom([compareView], VIEW_MAX_ZOOM, function(){ return imageRect(compareFrame); });
-  var sideZoom = makeZoom([sideRefView, sideCurView], VIEW_MAX_ZOOM, function(){ return imageRect(sideRefFrame); });
-  var shapesZoom = makeZoom([shapesView], VIEW_MAX_ZOOM, function(){ return imageRect(shapesFrame); });
+  // the zoom limit for a frame: VIEW_MAX_ZOOM, or where a reference pixel
+  // covers MAX_SCREEN_PX screen pixels if that comes sooner (but at least 2×)
+  function viewMaxZoom(frame){
+    return function(){
+      var c = imageRect(frame), shown = Math.max(c.w*frame.clientWidth, c.h*frame.clientHeight)*(window.devicePixelRatio || 1);
+      if(!state.ref || !shown) return VIEW_MAX_ZOOM;
+      return clamp(MAX_SCREEN_PX*Math.max(state.ref.w, state.ref.h)/shown, 2, VIEW_MAX_ZOOM);
+    };
+  }
+  var compareZoom = makeZoom([compareView], viewMaxZoom(compareFrame), function(){ return imageRect(compareFrame); });
+  var sideZoom = makeZoom([sideRefView, sideCurView], viewMaxZoom(sideRefFrame), function(){ return imageRect(sideRefFrame); });
+  var shapesZoom = makeZoom([shapesView], viewMaxZoom(shapesFrame), function(){ return imageRect(shapesFrame); });
 
   // Pointer handling for a frame: two fingers (or wheel) zoom and pan the
   // group; one pointer goes to the `single` callbacks; a quick double tap
@@ -761,6 +858,8 @@
   function setMode(m){
     // Compare before there's an aligned painting: the step that adds one
     if((m === "compare" || m === "side") && !state.aligned){ if(!state.ref) return; m = "align"; }
+    if(!FULL_PICTURE[m]) state.full = false;
+    if(m === "align") exitStageView();
     if(m === "blocks" && !state.ref) return;
     if(m === "progress" && !Progress.count()) return;
     if(m === "progress" && m !== state.mode) progIndex = Progress.count() - 1;
@@ -871,6 +970,30 @@
     }).catch(function(){ toast("That photo couldn't be opened. Try another one."); });
   });
 
+  // The painting photo at full size is needed only on Align (the corners,
+  // finding the edges, aligning). Elsewhere its pixels are let go, which
+  // matters on an iPad, and decoded again from the stored file on the way
+  // back to Align. The object stays (released: true), with its size.
+  var photoLoading = null;
+  function releasePhoto(){
+    var im = state.photo;
+    if(!im || im.released || state.mode === "align" || state.busy) return;
+    dropImage(im);
+    if(pinImg._im === im){ pinImg._im = null; pinImg.removeAttribute("src"); }
+    im.canvas.width = 0; im.canvas.height = 0;
+    im.released = true;
+  }
+  function ensurePhoto(){
+    var im = state.photo, ps = PStore;
+    if(!im || !im.released || photoLoading) return;
+    photoLoading = PStore.get("photo").then(function(b){ return b ? decodeToCanvas(b, SRC_MAX) : null; }).then(function(fresh){
+      photoLoading = null;
+      if(!fresh || PStore !== ps || state.photo !== im) return;
+      im.canvas = fresh.canvas; im.w = fresh.w; im.h = fresh.h; im.released = false;
+      render();
+    }).catch(function(){ photoLoading = null; });
+  }
+
   // Installs a painting photo as the warp source. Corners: the given ones,
   // else the last alignment's if the photo has the same shape (same camera,
   // same setup), else the extreme corners of the photo.
@@ -952,7 +1075,7 @@
   // exact point. Sits above the fingertip, or below it near the top.
   var LOUPE_D = 140, LOUPE_MAG = 3;
   function drawLoupe(i){
-    if(!state.photo) return;
+    if(!state.photo || state.photo.released) return;
     var dpr = window.devicePixelRatio || 1;
     if(loupe.width !== LOUPE_D*dpr){ loupe.width = LOUPE_D*dpr; loupe.height = LOUPE_D*dpr; }
     var ctx = loupe.getContext("2d");
@@ -1126,7 +1249,7 @@
     return c && defaultCorners().every(function(d, i){ return Math.abs(d.u - c[i].u) < 0.005 && Math.abs(d.v - c[i].v) < 0.005; });
   }
   function detectCanvas(mode){
-    if(!state.photo || !state.ref || !state.corners) return;
+    if(!state.photo || state.photo.released || !state.ref || !state.corners) return;
     var seq = ++detectSeq, photo = state.photo, gen = dragGen;
     var corners = state.corners.map(copyPt), refAspect = state.ref.w/state.ref.h;
     state.detecting = true;
@@ -1167,7 +1290,7 @@
   });
 
   confirmAlignBtn.addEventListener("click", function(){
-    if(!state.photo || !state.ref || state.busy) return;
+    if(!state.photo || state.photo.released || !state.ref || state.busy) return;
     var leadIn = leadInRow.hidden ? 0 : leadInMin;
     state.busy = true;
     render();
@@ -1188,6 +1311,7 @@
       persistMeta();
       PStore.remove("aligned").catch(function(){});   // an older version's stored copy
       addStage(im, leadIn);
+      releasePhoto();
     }).catch(function(){
       state.busy = false;
       render();
@@ -1334,13 +1458,13 @@
       var bo = Shapes.boostChroma(refLin.r, refLin.g, refLin.b, state.shapes.chroma/100);
       refLin = { r: bo[0], g: bo[1], b: bo[2] };
     }
-    var curLin = samplePatch(state.aligned, u - state.offU, v - state.offV, ra);
+    var off = shownOff(), curLin = samplePatch(state.aligned, u - off.u, v - off.v, ra);
     state.reading = { u: u, v: v, pointerType: e.pointerType, patch: 2*rr + 1, r: readColour(refLin), p: curLin ? readColour(curLin) : null,
                       intensity: refIntensityOn() ? (state.shapes.chroma/100).toFixed(2).replace(/0$/, "") : null };
     renderReading();
     var cmp = view === compareView;
     showReadLoupe(e, view, frame, u, v, 2*rr + 1, { src: cmp ? compareRef : sideRef },
-                  { src: cmp ? compareCur : sideCur, du: state.offU, dv: state.offV });
+                  { src: cmp ? compareCur : sideCur, du: off.u, dv: off.v });
   }
 
   // compare frame: hold to peek + read; drag to reposition when adjusting
@@ -2009,7 +2133,7 @@
   // clears it (both ask first, with the chance to save the photos).
   var viewProgress = $("view-progress"), progFrame = $("progFrame"), progImg = $("progImg"), progInfo = $("progInfo");
   var progPlay = $("progPlay"), progSlider = $("progSlider"), progStrip = $("progStrip"), progEvenSwitch = $("progEvenSwitch");
-  var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn");
+  var progVideoBtn = $("progVideoBtn"), progSaveAllBtn = $("progSaveAllBtn"), progDeleteBtn = $("progDeleteBtn"), progCompareBtn = $("progCompareBtn");
   var progStartBtn = $("progStartBtn"), progStartNote = $("progStartNote"), progLiveTimer = $("progLiveTimer");
   var progSheetBtn = $("progSheetBtn"), progSpeed = $("progSpeed"), progSpeedLabel = $("progSpeedLabel"), progRefSwitch = $("progRefSwitch");
   var sheetPreview = $("sheetPreview");
@@ -2337,7 +2461,12 @@
         im.alt = "Stage " + (i + 1);
         thumbUrl(x.id).then(function(u){ im.src = u; });
         b.appendChild(im);
-        b.addEventListener("click", function(){ stopPlay(); progIndex = i; renderProgress(); renderHint(); });
+        b.addEventListener("click", function(){
+          var now = Date.now(), twice = stripTap && stripTap.i === i && now - stripTap.t < 350;
+          stripTap = twice ? null : { i: i, t: now };
+          stopPlay(); progIndex = i; renderProgress(); renderHint();
+          if(twice) compareStage(i);              // a double tap: this stage in Compare
+        });
         progStrip.appendChild(b);
       });
     }
@@ -2406,12 +2535,20 @@
   stageTimeCancel.addEventListener("click", closeStageTime);
   stageTimeModal.addEventListener("click", function(e){ if(e.target === stageTimeModal) closeStageTime(); });
   [stageTimeH, stageTimeM].forEach(function(el){ el.addEventListener("keydown", function(e){ if(e.key === "Enter") stageTimeOk.click(); }); });
+  progCompareBtn.addEventListener("click", function(){ compareStage(progIndex); });
+  var progTap = null, stripTap = null;
+  progFrame.addEventListener("pointerup", function(e){
+    var now = Date.now();
+    if(progTap && now - progTap.t < 350 && Math.hypot(e.clientX - progTap.x, e.clientY - progTap.y) < 30){ progTap = null; compareStage(progIndex); return; }
+    progTap = { t: now, x: e.clientX, y: e.clientY };
+  });
   progDeleteBtn.addEventListener("click", function(){
     var it = Progress.items()[progIndex];
     if(!it) return;
     askConfirm("Delete stage " + (progIndex + 1) + "? This can't be undone.", "Delete", function(){
       var wasLast = progIndex === Progress.count() - 1, wasShown = wasLast && it.key === state.photoKey;
       stopPlay();
+      exitStageView();
       if(progUrls[it.id]){ URL.revokeObjectURL(progUrls[it.id]); delete progUrls[it.id]; }
       if(progThumbs[it.id]){ URL.revokeObjectURL(progThumbs[it.id]); delete progThumbs[it.id]; }
       Progress.remove(it.id).catch(function(){});
@@ -2444,6 +2581,7 @@
           if(PStore !== ps) return;
           dropImage(state.aligned); state.aligned = al;
           compareZoom.reset(); sideZoom.reset();
+          releasePhoto();
           persistBlob("photo", b);
           persistMeta();
           render();
@@ -2896,6 +3034,7 @@
     newShapesSource();
     state.corners = null; state.cornerSure = null; state.lastCorners = null;
     state.offU = 0; state.offV = 0; state.adjusting = false; state.opacityBeforeAdjust = null;
+    if(stageView){ dropImage(stageView.im); stageView = null; }
     state.reading = null; state.peeking = false; state.mode = "align";
     pinZoom.reset(); compareZoom.reset(); sideZoom.reset();
   }
@@ -3019,6 +3158,7 @@
       }).then(function(){
         if(PStore !== ps) return;
         if(state.aligned) state.mode = state.cmpView;
+        releasePhoto();
         // Compare still on a photo whose stage was deleted (before v2.54 a
         // deleted last stage stayed there): the last stage instead
         var items = Progress.items();
@@ -3038,7 +3178,8 @@
     if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(function(){}); }
     migrateLegacy().then(function(){ return Projects.init(Store); })
       .then(function(){ return openProject(Projects.activeId()); })
-      .catch(function(){}).then(render)
+      .then(restoreSession)
+      .catch(function(){ sessionReady = true; }).then(render)
       .then(function(){ return syncReady; }).then(function(){ SU.renderSync(); if(Sync.on()) Sync.run(); });
   }
 
